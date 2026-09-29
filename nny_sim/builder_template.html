@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>뉴네오유희왕 덱 등록</title>
+<style>
+:root{--bg:#EEF1F4;--panel:#fff;--ink:#1E2733;--mute:#66717F;--line:#D5DBE2;--acc:#3B4BA8;--bad:#B3261E;--warn:#8A5A00;
+--c-적:#C8372D;--c-녹:#3E8E4E;--c-황:#D9A520;--c-청:#2F6DB5;--c-자:#7A4BA0;--c-백:#C9CED4;--c-흑:#2B2B2B;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
+header{padding:18px 24px 12px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{font-size:20px;margin:0 16px 0 0;font-weight:700}
+label{font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:3px}
+input,select,textarea,button{font:inherit;color:inherit}
+input,select{padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;min-width:200px}
+button{border:1px solid var(--line);background:#fff;border-radius:4px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--acc)} button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.colorbar{flex:1 1 260px;min-width:240px}
+.colorbar .bar{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--line)}
+.colorbar .bar span{display:block;height:100%}
+.colorbar .legend{font-size:12px;color:var(--mute);margin-top:4px;font-variant-numeric:tabular-nums}
+main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;padding:16px 24px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;min-width:0}
+h2{font-size:15px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:baseline}
+h2 small{font-weight:400;color:var(--mute);font-variant-numeric:tabular-nums}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.filters input{flex:1 1 160px;min-width:0}.filters select{min-width:0}
+ul{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:6px 1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #EDF0F3}
+.row .chip{align-self:stretch;border-radius:2px}
+.row .nm{min-width:0;cursor:pointer}
+.row .nm b{font-weight:600}
+.row .meta{font-size:12px;color:var(--mute)}
+.row .act{display:flex;gap:4px;align-items:center;font-variant-numeric:tabular-nums}
+.row .act button{padding:2px 8px}
+.row.off{opacity:.38}
+.qty{min-width:22px;text-align:center;font-weight:700}
+.deckpart{margin-bottom:14px}
+.deckpart h3{font-size:14px;margin:0 0 4px;display:flex;justify-content:space-between}
+.deckpart h3 span{font-variant-numeric:tabular-nums;color:var(--mute);font-weight:400}
+.deckpart h3 span.bad{color:var(--bad);font-weight:700}
+.empty{color:var(--mute);font-size:13px;padding:6px 0}
+#msgs li{font-size:13px;padding:3px 0}#msgs .e{color:var(--bad)}#msgs .w{color:var(--warn)}#msgs .ok{color:var(--c-녹);font-weight:600}
+#detail{white-space:pre-wrap;font-size:13px;background:#F6F8FA;border:1px solid var(--line);border-radius:4px;padding:10px;margin-top:10px;max-height:260px;overflow:auto}
+#out{width:100%;min-height:160px;font:13px/1.45 ui-monospace,Consolas,monospace;border:1px solid var(--line);border-radius:4px;padding:8px}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.poolwrap{max-height:70vh;overflow:auto}
+</style></head><body>
+<header>
+  <h1>덱 등록</h1>
+  <label>덱 이름<input id="dname" placeholder="예: 번성충 대발생 기본형"></label>
+  <label>스킬 카드<select id="skill"></select></label>
+  <div class="colorbar"><div class="bar" id="cbar"></div><div class="legend" id="clegend">메인·상급 덱의 색 분포</div></div>
+</header>
+<main>
+<section>
+  <h2>카드 풀 <small id="poolcount"></small></h2>
+  <div class="filters">
+    <input id="q" placeholder="카드명·번호·효과 검색">
+    <select id="ftype"><option value="">모든 종류</option><option>몬스터</option><option>마법</option><option>필드</option></select>
+    <select id="fdeck"><option value="">메인·상급</option><option>메인</option><option>상급</option></select>
+    <select id="fshow"><option value="ok">사용 가능 카드만</option><option value="all">전체 보기</option></select>
+  </div>
+  <div class="poolwrap"><ul id="pool"></ul></div>
+  <div id="detail">카드 이름을 누르면 효과가 여기에 표시됩니다.</div>
+</section>
+<section>
+  <h2>덱 <small id="deckcount"></small></h2>
+  <div id="deck"></div>
+  <h2>검사 결과</h2>
+  <ul id="msgs"></ul>
+  <h2 style="margin-top:14px">덱 파일</h2>
+  <div class="tools">
+    <button class="primary" id="copy">복사</button>
+    <button id="dl">.deck 파일 저장</button>
+    <button id="imp">아래 텍스트 불러오기</button>
+    <button id="clear">덱 비우기</button>
+  </div>
+  <textarea id="out" spellcheck="false"></textarea>
+</section>
+</main>
+<script>
+const POOL=__POOL__;
+const COLORS=['적','녹','황','청','자','백','흑'];
+const LIM={메인:[20,40],상급:[0,20],전략:[0,10]};
+const byName=Object.fromEntries(POOL.map(c=>[c.name,c]));
+const byCode=Object.fromEntries(POOL.filter(c=>c.code).map(c=>[c.code,c]));
+const skills=POOL.filter(c=>c.type==='스킬');
+const deck={메인:{},상급:{},전략:{}};
+const $=id=>document.getElementById(id);
+const colorOf=c=>(c.color||'').replace('색','').trim().charAt(0);
+$('skill').innerHTML=skills.map(s=>`<option value="${s.name}">${s.name} (${s.skill_tags.join('·')})</option>`).join('');
+function allowed(c){const s=byName[$('skill').value];const tags=new Set(s.skill_tags);if(!s.no_common)tags.add('공용');return c.tags.some(t=>tags.has(t));}
+function inMainUpper(n){return (deck.메인[n]||0)+(deck.상급[n]||0);}
+function add(name,part){const c=byName[name];part=part||c.deck;deck[part][name]=(deck[part][name]||0)+1;render();}
+function sub(name,part){if(!deck[part][name])return;if(--deck[part][name]<=0)delete deck[part][name];render();}
+function show(name){const c=byName[name];
+ const spec=c.type==='몬스터'?`${c.color} · 레벨 ${c.level} · ${c.race||'-'} · ${c.attr||'-'} · ${c.atk}/${c.def}`:`${c.color} · ${c.type}${c.subtype?' ('+c.subtype+')':''}`;
+ $('detail').textContent=`${c.code||''} ${c.name}\n${spec}\n태그: ${c.tags.join(', ')}${c.note?'  ['+c.note+']':''}\n\n${c.text}`;}
+function renderPool(){
+ const q=$('q').value.trim(),ft=$('ftype').value,fd=$('fdeck').value,all=$('fshow').value==='all';
+ const list=POOL.filter(c=>c.type!=='스킬'&&(!ft||c.type===ft)&&(!fd||c.deck===fd)&&(all||allowed(c))
+   &&(!q||(c.name+' '+(c.code||'')+' '+c.text).includes(q)));
+ $('poolcount').textContent=list.length+'종';
+ $('pool').innerHTML=list.map(c=>{const ok=allowed(c);const n=inMainUpper(c.name);
+  const meta=c.type==='몬스터'?`${c.code||''} · Lv${c.level} · ${c.deck} · ${c.atk}/${c.def}`:`${c.code||''} · ${c.type}${c.subtype?'('+c.subtype+')':''}`;
+  return `<li class="row${ok?'':' off'}"><span class="chip" style="background:var(--c-${colorOf(c)})"></span>
+  <div class="nm" data-show="${c.name}"><b>${c.name}</b><div class="meta">${meta} · ${c.tags.join('/')}</div></div>
+  <div class="act">${ok?`<button data-add="${c.name}" title="${c.deck} 덱에 추가" ${n>=3?'disabled':''}>+${c.deck}</button><button data-add="${c.name}" data-part="전략" title="전략 덱에 추가">+전략</button>`:'<span class="meta">사용 불가</span>'}</div></li>`}).join('');}
+function renderDeck(){
+ let h='';
+ for(const p of ['메인','상급','전략']){const e=Object.entries(deck[p]);const tot=e.reduce((a,[,n])=>a+n,0);const [lo,hi]=LIM[p];
+  h+=`<div class="deckpart"><h3>${p} 덱 <span class="${tot<lo||tot>hi?'bad':''}">${tot}장 / ${lo}~${hi}</span></h3><ul>`;
+  h+=e.length?e.sort((a,b)=>(byName[a[0]].level||99)-(byName[b[0]].level||99)).map(([n,q])=>{const c=byName[n];
+   return `<li class="row"><span class="chip" style="background:var(--c-${colorOf(c)})"></span><div class="nm" data-show="${n}"><b>${n}</b><div class="meta">${c.code||''}</div></div>
+   <div class="act"><button data-sub="${n}" data-part="${p}">−</button><span class="qty">${q}</span><button data-add="${n}" data-part="${p}">+</button></div></li>`}).join(''):'<li class="empty">비어 있음</li>';
+  h+='</ul></div>';}
+ $('deck').innerHTML=h;
+ const t=k=>Object.values(deck[k]).reduce((a,b)=>a+b,0);
+ $('deckcount').textContent=`메인 ${t('메인')} · 상급 ${t('상급')} · 전략 ${t('전략')}`;
+ const cc={};let all=0;for(const p of['메인','상급'])for(const[n,q]of Object.entries(deck[p])){const k=colorOf(byName[n]);cc[k]=(cc[k]||0)+q;all+=q;}
+ $('cbar').innerHTML=all?COLORS.filter(k=>cc[k]).map(k=>`<span title="${k} ${cc[k]}장" style="width:${cc[k]/all*100}%;background:var(--c-${k})"></span>`).join(''):'';
+ $('clegend').textContent=all?COLORS.filter(k=>cc[k]).map(k=>`${k} ${cc[k]}`).join('  '):'메인·상급 덱의 색 분포';}
+function validate(){
+ const e=[],w=[];const s=byName[$('skill').value];
+ for(const p in LIM){const tot=Object.values(deck[p]).reduce((a,b)=>a+b,0);const[lo,hi]=LIM[p];if(tot<lo||tot>hi)e.push(`[${p}] ${tot}장 — 허용 범위 ${lo}~${hi}장`);
+  for(const n in deck[p]){const c=byName[n];if(!allowed(c))e.push(`[${p}] 「${n}」은(는) 스킬 「${s.name}」로 사용할 수 없음`);
+   if(p==='메인'&&c.deck!=='메인')e.push(`[메인] 「${n}」은(는) 상급 덱 카드`);if(p==='상급'&&c.deck!=='상급')e.push(`[상급] 「${n}」은(는) 메인 덱 카드`);}}
+ const names=new Set([...Object.keys(deck.메인),...Object.keys(deck.상급)]);
+ for(const n of names)if(inMainUpper(n)>3)e.push(`「${n}」 ${inMainUpper(n)}장 — 동명 카드는 3장까지`);
+ for(const n in deck.전략)if(inMainUpper(n)+deck.전략[n]>3)w.push(`[전략] 「${n}」 전량 교체 시 ${inMainUpper(n)+deck.전략[n]}장이 될 수 있음`);
+ $('msgs').innerHTML=e.map(x=>`<li class="e">✗ ${x}</li>`).join('')+w.map(x=>`<li class="w">△ ${x}</li>`).join('')+(e.length?'':'<li class="ok">등록 가능</li>');}
+function exportText(){let t=`이름: ${$('dname').value||'이름 없음'}\n스킬: ${$('skill').value}\n`;
+ for(const p of['메인','상급','전략']){t+=`[${p}]\n`;for(const[n,q]of Object.entries(deck[p]))t+=`${q} ${n}\n`;}
+ $('out').value=t;}
+function render(){renderPool();renderDeck();validate();exportText();}
+function importText(txt){const errs=[];for(const p in deck)deck[p]={};let sec=null;
+ txt.split(/\r?\n/).forEach((raw,i)=>{const l=raw.split('#')[0].trim();if(!l)return;let m;
+  if(m=l.match(/^이름\s*[:：]\s*(.+)$/)){$('dname').value=m[1];return;}
+  if(m=l.match(/^스킬\s*[:：]\s*(.+)$/)){const s=byName[m[1].trim()]||byCode[m[1].trim()];if(s&&s.type==='스킬')$('skill').value=s.name;else errs.push(`${i+1}행: 스킬 「${m[1]}」 없음`);return;}
+  if(m=l.match(/^\[(메인|상급|전략)\]$/)){sec=m[1];return;}
+  if((m=l.match(/^(\d+)\s*[xX×]?\s+(.+)$/))&&sec){const c=byName[m[2].trim()]||byCode[m[2].trim()];if(c){deck[sec][c.name]=(deck[sec][c.name]||0)+ +m[1];return;}}
+  errs.push(`${i+1}행: 「${raw.trim()}」 해석 불가`);});
+ render();if(errs.length)$('msgs').insertAdjacentHTML('afterbegin',errs.map(x=>`<li class="e">✗ ${x}</li>`).join(''));}
+document.addEventListener('click',ev=>{const b=ev.target.closest('[data-add],[data-sub],[data-show]');if(!b)return;
+ if(b.dataset.add)add(b.dataset.add,b.dataset.part);else if(b.dataset.sub)sub(b.dataset.sub,b.dataset.part);else show(b.dataset.show);});
+['q','ftype','fdeck','fshow'].forEach(id=>$(id).addEventListener('input',renderPool));
+$('skill').addEventListener('change',render);$('dname').addEventListener('input',exportText);
+$('copy').onclick=()=>{navigator.clipboard.writeText($('out').value).then(()=>{$('copy').textContent='복사됨';setTimeout(()=>$('copy').textContent='복사',1200)})};
+$('dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([$('out').value],{type:'text/plain'}));a.download=($('dname').value||'deck').replace(/[\\/:*?"<>|]/g,'_')+'.deck';a.click();};
+$('imp').onclick=()=>importText($('out').value);
+$('clear').onclick=()=>{for(const p in deck)deck[p]={};render();};
+render();
+</script></body></html>
