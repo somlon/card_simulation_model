@@ -18,6 +18,7 @@
 | 2026-09-29 | CLAUDE.md 작성 (R1 main 보호, R2 역할별 브랜치, R3 외부 업로드 제한) | `default` → PR #1로 `main` 머지 |
 | 2026-09-29 | nny_sim 코드 해설서 작성 (파일 · 클래스 · 아키텍처 + 코드 리뷰 18건) | 파일로 전달 (저장소 미반영) |
 | 2026-09-29 | 세션 시작 훅, R0 · R2 개정 · R4 추가, workflow.md 생성 | `default` |
+| 2026-09-29 | main에 훅과 새 규정 반영 (workflow.md 제외) | `config/sync-rules-to-main` → PR #2로 `main` 머지 |
 
 ## 진행 중
 
@@ -37,6 +38,7 @@
 
 | 브랜치 | 용도 | 상태 |
 | --- | --- | --- |
-| `main` | 최종 결과물 | CLAUDE.md 반영됨 (PR #1) |
+| `main` | 최종 결과물 | CLAUDE.md · 세션 시작 훅 반영됨 (PR #1, #2) |
 | `default` | 규정 · 진척 원본 (CLAUDE.md, workflow.md, 훅) | 사용 중 |
+| `config/sync-rules-to-main` | main 규정 동기화용 | 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
