@@ -7,13 +7,19 @@ from sklearn.metrics import log_loss, roc_auc_score
 from engine import Game
 from cards import Impl
 import policy as P, season as S
-SK = sorted(S.load_decks())
-def feats(sn, p, skills, first):
+SK = sorted(S.load_decks())   # 학습할 때 쓰는 스킬 목록 (현재 덱). 모델 파일에 함께 저장된다
+N_BASE = 18                    # 스킬 표시 칸을 뺀 형세 특징 수
+
+def feats(sn, p, skills, first, sk=None):
+    """형세 특징 = 기본 18개 + 스킬 표시 칸(내 스킬 · 상대 스킬, 스킬 목록 sk 기준 각 len(sk)개).
+    sk: 스킬 표시 칸의 기준 목록. 판정할 때는 모델을 학습할 때의 목록(모델 파일의 'SK')을 넘겨야 특징 수가 맞는다 (R1).
+        목록에 없는 스킬은 표시 칸이 모두 0 — 덱 정보 없이 형세만으로 판정된다."""
+    sk = SK if sk is None else sk
     o = 1 - p
     f = [sn['turn'], int(sn['tp'] == p), int(first == p), sn['hp'][p], sn['hp'][o], sn['hp'][p] - sn['hp'][o],
          sn['field'][p], sn['field'][o], sn['mons'][p], sn['mons'][o], sn['hand'][p], sn['hand'][o], sn['grave'][p], sn['grave'][o],
          sn['atk'][p], sn['atk'][o], sn['deck'][p], sn['deck'][o]]
-    return f + [int(skills[p] == k) for k in SK] + [int(skills[o] == k) for k in SK]
+    return f + [int(skills[p] == k) for k in sk] + [int(skills[o] == k) for k in sk]
 def formula(sn, p):
     o = 1 - p
     s = (sn['hp'][p] - sn['hp'][o]) / 1000 + 0.6 * (sn['field'][p] - sn['field'][o]) + 0.3 * (sn['hand'][p] - sn['hand'][o]) + (sn['atk'][p] - sn['atk'][o]) / 2000
