@@ -109,12 +109,15 @@ def _default_eval():
 def rf_evaluator(path='learned/rf_state.pkl'):
     """RF 형세 모델(8그루)을 탐색 절단 판정기로 — rf_eval.py 결과 수동 공식보다 예측이 크게 정확(AUC 0.74 → 0.90)"""
     import pickle, numpy as np
-    from rf_eval import feats
-    m = pickle.load(open(path, 'rb')); rf = m['rf']
+    from rf_eval import feats, N_BASE
+    with open(path, 'rb') as f: m = pickle.load(f)
+    rf = m['rf']; sk_model = list(m['SK'])   # 모델을 학습할 때의 스킬 목록 — 특징의 스킬 표시 칸은 이 목록 기준 (R1)
+    if rf.n_features_in_ != N_BASE + 2 * len(sk_model):
+        raise ValueError(f'RF 형세 모델({path})의 특징 수 {rf.n_features_in_}가 기본 {N_BASE} + 스킬 {len(sk_model)}×2와 다름 — rf_eval.py로 다시 학습 필요')
     def ev(g, p):
         sk = [g.p[0].skill.name, g.p[1].skill.name]
         sn = dict(turn=g.turn, tp=g.turn_player, hp=[x.hp for x in g.p], field=[len(g.field_cards(i)) for i in (0, 1)],
                   mons=[len(g.monsters(i)) for i in (0, 1)], hand=[len(x.hand) for x in g.p], grave=[len(x.grave) for x in g.p],
                   atk=[sum(g.atk(mm) for mm in g.monsters(i)) for i in (0, 1)], deck=[len(x.main) + len(x.upper) for x in g.p])
-        return float(rf.predict_proba(np.array([feats(sn, p, sk, g.first)], dtype=np.float32))[0, 1])
+        return float(rf.predict_proba(np.array([feats(sn, p, sk, g.first, sk_model)], dtype=np.float32))[0, 1])
     return ev
