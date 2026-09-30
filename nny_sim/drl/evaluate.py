@@ -44,11 +44,12 @@ def main(argv=None):
     names = sorted(SE.load_decks()); gl = R.games_list(names, a.k, a.base)
     res = {'model': a.model, 'k': a.k, 'mode': 'match' if a.matches else 'game', 'results': {}}
     job_fn = R.eval_match_job if a.matches else R.eval_job
+    specs = [parse_vs(s) for s in a.vs]              # 모든 상대를 먼저 검사한다(중간에 멈춰 앞 결과를 잃지 않게)
+    if a.matches and any(spec['kind'] == 'drl' for _, spec in specs):
+        raise SystemExit('매치 평가 상대는 heuristic 또는 table만 지원')
     with cf.ProcessPoolExecutor(a.workers, mp_context=mp.get_context('spawn'), initializer=R.init_worker, initargs=({},)) as pool:
-        for s in a.vs:
-            name, spec = parse_vs(s); t0 = time.time()
-            if a.matches and spec['kind'] == 'drl':
-                raise SystemExit('매치 평가 상대는 heuristic 또는 table만 지원')
+        for name, spec in specs:
+            t0 = time.time()
             parts = list(pool.map(job_fn, [dict(x=x, y=spec, games=gl[i::a.workers]) for i in range(a.workers)]))
             r = R.merge_eval(parts); r['sec'] = round(time.time() - t0, 1)
             res['results'][name] = r
