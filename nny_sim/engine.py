@@ -10,7 +10,6 @@ START_HP = 5000
 # 라운드는 규칙의 종료 조건(HP 0 · 덱아웃 · 특수승리, §11-1)으로만 끝난다. 턴 상한 · HP 판정은 없다 (사용자 재정 2026-09-30).
 # 아래 값은 무한 진행을 막는 안전장치일 뿐 승패를 판정하지 않는다 — 넘으면 오류(StalledGame)로 중단한다.
 SAFETY_TURNS = 1000
-TRIBUTE_MONSTERS_ONLY = False   # 제물(릴리스) 대상: 규칙 §2 · §5-2 「자신 필드의 카드」. True로 두면 몬스터만
 
 
 class StalledGame(RuntimeError):
@@ -334,10 +333,9 @@ class Game:
         return not self.rule('no_defense', p)
 
     def release_cands(self, p):
-        """일반소환의 제물로 릴리스할 수 있는 카드: 자신 필드의 카드 (§2 · §5-2 재정 — 릴리스 기본 대상은 자신 필드의 카드).
-        스킬 카드는 필드를 벗어나지 않으므로 해당 없음 (§8-4). TRIBUTE_MONSTERS_ONLY면 몬스터만"""
-        return [x for x in self.field_cards(p) if x.flags.get('no_release_until', -1) < self.turn
-                and (x.is_monster() or not TRIBUTE_MONSTERS_ONLY)]
+        """일반소환의 제물로 릴리스할 수 있는 카드: 자신 필드의 몬스터 카드만 (사용자 재정 2026-09-30).
+        장착 마법 취급된 몬스터(as_spell)는 몬스터가 아니므로 제외"""
+        return [x for x in self.monsters(p) if x.is_monster() and x.flags.get('no_release_until', -1) < self.turn]
 
     def can_change_pos(self, c, p):
         """표시 형식 변경 (§8-1): 자신의 앞면 몬스터 · 몬스터당 1턴 1번 · 소환된 턴 불가.

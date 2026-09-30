@@ -236,7 +236,7 @@ class HeuristicAI:
 
     # ── 일반소환 확장 · 표시 형식 변경 (§5-2, §8-1) ──
     def pick_tributes(self, g, p, c):
-        """일반소환에 필요한 제물을 고른다: 자신 필드의 카드 중 가치가 낮은 순. 제물이 모자라거나 소환할 자리가 없으면 None"""
+        """일반소환에 필요한 제물을 고른다: 자신 필드의 몬스터 중 가치가 낮은 순. 제물이 모자라거나 소환할 자리가 없으면 None"""
         n = g.tributes_needed(c.level)
         if n == 0: return ()
         cands = sorted(g.release_cands(p), key=lambda x: (value(g, x), x.uid))
