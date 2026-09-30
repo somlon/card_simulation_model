@@ -83,7 +83,7 @@ ul{list-style:none;margin:0;padding:0}
 <script>
 const POOL=__POOL__;
 const COLORS=['적','녹','황','청','자','백','흑'];
-const LIM={메인:[20,40],상급:[0,20],전략:[0,10]};
+const LIM={메인:[20,40],상급:[0,20],전략:[0,20]};  // 규칙 명세서 §3-2 (시뮬레이션 방침은 전략 10장 — deck.py STRATEGY_FILL)
 const byName=Object.fromEntries(POOL.map(c=>[c.name,c]));
 const byCode=Object.fromEntries(POOL.filter(c=>c.code).map(c=>[c.code,c]));
 const skills=POOL.filter(c=>c.type==='스킬');
@@ -100,14 +100,15 @@ function show(name){const c=byName[name];
  $('detail').textContent=`${c.code||''} ${c.name}\n${spec}\n태그: ${c.tags.join(', ')}${c.note?'  ['+c.note+']':''}\n\n${c.text}`;}
 function renderPool(){
  const q=$('q').value.trim(),ft=$('ftype').value,fd=$('fdeck').value,all=$('fshow').value==='all';
- const list=POOL.filter(c=>c.type!=='스킬'&&(!ft||c.type===ft)&&(!fd||c.deck===fd)&&(all||allowed(c))
+ const list=POOL.filter(c=>(!ft||c.type===ft)&&(!fd||c.deck===fd)&&(all||allowed(c)||c.type==='스킬')
    &&(!q||(c.name+' '+(c.code||'')+' '+c.text).includes(q)));
  $('poolcount').textContent=list.length+'종';
  $('pool').innerHTML=list.map(c=>{const ok=allowed(c);const n=inMainUpper(c.name);
   const meta=c.type==='몬스터'?`${c.code||''} · Lv${c.level} · ${c.deck} · ${c.atk}/${c.def}`:`${c.code||''} · ${c.type}${c.subtype?'('+c.subtype+')':''}`;
   return `<li class="row${ok?'':' off'}"><span class="chip" style="background:var(--c-${colorOf(c)})"></span>
   <div class="nm" data-show="${c.name}"><b>${c.name}</b><div class="meta">${meta} · ${c.tags.join('/')}</div></div>
-  <div class="act">${ok?`<button data-add="${c.name}" title="${c.deck} 덱에 추가" ${n>=3?'disabled':''}>+${c.deck}</button><button data-add="${c.name}" data-part="전략" title="전략 덱에 추가">+전략</button>`:'<span class="meta">사용 불가</span>'}</div></li>`}).join('');}
+  <div class="act">${c.type==='스킬'?`<button data-add="${c.name}" data-part="전략" title="스킬 카드는 전략 덱에만 넣을 수 있음">+전략</button>`
+   :ok?`<button data-add="${c.name}" title="${c.deck} 덱에 추가" ${n>=3?'disabled':''}>+${c.deck}</button><button data-add="${c.name}" data-part="전략" title="전략 덱에 추가">+전략</button>`:'<span class="meta">사용 불가</span>'}</div></li>`}).join('');}
 function renderDeck(){
  let h='';
  for(const p of ['메인','상급','전략']){const e=Object.entries(deck[p]);const tot=e.reduce((a,[,n])=>a+n,0);const [lo,hi]=LIM[p];
@@ -125,7 +126,8 @@ function renderDeck(){
 function validate(){
  const e=[],w=[];const s=byName[$('skill').value];
  for(const p in LIM){const tot=Object.values(deck[p]).reduce((a,b)=>a+b,0);const[lo,hi]=LIM[p];if(tot<lo||tot>hi)e.push(`[${p}] ${tot}장 — 허용 범위 ${lo}~${hi}장`);
-  for(const n in deck[p]){const c=byName[n];if(!allowed(c))e.push(`[${p}] 「${n}」은(는) 스킬 「${s.name}」로 사용할 수 없음`);
+  for(const n in deck[p]){const c=byName[n];if(c.type==='스킬'){if(p!=='전략')e.push(`[${p}] 스킬 카드 「${n}」은(는) 전략 덱에만 넣을 수 있음`);continue;}
+   if(!allowed(c))e.push(`[${p}] 「${n}」은(는) 스킬 「${s.name}」로 사용할 수 없음`);
    if(p==='메인'&&c.deck!=='메인')e.push(`[메인] 「${n}」은(는) 상급 덱 카드`);if(p==='상급'&&c.deck!=='상급')e.push(`[상급] 「${n}」은(는) 메인 덱 카드`);}}
  const names=new Set([...Object.keys(deck.메인),...Object.keys(deck.상급)]);
  for(const n of names)if(inMainUpper(n)>3)e.push(`「${n}」 ${inMainUpper(n)}장 — 동명 카드는 3장까지`);

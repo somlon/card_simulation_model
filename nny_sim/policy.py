@@ -12,7 +12,7 @@
 """
 import json, os, math
 from ai import HeuristicAI, INTERFERE, LEARN_DIR, p_skill
-from cards import value
+from cards import value, VETO
 
 A = 20.0   # 축소 강도 (가상 판수)
 
@@ -145,8 +145,8 @@ class LearnedAI(HeuristicAI):
         for c in hand: uniq.setdefault(c.name, c)
         return self.choose(g, p, '버릴 카드', [(n, -self.card_pri(g, p, c) * 3 - value(g, c), c) for n, c in uniq.items()], scale=30, log=len(uniq) > 1)
 
-    def use_shared(self, g, p, c):
-        ok = HeuristicAI.use_shared(self, g, p, c)
+    def use_shared(self, g, p, c, full=True):
+        ok = HeuristicAI.use_shared(self, g, p, c, full)
         return ok   # 사용자 지침(하드 제약) — 학습 대상 아님
 
     def breeding_pick(self, g, p, cands):
@@ -164,6 +164,7 @@ class LearnedAI(HeuristicAI):
         for c, e, ev in cands:
             s = e.score(g, c, p, ev) if e.score else 1
             if e.mandatory: out.append((1.0, c, e, ev)); continue
+            if s <= VETO: continue   # 규칙상 발동할 수 있으나 AI는 쓰지 않는 경우
             go = self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', s, True), ('안 함', 0, False)])
             if go: out.append((s, c, e, ev))
         out.sort(key=lambda x: -x[0])
@@ -175,8 +176,10 @@ class LearnedAI(HeuristicAI):
         for c, e in opts:
             lab = f'{c.name}#{e.num}'
             if lab in seen: continue
+            s = e.score(g, c, p, g.chain) if e.score else 0
+            if s <= VETO: continue
             seen.add(lab)
-            cand.append((lab, e.score(g, c, p, g.chain) if e.score else 0, (c, e)))
+            cand.append((lab, s, (c, e)))
         if len(cand) == 1: return None
         return self.choose(g, p, '대응' if g.chain else '우선권', cand)
 
@@ -203,7 +206,9 @@ class LearnedAI(HeuristicAI):
             for c, e in g.options(p, ('ignition', 'quick')):
                 lab = f'발동:{c.name}#{e.num}'
                 if lab in seen: continue
-                seen.add(lab); acts.append((lab, e.score(g, c, p, None) if e.score else 0, ('act', c, e)))
+                s = e.score(g, c, p, None) if e.score else 0
+                if s <= VETO: continue
+                seen.add(lab); acts.append((lab, s, ('act', c, e)))
             if g.free_s(p):
                 for c in g.p[p].hand:
                     if c.type == '마법' and c.d.get('subtype') in ('트리거', '신속') and not getattr(c.effects[0], 'hand_ok', False) \

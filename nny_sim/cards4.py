@@ -1,7 +1,10 @@
 """카드 구현 4차: 세리 (기본 v8 + 확장 데쿠마 v2, 18종)
 세금 = 덱 위에서 카드 제외. 승리 플랜은 상대 덱아웃.
+덱 위에서 제외 (규칙 명세서 §6-7):
+- 「메인 덱의 위에서부터」 · 「상급 덱의 위에서부터」는 그 덱만. 「제외할 카드가 부족할 경우 … 대신 제외한다」 문구가 있을 때만 다른 덱에서 채운다.
+- 「덱의 위에서부터」(메인/상급 미지정)는 메인 · 상급 중 한쪽을 골라 그 덱에서 제외한다.
+  고르는 쪽은 문장의 주어: 「상대의 덱의 위에서부터 … 제외한다」는 효과를 쓴 플레이어, 「그 플레이어는 자신의 덱」 · 「서로 자신의 덱」은 덱 주인.
 ASSUME (재정 목록 G):
-- 「자신의 덱의 위에서부터」(메인/상급 미지정)는 메인 덱부터, 부족하면 상급 덱.
 - 델레가토르(코스트 대납) · 두플리카토르(코스트 2배)는 「덱 위에서 제외」 · 「제외 존에서 덱으로」 형태의 코스트에만 적용.
 - 세제 2 · 3번은 스킬 주인만 사용(「서로가」 문구의 상대 사용 여부 미확정).
 - 이탈세 2번의 「필드에서 벗어나게 하는 효과」는 상대가 자신 필드 카드를 대상으로 한 제거 · 바운스 · 제외 계열(위협도 900 이상)로 근사.
@@ -20,7 +23,7 @@ def tax_cost(g, p, n, why, kind='mill'):
     if g.rule('cost_double', p): n *= 2; g.L(f'두플리카토르: 코스트 {n}장으로', 'sys')
     payer = 1 - p if g.rule('cost_transfer', p) else p
     if payer != p: g.L(f'델레가토르: 코스트를 {g.pname(payer)}가 대신 지불', 'sys')
-    return g.mill(payer, n, 'main', why)
+    return g.mill(payer, n, 'main', why, fallback=True)   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
 
 def seri_lastwill():
     def res(g, c, p, l):
@@ -53,7 +56,7 @@ def _(c):
 @card('세리 - 엑삭토르')
 def _(c):
     c.effects = [Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c,
-                        res=lambda g, c, p, l: (g.mill(p, 5, 'main', '엑삭토르'), g.mill(1 - p, 5, 'main', '엑삭토르')),
+                        res=lambda g, c, p, l: (g.mill(p, 5, None, '엑삭토르'), g.mill(1 - p, 5, None, '엑삭토르')),   # 「서로 자신의 덱」: 각자 메인 · 상급 중 선택 (§6-7)
                         score=lambda g, c, p, ev: 70 if len(g.p[1 - p].main) <= len(g.p[p].main) + 10 else 30, threat=600, label='서로 5장 제외'), seri_lastwill()]
 
 @card('세리 - 릭토르')
@@ -64,7 +67,7 @@ def _(c):
 @card('세리 - 데쿠마누스')
 def _(c):
     def on_ev(g, src, ev):
-        if ev['kind'] == 'draw' and ev['player'] == 1 - src.controller: g.mill(1 - src.controller, 2, 'main', '데쿠마누스')
+        if ev['kind'] == 'draw' and ev['player'] == 1 - src.controller: g.mill(1 - src.controller, 2, 'main', '데쿠마누스')   # 「메인 덱의 위에서부터」: 메인 덱만
     c.on_event = on_ev
     c.effects = [seri_lastwill()]
 
@@ -89,7 +92,7 @@ def _(c):
         g.shuffle(p); g.L(f'코스트: 제외 존 {len(xs)}장 덱으로')
     c.effects = [
         Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(g.p[p].banish),
-               cost=cost2, res=lambda g, c, p, l: g.mill(1 - p, l.ctx['n'], 'main', '프로쿠라토르'), score=lambda *a: 90, threat=900),
+               cost=cost2, res=lambda g, c, p, l: g.mill(1 - p, l.ctx['n'], None, '프로쿠라토르', chooser=p), score=lambda *a: 90, threat=900),
         Effect(3, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c and any(SERI3(x) for x in g.p[p].grave),
                res=lambda g, c, p, l: [g.special_summon(x, p) for x in [x for x in g.p[p].grave if SERI3(x)][:2]], score=lambda *a: 85, threat=500)]
 
@@ -102,7 +105,7 @@ def _(c):
     alt_normal(c, lambda g, p: sum(1 for x in g.p[p].banish if SERI3(x)) >= 2, pay)
     c.rules = {'banish_immune': lambda g, src, p: p == src.controller}
     c.effects = [Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and len(g.p[p].banish) >= 5,
-                        res=lambda g, c, p, l: g.mill(1 - p, len(g.p[p].banish) // 5, 'main', '호레아리우스'), score=lambda *a: 90, threat=800)]
+                        res=lambda g, c, p, l: g.mill(1 - p, len(g.p[p].banish) // 5, None, '호레아리우스', chooser=p), score=lambda *a: 90, threat=800)]
 
 @card('소환세')
 def _(c):
@@ -112,7 +115,7 @@ def _(c):
 @card('인지세')
 def _(c):
     def res(g, c, p, l):
-        t = l.ctx['t']; k = g.mill(1 - p, 5, 'main', '인지세')
+        t = l.ctx['t']; k = g.mill(1 - p, 5, 'main', '인지세', fallback=True)
         if k < 5: g.L('제외할 카드 부족 — 발동 무효'); g.negate(t)
     e = Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=res,
@@ -126,10 +129,10 @@ def _(c):
         return l is not None and l.eff.threat >= 900 and bool(g.field_cards(p))
     def res2(g, c, p, l):
         t = l.ctx['t']; q = t.player
-        t.replaced = lambda g2, tl: g2.mill(q, 5, 'upper', '이탈세로 변경된 효과')
+        t.replaced = lambda g2, tl: g2.mill(q, 5, 'upper', '이탈세로 변경된 효과', fallback=True)
         g.L(f'{t.card}의 효과를 「덱 위 5장 제외」로 변경'); c.flags['lw_mode'] = None
     e4 = Effect(4, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c,
-                res=lambda g, c, p, l: g.mill(1 - p, 10, 'main', '이탈세 유언'), score=lambda *a: 75, threat=600, label='[유언] 상대 10장 제외')
+                res=lambda g, c, p, l: g.mill(1 - p, 10, None, '이탈세 유언', chooser=p), score=lambda *a: 75, threat=600, label='[유언] 상대 10장 제외')
     e4.no_resp = True
     e3 = spell_lastwill(3)
     e3.score = lambda g, c, p, ev: 0 if len(g.p[1 - p].main) + len(g.p[1 - p].upper) <= 14 else 60   # 3 · 4번 택1: 상대 덱이 적으면 4번
@@ -140,7 +143,7 @@ def _(c):
 @card('취득세')
 def _(c):
     def on_ev(g, src, ev):
-        if ev['kind'] == 'summon' and ev['how'] == 'special': g.mill(ev['player'], 2, 'main', '취득세')
+        if ev['kind'] == 'summon' and ev['how'] == 'special': g.mill(ev['player'], 2, None, '취득세')
     c.on_event = on_ev
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda *a: 45, threat=500), spell_lastwill()]
 
@@ -168,7 +171,7 @@ def _(c):
 @card('아이라리움')
 def _(c):
     def on_ev(g, src, ev):
-        if ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper'): g.mill(ev['player'], 2, 'main', '아이라리움')
+        if ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper'): g.mill(ev['player'], 2, None, '아이라리움')
     c.on_event = on_ev
     c.rules = {'seri_lw_one': lambda g, src, p: p == src.controller}
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 55, threat=600)]
@@ -182,16 +185,16 @@ def _(c):
 @card('세제')
 def _(c):
     def on_ev(g, src, ev):
-        if ev['kind'] == 'activate': g.mill(ev['player'], 1, 'main', '세제')
+        if ev['kind'] == 'activate': g.mill(ev['player'], 1, None, '세제')
     c.on_event = on_ev
     def res2(g, c, p, l): g.draw(p, 2, 'main')
     def res3(g, c, p, l): g.draw(p, 1, 'upper')
     c.effects = [
         Effect(2, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].main) >= 11,
-               cost=lambda g, c, p, l: g.mill(p, 9, 'main', '세제 2번 코스트') and None, res=res2,
+               cost=lambda g, c, p, l: g.mill(p, 9, 'main', '세제 2번 코스트', fallback=True) and None, res=res2,
                score=lambda g, c, p, ev: 30 if len(g.p[p].main) > len(g.p[1 - p].main) + 9 else 0, threat=200, label='9장 제외 → 2장 드로우'),
         Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].upper) >= 5,
-               cost=lambda g, c, p, l: g.mill(p, 4, 'upper', '세제 3번 코스트') and None, res=res3,
+               cost=lambda g, c, p, l: g.mill(p, 4, 'upper', '세제 3번 코스트', fallback=True) and None, res=res3,
                score=lambda g, c, p, ev: 25 if len(g.p[p].upper) >= 8 else 0, threat=200, label='상급 4장 제외 → 1장 드로우')]
 
 @card('데쿠마')

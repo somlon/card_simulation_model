@@ -97,6 +97,19 @@ class HeuristicAI:
         if len(ups) > hi: back += sorted(ups, key=lambda c: self.card_pri(g, p, c))[:len(ups) - hi]
         return back
 
+    def mulligan_split(self, g, p, back):
+        """멀리건으로 다시 뽑을 때 메인 덱에서 뽑을 매수. 규칙상 배분을 바꿀 수 있으나(§4 STEP 6) 기본값은 되돌린 카드와 같은 배분"""
+        return sum(1 for c in back if c.deck_kind() == '메인')
+
+    def wants_first(self, opp_skill):
+        """이전 라운드 패자로서 선후공을 결정 (정본 4, §11-2). 덱별 지침 go_first가 없으면 선공"""
+        return self.pol.get('go_first', True)
+
+    def choose_mill_deck(self, g, chooser, target, n):
+        """「덱의 위에서부터」(덱 미지정) 제외: 메인 · 상급 중 한쪽을 고른다 (§6-7). 메인 덱에 n장 이상 있으면 메인, 아니면 많은 쪽"""
+        pl = g.p[target]
+        return 'main' if len(pl.main) >= n or len(pl.main) >= len(pl.upper) else 'upper'
+
     def choose_draw_deck(self, g, p):
         lo, hi = self.pol['upper_in_hand']
         ups = sum(1 for c in g.p[p].hand if c.deck_kind() == '상급')
@@ -207,14 +220,12 @@ class HeuristicAI:
         self.decisions = []
 
     # ── 공유 존 ──
-    def use_shared(self, g, p, c):
-        """몬스터 존이 가득 찼을 때만 호출. 필요할 때만 사용:
-        ① 비어 있는 공유 존의 마커가 상대 것 → 놓는 순간 상대에게 페널티
-        ② 이 몬스터를 더해야 이번 턴 결착이 된다"""
-        if g.shared_owner is not None and g.shared_owner != p: why = '마커가 상대 소유(상대 페널티)'
-        elif self.lethal_damage(g, p, c) >= g.p[1 - p].hp: why = '이번 턴 결착에 필요'
-        else: return False
-        g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — {why}', 'decision'); return True
+    def use_shared(self, g, p, c, full=True):
+        """빈 공유 존에 놓을지. 규칙상 언제든 고를 수 있으나(§10-2) 지침상 몬스터 존이 가득 찼을 때만 검토하고,
+        이 몬스터를 더해야 이번 턴 결착이 될 때만 쓴다. (빈 공유 존에는 마커가 없어 놓는 것만으로 상대에게 페널티를 줄 수는 없다, §10-1)"""
+        if not full: return False
+        if self.lethal_damage(g, p, c) < g.p[1 - p].hp: return False
+        g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — 이번 턴 결착에 필요', 'decision'); return True
 
     def lethal_damage(self, g, p, extra=None):
         """이번 턴 남은 전투로 줄 수 있는 직접공격 대미지 추정 (extra: 추가로 필드에 낼 몬스터)"""

@@ -104,6 +104,8 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
             for i in (0, 1): record_round(decks[i], decks[1 - i]['스킬'], w == i, used_cards(log[i0:], decks[i]['이름']))
         if max(wins) < 2 and side:
             decks = [side_swap(decks[i], decks[1 - i]['스킬'], rng, side_eps, log, decks[i]['이름']) for i in (0, 1)]
-        f = 1 - w
+        # 교체 후, 이전 라운드의 패자가 선후공을 결정한다 (정본 4, §11-2)
+        loser = 1 - w
+        f = loser if make_ai(decks[loser]).wants_first(decks[w]['스킬']) else w
     mw = 0 if wins[0] > wins[1] else 1 if wins[1] > wins[0] else None
     return mw, rounds
