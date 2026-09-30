@@ -302,12 +302,33 @@ class HeuristicAI:
         return tot
 
     # ── 전투 ──
+    def lethal_attack(self, g, p, attackers):
+        """결착 우선 지침 (사용자 지시 2026-09-30): 이 공격 한 번의 전투 대미지로 상대 HP가 0 이하가 되는 공격을 찾는다.
+        직접공격(공격력 ≥ 상대 HP) 또는 공격 표시 몬스터 공격(공격력 차 ≥ 상대 HP). 이 턴 대미지를 줄 수 없으면 없음"""
+        o = 1 - p; hp = g.p[o].hp
+        if g.no_damage.get(p, -1) >= g.turn: return None
+        for a in attackers:
+            av = g.atk(a)
+            if g.can_direct(a) and not (a.flags.get('attack_all') and g.monsters(o)) and av >= hp: return (a, None)
+            for t in g.attack_targets(a):
+                if t.pos == 'atk' and av - g.atk(t) >= hp: return (a, t)
+        return None
+
+    def take_lethal(self, g, p, attackers):
+        """결착 공격이 있으면 학습값과 무관하게 그 공격을 한다. 반환: 공격했는가"""
+        hit = self.lethal_attack(g, p, attackers)
+        if not hit: return False
+        a, t = hit
+        g.L(f'판단[{g.pname(p)}] 결착 공격 (지침): {a.name}→{t.name if t else "직접"} — 상대 HP {g.p[1-p].hp}', 'decision')
+        g.attack(a, t); return True
+
     def battle_phase(self, g, p):
         for _ in range(20):
             if p in g.no_attack and g.no_attack[p] == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not m.flags.get('no_attack')
                          and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]
             if not attackers: return
+            if self.take_lethal(g, p, attackers): continue
             plan = []
             for a in attackers:
                 av = g.atk(a)

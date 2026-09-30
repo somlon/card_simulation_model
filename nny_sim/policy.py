@@ -8,7 +8,8 @@
   값 = (L2 승수 + a·L1추정) / (L2 판수 + a),  L1추정 = (L1 승수 + a·사전값) / (L1 판수 + a)
 판이 끝나면 그 판에서 내린 모든 판단에 승패를 반영한다(몬테카를로 학습).
 
-사용자 지침(하드 제약)은 학습 대상이 아니다: 번성충 일반소환은 결착 시에만, 시작 패 배분은 매치업 고정표, 공유 존 사용 조건.
+사용자 지침(하드 제약)은 학습 대상이 아니다: 번성충 일반소환은 결착 시에만, 시작 패 배분은 매치업 고정표, 공유 존 사용 조건,
+결착 공격 우선(이번 공격으로 상대 HP가 0이 되면 반드시 공격).
 """
 import json, os, math
 from ai import HeuristicAI, INTERFERE, LEARN_DIR, p_skill
@@ -236,6 +237,7 @@ class LearnedAI(HeuristicAI):
             attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m)]
             if not attackers: return
+            if self.take_lethal(g, p, attackers): continue   # 결착 우선 지침 — 학습 대상 아님
             opts = [('공격 종료', 0, None)]; seen = set()
             for a in attackers:
                 av = g.atk(a)
