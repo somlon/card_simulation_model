@@ -1,6 +1,6 @@
 """카드 구현 2차: 공용 8종 · 번성충 기생 축 6종 · 격투가 11종"""
 from engine import Effect
-from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common
+from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO
 
 
 def targets(g, p, cands):
@@ -33,8 +33,9 @@ def _(c):
         Effect(1, 'resp', ('hand',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None and last_opp_link(g, p).card.type == '마법'
                and last_opp_link(g, p).card.d.get('subtype') == '트리거' and g.can_special(c, p),
                res=res1, score=lambda *a: 70, threat=700, label='특수소환 (ASSUME: 패에서)'),
-        Effect(3, 'trigger', ('field',), mandatory=True, cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and ev['player'] == p,
-               res=lambda g, c, p, l: g.on_field(c) and g.send_grave(c), threat=0)]
+        # 3번은 「(이 효과는 강제로 발동한다.)」가 없으므로 임의 (§6-3). 자신을 묘지로 보내 얻는 것이 없어 AI는 쓰지 않는다
+        Effect(3, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and ev['player'] == p,
+               res=lambda g, c, p, l: g.on_field(c) and g.send_grave(c), score=lambda *a: VETO, threat=0)]
 
 @card('해주')
 def _(c):
@@ -219,15 +220,16 @@ def lastwill(res, score=70):
 @card('격투가 스네이크 스케일')
 def _(c):
     def res(g, c, p, l):
-        t = best(g, targets(g, p, g.all_field()), p)
+        t = field_pick(g, p, pool=targets(g, p, g.all_field()))   # 「필드의 카드」: 자신 카드 포함
         if t: g.destroy(t)
         if g.p[p].hand:
             d = g.p[p].ai.pick_discard(g, p, g.p[p].hand); g.L(f'{d} 버림'); g.send_grave(d)
     e = lastwill(lambda g, c, p, l: search(g, p, FGTR, '스네이크 스케일'))
     e.num = 2
-    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))),
+    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(targets(g, p, g.all_field())),
                         cost=lambda g, c, p, l: g.L(f'코스트: 패에서 {c} 공개'), res=res,
-                        score=lambda g, c, p, ev: 55 if main_ok(g, p) or threat(g, p) >= 900 else 0, threat=1000, label='공개 · 파괴'), e]
+                        score=lambda g, c, p, ev: VETO if not targets(g, p, opp_cards(g, p)) else 55 if main_ok(g, p) or threat(g, p) >= 900 else 0,
+                        threat=1000, label='공개 · 파괴'), e]
 
 @card('격투가 래빗 풋')
 def _(c):
@@ -288,7 +290,13 @@ def _(c):
         m.extra_attacks += 1
         def extra(g2, ev):
             if ev['kind'] == 'battle_win' and ev['card'] is m:
-                g2.L(f'세레모니 부여 효과: {m} [전투]', 'sys'); g2.damage(1 - p, 1000, '세레모니'); destroy_n(g2, p, 1)
+                # 부여된 [전투]: 1000 대미지 + 「필드의 카드」 1장 파괴 (자신 카드 포함, §15-1).
+                # 임의 효과(§6-3)이므로 상대 카드가 없어 자신 카드를 파괴해야 하고 결착도 아니면 쓰지 않는다
+                ts = targets(g2, p, g2.all_field())
+                if not any(x.controller != p for x in ts) and g2.p[1 - p].hp > 1000: return
+                g2.L(f'세레모니 부여 효과: {m} [전투]', 'sys'); g2.damage(1 - p, 1000, '세레모니')
+                t = field_pick(g2, p, pool=ts)
+                if t: g2.destroy(t)
         extra.until = g.turn; g.floating.append(extra)   # ASSUME: 부여 효과는 이 턴 동안
         g.L(f'{m} 1회 더 공격 + [전투] 부여 (이 턴)')
     c.effects = [Effect(1, 'trigger', ('hand', 'field'), spell_act=True,
@@ -320,7 +328,13 @@ def _(c):
 
 @card('격투가의 투기장')
 def _(c):
-    c.rules = {'must_attack': lambda g, src, pl: pl == 1 - src.controller}   # 상대는 몬스터가 있으면 반드시 공격 (수비 표시 금지는 AI가 수비를 쓰지 않아 자동 충족)
+    # 1번 [지속]: 상대는 몬스터가 있으면 반드시 공격 · 상대 필드의 몬스터는 수비 표시로 존재할 수 없다
+    c.rules = {'must_attack': lambda g, src, pl: pl == 1 - src.controller,
+               'no_defense': lambda g, src, pl: pl == 1 - src.controller}
+    def state(g, src):   # 이미 수비 표시인 상대 몬스터는 공격 표시가 된다 (ASSUME: 「존재할 수 없다」 = 공격 표시로 전환)
+        for m in g.monsters(1 - src.controller):
+            if m.faceup and m.pos == 'def': m.pos = 'atk'; g.L(f'{m} 수비 표시로 존재할 수 없음 → 공격 표시 (격투가의 투기장)', 'sys')
+    c.state_check = state
     def res2(g, c, p, l):
         cands = [x for x in g.deck_cards(p) if FGTR_MON(x)]
         if not cands: return

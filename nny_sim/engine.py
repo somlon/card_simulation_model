@@ -1,12 +1,19 @@
 """뉴네오유희왕 룰 엔진 코어 (v0.1 시제품)
-규칙 근거: 시뮬레이션_규칙명세 (정본 + 사용자 재정). 【가정】 처리는 ASSUME 주석으로 표시.
+규칙 근거: 「뉴 네오 유희왕 — 규칙 명세서 (LLM 적용본)」 2026-09-29 (정본 + 사용자 재정). 주석의 §번호는 이 문서의 절.
+「사용자 재정 2026-09-30」은 명세서 이후 사용자가 확정한 항목. 【가정】 처리는 ASSUME 주석으로 표시.
 """
 import random, itertools
 from dataclasses import dataclass, field
 
 MZ = 5; SZ = 5
 START_HP = 5000
-TURN_LIMIT = 40          # ASSUME A-14
+# 라운드는 규칙의 종료 조건(HP 0 · 덱아웃 · 특수승리, §11-1)으로만 끝난다. 턴 상한 · HP 판정은 없다 (사용자 재정 2026-09-30).
+# 아래 값은 무한 진행을 막는 안전장치일 뿐 승패를 판정하지 않는다 — 넘으면 오류(StalledGame)로 중단한다.
+SAFETY_TURNS = 1000
+
+
+class StalledGame(RuntimeError):
+    """규칙상 종료 조건이 SAFETY_TURNS 턴 안에 충족되지 않은 라운드 (판정 없음)"""
 
 
 class GameOver(Exception):
@@ -93,6 +100,7 @@ class Game:
         self.turn = 0; self.turn_player = first; self.first = first; self.phase = '준비'
         self.chain = []; self.events = []; self.floating = []; self.src = None; self.no_attack = {}; self.no_damage = {}
         self.resolving = False
+        self.locked = False       # 종료 단계 a 이후: 양쪽 모두 효과를 발동할 수 없다 (§5-5)
         self.decks = decks
 
     # ── 로그 ──
@@ -163,7 +171,7 @@ class Game:
         z = c.zone
         if z == 'm': pl.m[pl.m.index(c)] = None
         elif z == 's': pl.s[pl.s.index(c)] = None
-        elif z == 'shared': self.shared = None
+        elif z == 'shared': self.shared = None   # 마커는 공유 존이 비어도 남는다 (사용자 재정 2026-09-30)
         elif z == 'fieldz': self.fieldz = None
         elif z in ('hand', 'grave', 'banish', 'main', 'upper'):
             for pl_ in (self.p[c.owner], self.p[1 - c.owner]):   # 상대 패에 들어간 카드(월영암수 등)도 찾는다
@@ -198,26 +206,28 @@ class Game:
     def free_s(self, p): return [i for i in range(SZ) if self.p[p].s[i] is None]
 
     def place_monster(self, c, p, pos='atk', faceup=True, allow_shared=True):
+        """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2)"""
         fr = self.free_m(p)
+        to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
+        if not fr and not to_shared: return False
         c.controller = p; c.pos = pos; c.faceup = faceup
-        if fr:
+        if not to_shared:
             self.p[p].m[fr[0]] = c; c.zone = 'm'; return True
-        if allow_shared and self.shared is None:
-            self.shared = c; c.zone = 'shared'
-            if self.shared_owner is not None and self.shared_owner != p:
-                self.flip_marker(self.shared_owner)
-            self.shared_owner = p
-            return True
-        return False
+        # 공유 존 마커 (사용자 재정 2026-09-30): 라운드에서 처음 놓으면 놓은 플레이어의 마커를 올린다(뒤집힘 아님).
+        # 그 뒤에는 공유 존이 비어도 마커가 남고, 치워진 공유 존에 상대가 자신의 카드를 놓으면 뒤집힌다 (§10-3 a)
+        self.shared = c; c.zone = 'shared'
+        old = self.shared_owner; self.shared_owner = p
+        if old is not None and old != p: self.flip_marker(old)
+        return True
 
     def flip_marker(self, old):
-        """공유 존 마커 뒤집힘: 기존 주인에게 1~3 적용 (ASSUME A-6: 셋 다)"""
+        """공유 존 마커 뒤집힘: 기존 주인에게 정본 0-5의 1~3을 모두 적용 (§10-4). 규칙 처리이므로 효과 내성에 막히지 않는다"""
         self.L(f'공유 존 마커 뒤집힘 — {self.pname(old)}에게 페널티', 'sys')
         pl = self.p[old]
         if pl.hand:
-            x = self.rng.choice(pl.hand); self.to_deck(x); self.L(f'  패 {x} 무작위로 덱으로', 'sys')
-        tgt = self.p[1 - old].ai.pick_target(self, 1 - old, self.all_field(), 'bounce', any_side=True)
-        if tgt: self.L(f'  {self.pname(1-old)}가 {tgt} 선택 → 덱으로', 'sys'); self.to_deck(tgt)
+            x = self.rng.choice(pl.hand); self.to_deck(x, ('rule', None)); self.L(f'  패 {x} 무작위로 덱으로', 'sys')
+        tgt = self.p[1 - old].ai.pick_target(self, 1 - old, self.field_cards(old), 'bounce')   # 기존 주인의 필드 카드 중에서
+        if tgt: self.L(f'  {self.pname(1-old)}가 {tgt} 선택 → 덱으로', 'sys'); self.to_deck(tgt, ('rule', None))
         self.damage(old, 1500, '공유 존 마커')
 
     def place_spell(self, c, p, faceup=True):
@@ -285,7 +295,7 @@ class Game:
         if self.blocked(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
-        c.controller = c.owner; c.zone = 'banish'; self.p[c.owner].banish.append(c)
+        c.controller = c.owner; c.zone = 'banish'; c.faceup = True; self.p[c.owner].banish.append(c)   # 제외 존은 앞면 공개 (§10-7)
         if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='banish')
 
     def tribute(self, c, cause=None):
@@ -314,14 +324,36 @@ class Game:
         return self.can_place(c, p)
 
     def can_place(self, c, p):
-        """몬스터 존이 비어 있으면 몬스터 존. 가득 찼을 때만 공유 존을 AI가 판단해 사용"""
+        """놓을 자리가 있는가. 공유 존은 언제든 고를 수 있으나(§10-2), 몬스터 존이 가득 찼을 때 공유 존을 쓸지는 AI가 판단"""
         if self.free_m(p): return True
-        return self.shared is None and self.p[p].ai.use_shared(self, p, c)
+        return self.shared is None and self.p[p].ai.use_shared(self, p, c, full=True)
+
+    def def_allowed(self, p):
+        """p의 몬스터가 수비 표시로 존재할 수 있는가 (격투가의 투기장 1번 등 [지속] 규칙)"""
+        return not self.rule('no_defense', p)
+
+    def release_cands(self, p):
+        """일반소환의 제물로 릴리스할 수 있는 카드: 자신 필드의 몬스터 카드만 (사용자 재정 2026-09-30).
+        장착 마법 취급된 몬스터(as_spell)는 몬스터가 아니므로 제외"""
+        return [x for x in self.monsters(p) if x.is_monster() and x.flags.get('no_release_until', -1) < self.turn]
+
+    def can_change_pos(self, c, p):
+        """표시 형식 변경 (§8-1): 자신의 앞면 몬스터 · 몬스터당 1턴 1번 · 소환된 턴 불가.
+        시점은 규칙서에 없어 자신 턴 · 체인이 없을 때로 둔다"""
+        return (self.turn_player == p and not self.chain and c.controller == p and c.is_monster() and self.on_field(c)
+                and c.faceup and c.summon_turn != self.turn and c.pos_turn != self.turn and not c.flags.get('no_pos_change')
+                and (c.pos == 'def' or self.def_allowed(p)))
+
+    def change_position(self, c, p):
+        c.pos = 'def' if c.pos == 'atk' else 'atk'; c.pos_turn = self.turn
+        self.L(f'{self.pname(p)} {c} 표시 형식 변경 → {"공격" if c.pos == "atk" else "수비"} 표시')
+        self.emit('position', card=c, player=p)
 
     def special_summon(self, c, p, pos='atk', by=None):
         if not self.can_special(c, p): return False
         if c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok():
-            self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 g)', 'sys'); return False
+            self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
+        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         prev = c.zone
         self._remove(c)
         self.place_monster(c, p, pos)
@@ -331,10 +363,13 @@ class Game:
         return True
 
     def normal_summon(self, c, p, tributes=(), pos='atk'):
+        """일반소환 (§5-2): 패에서 앞면 공격 표시 또는 앞면 수비 표시. 레벨에 따른 제물은 호출하는 쪽이 고른다"""
+        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         for t in tributes: self.tribute(t, ('summon', None))
         self._remove(c); self.place_monster(c, p, pos); c.summon_turn = self.turn
         self.p[p].normal_summons -= 1
-        self.L(f'{self.pname(p)} {c} 일반소환' + (f' (제물 {", ".join(map(str, tributes))})' if tributes else ''))
+        self.L(f'{self.pname(p)} {c} 일반소환' + (' (수비 표시)' if c.pos == 'def' else '')
+               + (f' (제물 {", ".join(map(str, tributes))})' if tributes else ''))
         self.emit('summon', card=c, player=p, how='normal', prev='hand', by=None)
 
     @staticmethod
@@ -382,12 +417,21 @@ class Game:
             self.L(f'{pl.name} 드로우 ({"상급" if src is pl.upper else "메인"}) {c}', 'draw')
             self.emit('draw', player=p, card=c)
 
-    def mill(self, p, n, first='main', why=''):
-        """덱 위에서부터 n장 제외. 부족하면 다른 덱에서 대신 제외(세리 문구). 반환: 실제 제외 매수"""
-        pl = self.p[p]; order = (pl.main, pl.upper) if first == 'main' else (pl.upper, pl.main); k = 0
+    def mill(self, p, n, deck=None, why='', fallback=False, chooser=None):
+        """p의 덱 위에서부터 n장 제외 (제외 존은 앞면 공개, §10-7). 반환: 실제 제외 매수
+        deck: 'main' / 'upper' — 텍스트가 지정한 그 덱만 (§6-7)
+              None — 「덱의 위에서부터」처럼 덱을 지정하지 않은 효과: chooser가 메인 · 상급 중 한쪽을 고른다 (§6-7, §15-1)
+        fallback: 텍스트에 「제외할 카드가 부족할 경우, 부족한 매수만큼을 … 대신 제외한다」가 있을 때만 다른 덱에서 채운다"""
+        pl = self.p[p]
+        if deck is None:
+            ch = p if chooser is None else chooser
+            deck = self.p[ch].ai.choose_mill_deck(self, ch, p, n) if pl.main and pl.upper else ('main' if pl.main else 'upper')
+        order = (pl.main, pl.upper) if deck == 'main' else (pl.upper, pl.main)
+        if not fallback: order = order[:1]
+        k = 0
         for lst in order:
             while k < n and lst:
-                c = lst.pop(); c.zone = 'banish'; c.controller = c.owner; pl.banish.append(c); k += 1
+                c = lst.pop(); c.zone = 'banish'; c.controller = c.owner; c.faceup = True; pl.banish.append(c); k += 1
         if n: self.L(f'{pl.name} 덱 위에서 {k}장 제외{(" (" + why + ")") if why else ""} — 남은 덱 {len(pl.main)}/{len(pl.upper)}')
         if k: self.emit('milled', player=p, n=k)
         return k
@@ -438,10 +482,6 @@ class Game:
     def opt_ok(self, p, c, e):
         if e.opt is None: return True
         return self.p[p].opt.get((c.name, e.num), 0) < e.opt
-    def opt_use(self, p, c, e): self.p[p].opt[(c.name, e.num)] = self.p[p].opt.get((c.name, e.num), 0) + 1
-    def opt_refund(self, p, c, e):
-        k = (c.name, e.num)
-        if self.p[p].opt.get(k): self.p[p].opt[k] -= 1
 
     # ── 발동 가능 판정 ──
     def zone_ok(self, c, e, p):
@@ -469,17 +509,16 @@ class Game:
         return True
 
     def spell_speed_ok(self, c, p, e):
-        """마법 카드 발동 시점 (정본):
-        일반 · 지속 · 필드 — 자신 진행/정비 단계, 체인 없음, 패 또는 세트에서
+        """마법 카드 발동 시점 (§8-2):
+        일반 · 지속 · 필드 — 자신 턴, 체인이 없을 때 (단계 제한 없음, 사용자 재정 2026-09-30), 패 또는 세트에서
         신속 — 자신 턴: 패에서 발동 가능 / 상대 턴: 세트한 카드만 (「패에서도 발동할 수 있다」 카드는 예외)
                세트한 그 턴에는 발동 불가 (「이 턴에도 발동할 수 있다」로 세트된 카드는 예외) — 사용자 재정 2026-09-23
         트리거 — 패 또는 필드에서 (정본 1-2)"""
         if not e.spell_act: return True
         sub = c.d.get('subtype', '')
         own = self.turn_player == p
-        main_ph = self.phase in ('진행', '정비') and not self.chain
         if c.type == '필드' or sub in ('일반', '지속'):
-            return own and main_ph and (c.zone == 'hand' or (c.zone == 's' and not c.faceup))
+            return own and not self.chain and (c.zone == 'hand' or (c.zone == 's' and not c.faceup))
         if sub == '신속':
             # 사용자 재정: 자신 턴에는 패에서 발동 가능 / 상대 턴에는 세트한 카드만 / 세트한 그 턴에는 발동 불가
             if c.zone == 'hand': return own or getattr(e, 'hand_ok', False)
@@ -508,11 +547,12 @@ class Game:
                 self._remove(c); self.place_spell(c, p, True)
             else: c.faceup = True
         self.L(f'{self.pname(p)} {c} {e.num}번 효과 발동' + (f' [{e.label}]' if e.label else '') + f' — 체인 {len(self.chain)+1}')
+        link.ctx['opt_keys'] = [(c.name, e.num)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4). 코스트 처리에서 바꿀 수 있다
         if e.cost and e.cost(self, c, p, link) is False:
             self.L(f'{c} 발동 취소 (코스트/대상 불가)', 'sys')
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)
             return None
-        self.opt_use(p, c, e)
+        for k in link.ctx['opt_keys']: self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
         self.chain.append(link)
         self.emit('activate', link=link, player=p)
         return link
@@ -527,6 +567,7 @@ class Game:
         return out
 
     def priority(self, start):
+        if self.locked: return   # 종료 단계 a 이후에는 발동 불가 (§5-5)
         passes = 0; cur = start; guard = 0
         while guard < 60:
             if self.chain and getattr(self.chain[-1].eff, 'no_resp', False): break
@@ -564,10 +605,11 @@ class Game:
         self.triggers()
 
     def negate(self, link, destroy=False, by=None):
-        if getattr(link.eff, 'unnegatable', False):
+        if getattr(link.eff, 'unnegatable', False) or link.card.flags.get('unnegatable'):
             self.L(f'{link.card}은(는) 무효화되지 않음', 'sys'); return
         link.negated = True
-        self.opt_refund(link.player, link.card, link.eff)   # 무효화된 발동은 1턴 1회 미소모
+        for k in link.ctx.get('opt_keys', [(link.card.name, link.eff.num)]):   # 무효화된 발동은 사용 횟수를 소모하지 않는다 (§6-5)
+            if self.p[link.player].opt.get(k): self.p[link.player].opt[k] -= 1
         self.L(f'{link.card} {link.eff.num}번 효과 무효' + (' 후 파괴' if destroy else ''))
         if destroy and self.on_field(link.card): self.destroy(link.card, ('effect', by))
 
@@ -579,7 +621,7 @@ class Game:
 
     def triggers(self, depth=0):
         self.state_check()
-        if depth > 12 or not self.events: self.events = []; return
+        if self.locked or depth > 12 or not self.events: self.events = []; return
         evs = self.events; self.events = []; self.cur_evs = evs
         tp = self.turn_player; built = False
         for p in (tp, 1 - tp):
@@ -622,6 +664,10 @@ class Game:
             self.priority(1 - p)
 
     # ═════════════════════════ 전투 ═════════════════════════
+    def can_declare_attack(self, p):
+        """p가 이번 턴 아직 공격 선언을 할 수 있는 상태인가: 자신 턴 · 선공 1턴째가 아님 (§5-3) · 공격 봉인 없음 · 전투 단계 이전"""
+        return self.turn_player == p and self.turn > 1 and self.no_attack.get(p) != self.turn and self.phase in ('준비', '진행', '전투')
+
     def can_direct(self, c):
         opp = 1 - c.controller
         return not self.monsters(opp) or self.rule('direct_attack', c)
@@ -642,25 +688,25 @@ class Game:
             self.damage(o, self.atk(a), f'{a.name} 직접공격')
             self.emit('direct_hit', card=a)
         else:
+            # 전투 판정 (§5-3). battle_win = [전투] 발동 사건: 전투로 카드를 '파괴하는 데 성공'했을 때만 (§7)
             av = self.atk(a)
             if target.pos == 'atk':
                 tv = self.atk(target)
                 if av > tv:
-                    self.destroy(target, ('battle', a), battle=True); self.damage(o, av - tv, '전투')
-                    self.emit('battle_win', card=a, target=target, player=p)
+                    dt = self.destroy(target, ('battle', a), battle=True); self.damage(o, av - tv, '전투')
+                    if dt: self.emit('battle_win', card=a, target=target, player=p)
                 elif av < tv:
-                    self.destroy(a, ('battle', target), battle=True); self.damage(p, tv - av, '전투')
-                    self.emit('battle_win', card=target, target=a, player=o)
+                    da = self.destroy(a, ('battle', target), battle=True); self.damage(p, tv - av, '전투')   # [유희왕] 기준선
+                    if da: self.emit('battle_win', card=target, target=a, player=o)
                 else:
                     da = self.destroy(a, ('battle', target), battle=True); dt = self.destroy(target, ('battle', a), battle=True)
                     if dt: self.emit('battle_win', card=a, target=target, player=p)
                     if da: self.emit('battle_win', card=target, target=a, player=o)
             else:
                 tv = self.df(target)
-                if av > tv:
-                    self.destroy(target, ('battle', a), battle=True)
-                    self.emit('battle_win', card=a, target=target, player=p)
-                elif av < tv: self.damage(p, tv - av, '전투(수비 반사)')   # ASSUME 유희왕 기준선
+                if av > tv:   # 수비 표시를 넘어도 HP 피해 없음 (정본 3-3)
+                    if self.destroy(target, ('battle', a), battle=True): self.emit('battle_win', card=a, target=target, player=p)
+                elif av < tv: self.damage(p, tv - av, '전투(수비 반사)')   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
         self.triggers()
         if self.chain: self.resolve_chain()
 
@@ -675,7 +721,7 @@ class Game:
         self.priority(self.turn_player)
 
     def play_turn(self):
-        self.turn += 1
+        self.turn += 1; self.locked = False
         tp = self.turn_player; pl = self.p[tp]
         for x in self.p: x.opt = {}
         pl.normal_summons = 1
@@ -687,16 +733,17 @@ class Game:
         self.log.append({'t': self.turn, 'ph': '', 'tp': tp, 'k': 'snap', 'm': '', 'data': self.board()})
         self.L(f'━━ {self.turn}턴 — {pl.name} ━━ HP {self.p[0].name} {self.p[0].hp} / {self.p[1].name} {self.p[1].hp}', 'turn')
         self.set_phase('준비')
-        if not (self.turn == 1):
+        if not (self.turn == 1):   # 선공 1턴째에만 드로우 생략 (§5-1)
             self.draw(tp, 1)
         self.triggers()
         self.set_phase('진행'); self.open_window()
         pl.ai.main_phase(self, tp, '진행')
-        if self.turn > 1 and not pl.flags_no_attack(self):
-            self.set_phase('전투'); self.open_window()
+        self.set_phase('전투'); self.open_window()
+        if self.turn > 1 and not pl.flags_no_attack(self):   # 선공 1턴째에는 공격 선언 불가 (§5-3) — 전투 단계 자체는 진행한다
             pl.ai.battle_phase(self, tp)
         self.set_phase('정비'); self.open_window()
         pl.ai.main_phase(self, tp, '정비')
+        # 종료 단계 (§5-5): a 「턴 종료 시」 효과 → b 패 7장 → c 「턴 종료 시까지」 해제 → d 턴 종료
         self.set_phase('종료')
         for c in self.continuous_sources():
             f = getattr(c, 'end_process', None)
@@ -704,11 +751,12 @@ class Game:
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()
-        # b. 패 7장 초과 버리기
+        self.locked = True   # a가 끝나면 양쪽 모두 더 이상 효과를 발동할 수 없다
+        # b. 패 7장 초과 버리기 — 버려진 카드의 [유언]은 발동하지 않는다 (§5-5 재정)
         for _ in range(30):
             if len(pl.hand) <= 7: break
             c = pl.ai.pick_discard(self, tp, pl.hand); self.L(f'패 상한 — {c} 버림'); self.send_grave(c, ('rule', None))
-        self.triggers()
+        self.events = []
         # c. 턴 종료 시까지 효과 해제
         for c in self.all_field() + [x.skill for x in self.p if x.skill]:
             c.mods = [m for m in c.mods if m[2] != 'turn']; c.negated = False
@@ -722,6 +770,7 @@ class Game:
                 if c.flags.get('return_from_banish') == self.turn:
                     c.flags.pop('return_from_banish'); self.L(f'{c} 제외에서 복귀', 'sys')
                     x.banish.remove(c); c.zone = None; self.place_monster(c, c.owner)
+        self.events = []   # b · c 처리 중 생긴 사건은 발동 기회 없이 소멸
         self.turn_player = 1 - tp
 
     def board(self):
@@ -771,7 +820,9 @@ class Game:
             if back:
                 for c in back:
                     pl.hand.remove(c); self._to_deck_raw(c)
-                nm = sum(1 for c in back if c.deck_kind() == '메인'); nu = len(back) - nm
+                # 다시 뽑을 때 메인 · 상급 배분을 바꿔도 된다 (§4 STEP 6)
+                nm = pl.ai.mulligan_split(self, i, back)
+                nm = max(len(back) - len(pl.upper), min(nm, len(back), len(pl.main))); nu = len(back) - nm
                 for _ in range(nm): self.draw(i, 1, 'main')
                 for _ in range(nu): self.draw(i, 1, 'upper')
                 self.L(f'{pl.name} 멀리건 {len(back)}장 ({", ".join(map(str, back))}) → 패: {", ".join(map(str, pl.hand))}', 'decision')
@@ -786,9 +837,8 @@ class Game:
                 cap = getattr(self, 'turn_cap', None)
                 if cap and self.turn >= cap[0] and getattr(self, 'script', None) and self.script['forced']:
                     return 'eval', self.evaluate(cap[1])
-                if self.turn >= TURN_LIMIT:
-                    a, b = self.p[0].hp, self.p[1].hp
-                    raise GameOver(None if a == b else (0 if a > b else 1), f'턴 상한 {TURN_LIMIT} — HP 판정')
+                if self.turn >= SAFETY_TURNS:   # 판정 없음 — 무한 진행 방지용 중단
+                    raise StalledGame(f'{SAFETY_TURNS}턴 안에 라운드 종료 조건(§11-1)이 충족되지 않음')
                 self.play_turn()
         except GameOver as go:
             for i in (0, 1):
