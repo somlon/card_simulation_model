@@ -76,7 +76,6 @@ def play_one_match(dA, dB, first, seed, roles, actors, rec, nrng, use_teacher_kl
     """역할이 지정된 Bo3 매치 1회. 반환: (매치 승자, 라운드 목록)"""
     import match as M
     from . import side as SD
-    dA = dict(dA, _seat=0); dB = dict(dB, _seat=1)
     mk = lambda d: _make_ai(roles[d['_seat']], d['스킬'], d['_seat'], actors[d['_seat']], rec, nrng, use_teacher_kl)
 
     def side_fn(i, decks, wins, rounds, rng, side_eps, log):
@@ -102,7 +101,9 @@ def run_job(job):
     past = _actor(job['past']) if job.get('past') is not None else None
     mix = {k: v for k, v in job.get('mix', {'self': 1.0}).items() if v > 0 and (k != 'past' or past is not None)}
     kinds = sorted(mix); weights = [mix[k] for k in kinds]
+    from . import side as SD
     rec = Recorder(job['worker']); st = {'matches': 0, 'stalled': 0, 'errors': 0, 'err_msgs': [], 'vs': {}}
+    unmapped0 = SD.STATS['teacher_unmapped']
     for _ in range(job['n_matches']):
         a, b = rng.choice(pairs); first = rng.randrange(2); seed = rng.randrange(2 ** 31)
         if job['mode'] == 'bc':
@@ -127,6 +128,7 @@ def run_job(job):
         rec.end_match(mw); st['matches'] += 1
         if opp not in ('self', 'teacher') and mw is not None:
             e = st['vs'].setdefault(opp, [0, 0]); e[0] += int(roles[mw] == 'cur'); e[1] += 1
+    st['teacher_unmapped'] = SD.STATS['teacher_unmapped'] - unmapped0
     return {'worker': job['worker'], 'data': rec.packed(), 'stats': st}
 
 
@@ -168,7 +170,7 @@ def eval_job(job):
     """단판 평가. job: x, y(spec), games[(덱 x, 덱 y, 선공, 시드)]. x는 항상 자리 0"""
     from engine import Game, StalledGame
     from cards import Impl
-    decks = _W['decks']; out = {'w': 0, 'n': 0, 'stalled': 0, 'turns': 0, 'errors': 0, 'by_deck': {}}
+    decks = _W['decks']; out = {'w': 0, 'n': 0, 'stalled': 0, 'turns': 0, 'errors': 0, 'err_msgs': [], 'by_deck': {}}
     x = dict(job['x']); y = dict(job['y'])
     for spec in (x, y):
         if spec['kind'] == 'drl':
@@ -180,7 +182,10 @@ def eval_job(job):
         except StalledGame:
             out['stalled'] += 1; continue
         except Exception:
-            out['errors'] += 1; continue
+            out['errors'] += 1
+            if len(out['err_msgs']) < 3:
+                out['err_msgs'].append(f'{a} vs {b} (선공 {first}, 시드 {seed}): ' + traceback.format_exc()[-1200:])
+            continue
         if win is None:
             continue
         out['n'] += 1; out['w'] += int(win == 0); out['turns'] += g.turn
@@ -197,5 +202,6 @@ def merge_eval(parts):
     pr = w / max(1, n); se = math.sqrt(pr * (1 - pr) / max(1, n))
     return {'win': round(pr * 100, 1), 'ci95': round(1.96 * se * 100, 1), 'games': n,
             'stalled': sum(p['stalled'] for p in parts), 'errors': sum(p['errors'] for p in parts),
+            'err_msgs': [m for p in parts for m in p.get('err_msgs', [])][:3],
             'avg_turns': round(sum(p['turns'] for p in parts) / max(1, n), 2),
             'by_deck': {k: round(a / max(1, b) * 100, 1) for k, (a, b) in sorted(by.items())}}

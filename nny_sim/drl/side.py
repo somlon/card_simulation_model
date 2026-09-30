@@ -17,29 +17,24 @@ MAX_CARD_SWAPS = 10
 KIND_STOP, KIND_IN, KIND_SKILL, KIND_OUT = 0, 1, 2, 3
 
 
-def _outs(act, i):
-    kind = POOL[i]['deck']
-    return sorted(n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i)
+STATS = {'teacher_unmapped': 0}   # 학습표 교체를 DRL 후보로 옮기지 못한 횟수(규칙이 어긋나면 늘어난다 — 작업자 통계로 보고)
 
 
 def candidates(act, st, me, skill_done, pick_in=None, allow_cards=True):
-    """넣기 단계(pick_in=None) 또는 빼기 단계(pick_in=넣을 카드)의 후보 [(종류, 뺄 카드/옛 스킬, 넣을 카드/새 스킬)]"""
+    """넣기 단계(pick_in=None) 또는 빼기 단계(pick_in=넣을 카드)의 후보 [(종류, 뺄 카드/옛 스킬, 넣을 카드/새 스킬)].
+    규칙은 match.py의 공용 함수(swap_ins · swap_outs · skill_swaps)를 그대로 쓴다 — 학습표 교체와 같은 범위"""
     if pick_in is not None:
-        return [(KIND_OUT, o, pick_in) for o in _outs(act, pick_in)]
+        return [(KIND_OUT, o, pick_in) for o in sorted(M.swap_outs(act, pick_in))]
     out = [(KIND_STOP, None, None)]
     if allow_cards:
-        for i in sorted(n for n, k in st.items() if k > 0 and not M.is_skill(n) and act.get(n, 0) < 3 and M.fits(n, me)):
-            if _outs(act, i):
-                out.append((KIND_IN, None, i))
+        out += [(KIND_IN, None, i) for i in sorted(M.swap_ins(act, st, me)) if M.swap_outs(act, i)]
     if not skill_done:
-        for n in sorted(n for n, k in st.items() if k > 0 and M.is_skill(n) and n != me
-                        and all(M.fits(x, n) for x, k2 in act.items() if k2 > 0)):
-            out.append((KIND_SKILL, me, n))
+        out += [(KIND_SKILL, me, n) for n in sorted(M.skill_swaps(act, st, me))]
     return out
 
 
 def apply_swap(act, st, o, i):
-    act[o] -= 1; act[i] = act.get(i, 0) + 1; st[i] -= 1; st[o] = st.get(o, 0) + 1
+    M.apply_card_swap(act, st, o, i)
 
 
 def apply_skill(st, old, new):
@@ -163,8 +158,9 @@ def teacher_side_swap(deck, opp_deck, ctx, rng, recorder=None, seat=0, log=None,
     w = _Walker(deck, opp_deck, ctx, True)
     for want in plan:
         cands = w.cands()
-        if want not in cands:
-            break   # 학습표 결정을 후보로 옮길 수 없음 — 이 뒤는 기록하지 않는다(덱은 학습표 결과 그대로)
+        if want not in cands:   # 학습표 결정을 후보로 옮길 수 없음 — 이 뒤는 기록하지 않는다(덱은 학습표 결과 그대로)
+            STATS['teacher_unmapped'] += 1
+            break
         if len(cands) > 1:
             obs, orc = w.obs()
             tp = np.zeros(len(cands), np.float32); tp[cands.index(want)] = 1.0

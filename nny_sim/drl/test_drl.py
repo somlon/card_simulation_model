@@ -132,6 +132,24 @@ class FeatureTest(unittest.TestCase):
             _game(a, b, [Probe(DECKS[a]['스킬'], actor=ACTOR), Probe(DECKS[b]['스킬'], actor=ACTOR)], k % 2, 90 + k).run()
         self.assertGreater(seen['n'], 5)
 
+    def test_opponent_hand_card_is_hidden(self):
+        """상대 패의 카드가 후보가 되어도(패 카드는 엔진에서 faceup=True) 정체가 들어가지 않아야 한다"""
+        g = _game(NAMES[0], NAMES[1], [P.LearnedAI(DECKS[NAMES[0]]['스킬'], learn=False), P.LearnedAI(DECKS[NAMES[1]]['스킬'], learn=False)])
+        g.setup()
+        c = g.p[1].hand[0]; self.assertTrue(c.faceup); self.assertEqual(c.zone, 'hand')
+        a = F.encode_cands(g, 0, '대상:discard', [('상:?', 0, c), ('종료', 0, None)], 20)
+        other = next(n for n in S.VOCAB if n != c.name and POOL[n]['type'] == c.type)
+        old = (c.d, c.name)
+        try:
+            c.d = POOL[other]; c.name = other
+            b = F.encode_cands(g, 0, '대상:discard', [('상:?', 0, c), ('종료', 0, None)], 20)
+        finally:
+            c.d, c.name = old
+        self.assertEqual(a[0][0, 0], S.UNK)
+        np.testing.assert_array_equal(a[0], b[0]); np.testing.assert_array_equal(a[1], b[1])
+        own = F.encode_cands(g, 1, '대상:discard', [('자:?', 0, c), ('종료', 0, None)], 20)   # 자기 패 카드는 보인다
+        self.assertEqual(own[0][0, 0], S.cid(c.name))
+
 
 class AgentTest(unittest.TestCase):
     def test_teacher_mode_reproduces_learnedai(self):
@@ -213,6 +231,19 @@ class SideTest(unittest.TestCase):
             self.assertEqual(M.counts_of(w.deck(DECKS[a])), M.counts_of(d2))
             self.assertEqual(w.deck(DECKS[a])['스킬'], d2['스킬'])
 
+    def test_mirror_match_with_one_drl_seat(self):
+        """같은 덱끼리 한쪽만 DRL이어도 자리(deck['_seat'])로 구분된다"""
+        from drl import play as PL
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'm.npz'); MD.save_model(p, MD.init_arrays(1))
+            make_ai, side_fn = PL.players(p, None)
+            kinds = []
+            orig = make_ai
+            mk = lambda deck: (kinds.append((deck['_seat'], type(orig(deck)).__name__)), orig(deck))[1]
+            M.play_match(DECKS[NAMES[0]], DECKS[NAMES[0]], 0, random.Random(4), [], mk, learn_side=False, side_fn=side_fn)
+        self.assertIn((0, 'DRLAI'), kinds); self.assertIn((1, 'LearnedAI'), kinds)
+        self.assertFalse(any((s, n) in kinds for s, n in ((0, 'LearnedAI'), (1, 'DRLAI'))))
+
     def test_play_match_hook_default_unchanged(self):
         """side_fn을 주지 않으면 기존 경로와 같고, 기존 교체 함수를 side_fn으로 넘겨도 결과가 같다"""
         mk = lambda d: P.LearnedAI(d['스킬'], learn=False)
@@ -233,6 +264,20 @@ class ModelIOTest(unittest.TestCase):
             for k in arr:
                 np.testing.assert_array_equal(actor.w[k], arr[k])
             self.assertFalse(os.path.exists(p + '.tmp'))
+
+    def test_old_model_with_smaller_card_pool_loads(self):
+        """카드 풀에 카드가 추가된 뒤에도 옛 모델을 불러와 쓸 수 있다(새 카드는 UNK)"""
+        import io, json as _json
+        arr = MD.init_arrays(5); drop = S.VOCAB[-1]
+        arr['emb'] = arr['emb'][:-1]; arr['s_emb'] = arr['s_emb'][:-1]      # 모델 어휘 = 현재 어휘 − 마지막 카드
+        meta = {'schema': dict(S.schema_meta(), vocab=S.VOCAB[:-1])}
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'old.npz')
+            np.savez_compressed(p, __meta__=np.array(_json.dumps(meta, ensure_ascii=False)), **arr)
+            actor, _ = MD.load_actor(p)
+        self.assertEqual(int(actor.remap[S.CARD_ID[drop]]), S.UNK)
+        g = _game(NAMES[0], NAMES[1], [DRLAI(DECKS[NAMES[0]]['스킬'], actor=actor), DRLAI(DECKS[NAMES[1]]['스킬'], actor=actor)])
+        g.run()   # 추론 전 과정이 오류 없이 돈다
 
     def test_shape_guard(self):
         arr = MD.init_arrays(0); arr['t1_w'] = arr['t1_w'][:, :10]

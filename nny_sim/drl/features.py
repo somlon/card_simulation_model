@@ -26,7 +26,8 @@ _TYPE = {'몬스터': 0, '마법': 1, '필드': 2, '스킬': 3}
 
 
 def _hidden(c, viewer):
-    return (not c.faceup) and c.controller != viewer
+    """viewer가 정체를 볼 수 없는 카드: 상대의 뒷면 카드, 상대의 패 · 덱 카드(패로 간 카드는 엔진에서 faceup=True라 영역으로 판정)"""
+    return c.controller != viewer and (not c.faceup or c.zone in ('hand', 'main', 'upper'))
 
 
 def _mon_slots(g, side_p, viewer, reveal):
@@ -161,7 +162,7 @@ def encode_cands(g, p, decision, opts, scale):
         if c2 is not None:
             tv = (g.atk(c2) if c2.pos == 'atk' else g.df(c2)) if not _hidden(c2, p) else 0
             v[o + 23] = tv / 3000.0; v[o + 24] = c2.pos != 'atk'; v[o + 25] = c2.faceup
-            if c1 is not None:
+            if c1 is not None and not hide1:
                 v[o + 26] = (g.atk(c1) - tv) / 3000.0
         v[o + 27] = K / 16.0
         v[o + 28] = ntrib / 2.0

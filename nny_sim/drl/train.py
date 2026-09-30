@@ -81,7 +81,7 @@ def collect(pool, cfg, it, cur, past_list, mode, teacher_kl, n_total):
     sizes = [per] * (n_total // per) + ([n_total % per] if n_total % per else [])
     jobs = [dict(worker=j, seed=rng.randrange(2 ** 31), n_matches=n, cur=cur, past=(rng.choice(past_list) if past_list else None),
                  mix=cfg['mix'], mode=mode, teacher_kl=teacher_kl) for j, n in enumerate(sizes)]
-    packs = {'game': [], 'side': []}; st = {'matches': 0, 'stalled': 0, 'errors': 0}; vs = {}; msgs = []
+    packs = {'game': [], 'side': []}; st = {'matches': 0, 'stalled': 0, 'errors': 0, 'teacher_unmapped': 0}; vs = {}; msgs = []
     for r in pool.map(R.run_job, jobs):
         for k in packs:
             packs[k].append(r['data'][k])
@@ -104,6 +104,13 @@ def evaluate(pool, cfg, arrays, opponents, k, base=10 ** 7):
     for name, spec in opponents.items():
         parts = list(pool.map(R.eval_job, [dict(x={'kind': 'drl', 'arrays': arrays}, y=spec, games=gl[i::W]) for i in range(W)]))
         out[name] = R.merge_eval(parts)
+    return out
+
+
+def _brief(v):
+    out = {kk: v[kk] for kk in ('win', 'ci95', 'games', 'stalled', 'errors')}
+    if v.get('err_msgs'):
+        out['err_sample'] = v['err_msgs'][0][-600:]
     return out
 
 
@@ -138,7 +145,7 @@ def cmd_bc(args):
         arrays = lr.export()
         MD.save_model(os.path.join(args.run, 'model_bc.npz'), arrays, {'stage': 'bc', 'config': cfg})
         ev = evaluate(pool, cfg, arrays, eval_opponents(cfg), cfg['eval_k'])
-        _log(args.run, {'stage': 'bc_eval', **{k: {kk: v[kk] for kk in ('win', 'ci95', 'games', 'stalled')} for k, v in ev.items()}})
+        _log(args.run, {'stage': 'bc_eval', **{k: _brief(v) for k, v in ev.items()}})
     score = ev.get('table', ev['heuristic'])['win']
     MD.save_model(os.path.join(args.run, 'model_best.npz'), arrays, {'stage': 'bc', 'eval': ev, 'config': cfg})
     _atomic_torch_save({'learner': lr.state_dict(), 'it': 0, 'best': score, 'snapshots': [], 'bc_done': True}, os.path.join(args.run, 'ckpt.pt'))
@@ -171,15 +178,16 @@ def cmd_ppo(args):
             it += 1
             rec = {'it': it, 'collect_s': round(tc - ti, 1), 'update_s': round(time.time() - tc, 1), 'c_ent': round(c_ent, 4),
                    'c_kl': round(c_kl, 3), **st, **m}
+            arrays = lr.export()   # 이번 갱신 후 가중치
             if it % cfg['snap_every'] == 0:
-                p = os.path.join(snap_dir, f'snap_{it:05d}.npz'); MD.save_model(p, cur, {'it': it})
+                p = os.path.join(snap_dir, f'snap_{it:05d}.npz'); MD.save_model(p, arrays, {'it': it})
                 snaps = (snaps + [p])[-cfg['pool_size']:]; past = [MD.load_arrays(q)[0] for q in snaps]
-            arrays = lr.export()
             if it % cfg['eval_every'] == 0:
                 ev = evaluate(pool, cfg, arrays, eval_opponents(cfg), cfg['eval_k'])
-                rec['eval'] = {k: {kk: v[kk] for kk in ('win', 'ci95', 'stalled')} for k, v in ev.items()}
+                rec['eval'] = {k: _brief(v) for k, v in ev.items()}
                 score = ev.get('table', ev['heuristic'])['win']
-                if score > best:   # 평가 게이트: 교사 상대 승률이 지금까지 최고일 때만 최고 모델 교체
+                clean = all(v['errors'] == 0 for v in ev.values())   # 오류 난 게임이 빠진 승률은 믿을 수 없다
+                if score > best and clean:   # 평가 게이트: 교사 상대 승률이 지금까지 최고이고 오류가 없을 때만 최고 모델 교체
                     best = score; rec['new_best'] = True
                     MD.save_model(os.path.join(args.run, 'model_best.npz'), arrays, {'it': it, 'eval': ev, 'config': cfg})
             MD.save_model(os.path.join(args.run, 'model_last.npz'), arrays, {'it': it, 'config': cfg})

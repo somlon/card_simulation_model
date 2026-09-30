@@ -123,8 +123,10 @@ class Learner:
                 if B.size(P) == 0:
                     continue
             net, crit, opt, optc = self.nets(kind)
-            adv, ret, ntraj = self.advantages(kind, P, 1.0 if bc else (cfg['lam'] if kind == 'game' else 1.0))
-            if not bc:
+            if bc:   # λ = 1, γ = 1: 비평가 목표 = 궤적 끝 보상(표본마다 저장됨). 이익은 쓰지 않으므로 비평가 추론을 생략한다
+                ret = P['reward'].astype(np.float32); adv = np.zeros_like(ret); ntraj = len(B.trajectories(P)[1])
+            else:
+                adv, ret, ntraj = self.advantages(kind, P, cfg['lam'] if kind == 'game' else 1.0)
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             mb = cfg['minibatch'] if kind == 'game' else cfg.get('side_minibatch', 256)   # 전략 덱 표본은 적다 → 작은 묶음
             agg = {}; n = B.size(P)

@@ -54,8 +54,13 @@ class NumpyActor:
         for k, shp in {**actor_shapes(), **side_shapes()}.items():
             if k not in self.w:
                 raise KeyError(f'DRL 모델에 가중치 {k}가 없음')
-            if self.w[k].shape != shp:
-                raise ValueError(f'DRL 모델 가중치 {k}의 모양 {self.w[k].shape} ≠ {shp}')
+            got = self.w[k].shape
+            if k in ('emb', 's_emb') and remap is not None:   # 카드 풀이 바뀐 옛 모델: 행 수 = 그 모델의 어휘 크기
+                ok = got[1:] == shp[1:] and int(remap.max()) < got[0]
+            else:
+                ok = got == shp
+            if not ok:
+                raise ValueError(f'DRL 모델 가중치 {k}의 모양 {got} ≠ {shp}')
         self.remap = remap
 
     def _ids(self, x):

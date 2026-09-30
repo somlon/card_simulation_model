@@ -44,33 +44,48 @@ def fits(name, skill):
 
 def is_skill(name): return POOL[name]['type'] == '스킬'
 
+# ── 교체 후보 규칙 (학습표 교체 · DRL 교체 공용 — drl/side.py) ──
+def swap_ins(act, st, me):
+    """전략 덱에서 넣을 수 있는 카드: 스킬 카드 제외, 활성 덱 동명 3장 미만, 현재 스킬 태그에 맞음 (전략 덱 순서)"""
+    return [n for n, k in st.items() if k > 0 and not is_skill(n) and act.get(n, 0) < 3 and fits(n, me)]
+
+def swap_outs(act, i):
+    """넣을 카드 i와 1:1로 바꿀 수 있는 활성 덱 카드: 같은 종류(메인/상급) (활성 덱 순서)"""
+    kind = POOL[i]['deck']
+    return [n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i]
+
+def skill_swaps(act, st, me):
+    """전략 덱의 스킬 카드 (§3-1): 새 스킬의 태그로 메인 · 상급 덱을 모두 쓸 수 있을 때만 교체 후보"""
+    return [n for n, k in st.items() if k > 0 and is_skill(n) and n != me and all(fits(x, n) for x, k2 in act.items() if k2 > 0)]
+
+def apply_card_swap(act, st, o, i):
+    act[o] -= 1; act[i] = act.get(i, 0) + 1; st[i] -= 1; st[o] = st.get(o, 0) + 1
+
 def side_swap(deck, opp_skill, rng, eps=0.0, log=None, pname=''):
     me = deck['스킬']; act = counts_of(deck); st = counts_of(deck, ('전략',))
     swaps = []
-    # 전략 덱의 스킬 카드 (§3-1): 새 스킬의 태그로 메인 · 상급 덱을 모두 쓸 수 있을 때만 교체 후보
-    skills = lambda: [n for n, k in st.items() if k > 0 and is_skill(n) and n != me and all(fits(x, n) for x, k2 in act.items() if k2 > 0)]
+    skills = lambda: skill_swaps(act, st, me)
     new = me
     explore = eps and rng.random() < eps
     if explore:   # 탐색: 무작위 1~2장 교체
         for _ in range(rng.choice((1, 2))):
-            ins = [n for n, k in st.items() if k > 0 and not is_skill(n) and act.get(n, 0) < 3 and fits(n, me)]
+            ins = swap_ins(act, st, me)
             if not ins: break
-            i = rng.choice(ins); kind = POOL[i]['deck']
-            outs = [n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i]
+            i = rng.choice(ins)
+            outs = swap_outs(act, i)
             if not outs: continue
             o = rng.choice(outs); swaps.append((o, i, '탐색'))
-            act[o] -= 1; act[i] = act.get(i, 0) + 1; st[i] -= 1; st[o] = st.get(o, 0) + 1
+            apply_card_swap(act, st, o, i)
     else:
         for _ in range(10):
-            ins = sorted([n for n, k in st.items() if k > 0 and not is_skill(n) and act.get(n, 0) < 3 and fits(n, me)],
-                         key=lambda n: -card_value(me, opp_skill, n))
+            ins = sorted(swap_ins(act, st, me), key=lambda n: -card_value(me, opp_skill, n))
             done = False
             for i in ins:
-                kind = POOL[i]['deck']; vi = card_value(me, opp_skill, i)
-                outs = sorted([n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i], key=lambda n: card_value(me, opp_skill, n))
+                vi = card_value(me, opp_skill, i)
+                outs = sorted(swap_outs(act, i), key=lambda n: card_value(me, opp_skill, n))
                 if outs and card_value(me, opp_skill, outs[0]) + 0.02 < vi:
                     o = outs[0]; swaps.append((o, i, f'{card_value(me, opp_skill, o)*100:.0f}%→{vi*100:.0f}%'))
-                    act[o] -= 1; act[i] = act.get(i, 0) + 1; st[i] -= 1; st[o] = st.get(o, 0) + 1
+                    apply_card_swap(act, st, o, i)
                     done = True; break
             if not done: break
     # 스킬 교체: 스킬 가치 = 그 스킬을 쓴 라운드의 기여도 (써 본 적 없으면 0.5)
@@ -110,9 +125,10 @@ def used_cards(log_slice, pname):
     return out
 
 def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_side=True, side_fn=None):
-    """make_ai(deck) -> AI. 반환: (매치 승자, 라운드 목록)
+    """make_ai(deck) -> AI (deck['_seat'] = 자리 번호 0/1). 반환: (매치 승자, 라운드 목록)
     side_fn(i, decks, wins, rounds, rng, side_eps, log) -> 플레이어 i의 새 덱. 없으면 학습표 교체(side_swap) — DRL 정책 연결용"""
-    decks = [dA, dB]; wins = [0, 0]; rounds = []; f = first; rnd = 0
+    decks = [dict(dA, _seat=0), dict(dB, _seat=1)]   # 자리 번호: make_ai(deck) · side_fn이 자리를 알 수 있게 (게임 · 교체 규칙에는 영향 없음)
+    wins = [0, 0]; rounds = []; f = first; rnd = 0
     while max(wins) < 2:   # 승점 2점 선취 (§11-2). 라운드는 규칙의 종료 조건으로만 끝나므로 무승부는 없다
         rnd += 1
         log.append({'t': 0, 'ph': '', 'tp': 0, 'k': 'round', 'm': f'████ {rnd}라운드 — 선공 {decks[f]["이름"]} ████',
