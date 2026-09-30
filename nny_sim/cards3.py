@@ -61,6 +61,7 @@ def _(c):
 # ─────────── 흑월침식 (텍스트: 솔루나_통합본_v1 — v3 문서 미수록, 2026-09-23 복원) ───────────
 @card('솔루나 시아 - 박혼')
 def _(c):
+    c.flags['no_pos_change'] = True   # 1번 [지속]: 자신은 이 카드의 표시 형식을 변경할 수 없다
     c.effects = [Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(targets(g, p, opp_cards(g, p))),
                         res=lambda g, c, p, l: bounce_opp(g, p), score=lambda *a: 90, threat=900, label='[소환] 덱 바운스')]
 

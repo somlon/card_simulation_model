@@ -1,13 +1,20 @@
 """뉴네오유희왕 룰 엔진 코어 (v0.1 시제품)
 규칙 근거: 「뉴 네오 유희왕 — 규칙 명세서 (LLM 적용본)」 2026-09-29 (정본 + 사용자 재정). 주석의 §번호는 이 문서의 절.
-【가정】 처리는 ASSUME 주석으로 표시.
+「사용자 재정 2026-09-30」은 명세서 이후 사용자가 확정한 항목. 【가정】 처리는 ASSUME 주석으로 표시.
 """
 import random, itertools
 from dataclasses import dataclass, field
 
 MZ = 5; SZ = 5
 START_HP = 5000
-TURN_LIMIT = 40          # ASSUME A-14
+# 라운드는 규칙의 종료 조건(HP 0 · 덱아웃 · 특수승리, §11-1)으로만 끝난다. 턴 상한 · HP 판정은 없다 (사용자 재정 2026-09-30).
+# 아래 값은 무한 진행을 막는 안전장치일 뿐 승패를 판정하지 않는다 — 넘으면 오류(StalledGame)로 중단한다.
+SAFETY_TURNS = 1000
+TRIBUTE_MONSTERS_ONLY = False   # 제물(릴리스) 대상: 규칙 §2 · §5-2 「자신 필드의 카드」. True로 두면 몬스터만
+
+
+class StalledGame(RuntimeError):
+    """규칙상 종료 조건이 SAFETY_TURNS 턴 안에 충족되지 않은 라운드 (판정 없음)"""
 
 
 class GameOver(Exception):
@@ -165,7 +172,7 @@ class Game:
         z = c.zone
         if z == 'm': pl.m[pl.m.index(c)] = None
         elif z == 's': pl.s[pl.s.index(c)] = None
-        elif z == 'shared': self.shared = None; self.shared_owner = None   # 공유 존이 비면 마커도 사라진다 (§10-1)
+        elif z == 'shared': self.shared = None   # 마커는 공유 존이 비어도 남는다 (사용자 재정 2026-09-30)
         elif z == 'fieldz': self.fieldz = None
         elif z in ('hand', 'grave', 'banish', 'main', 'upper'):
             for pl_ in (self.p[c.owner], self.p[1 - c.owner]):   # 상대 패에 들어간 카드(월영암수 등)도 찾는다
@@ -207,8 +214,11 @@ class Game:
         c.controller = p; c.pos = pos; c.faceup = faceup
         if not to_shared:
             self.p[p].m[fr[0]] = c; c.zone = 'm'; return True
-        # 빈 공유 존에는 마커가 없으므로 처음 놓는 것은 뒤집힘이 아니다 (§10-1, §10-3)
-        self.shared = c; c.zone = 'shared'; self.shared_owner = p
+        # 공유 존 마커 (사용자 재정 2026-09-30): 라운드에서 처음 놓으면 놓은 플레이어의 마커를 올린다(뒤집힘 아님).
+        # 그 뒤에는 공유 존이 비어도 마커가 남고, 치워진 공유 존에 상대가 자신의 카드를 놓으면 뒤집힌다 (§10-3 a)
+        self.shared = c; c.zone = 'shared'
+        old = self.shared_owner; self.shared_owner = p
+        if old is not None and old != p: self.flip_marker(old)
         return True
 
     def flip_marker(self, old):
@@ -319,10 +329,33 @@ class Game:
         if self.free_m(p): return True
         return self.shared is None and self.p[p].ai.use_shared(self, p, c, full=True)
 
+    def def_allowed(self, p):
+        """p의 몬스터가 수비 표시로 존재할 수 있는가 (격투가의 투기장 1번 등 [지속] 규칙)"""
+        return not self.rule('no_defense', p)
+
+    def release_cands(self, p):
+        """일반소환의 제물로 릴리스할 수 있는 카드: 자신 필드의 카드 (§2 · §5-2 재정 — 릴리스 기본 대상은 자신 필드의 카드).
+        스킬 카드는 필드를 벗어나지 않으므로 해당 없음 (§8-4). TRIBUTE_MONSTERS_ONLY면 몬스터만"""
+        return [x for x in self.field_cards(p) if x.flags.get('no_release_until', -1) < self.turn
+                and (x.is_monster() or not TRIBUTE_MONSTERS_ONLY)]
+
+    def can_change_pos(self, c, p):
+        """표시 형식 변경 (§8-1): 자신의 앞면 몬스터 · 몬스터당 1턴 1번 · 소환된 턴 불가.
+        시점은 규칙서에 없어 자신 턴 · 체인이 없을 때로 둔다"""
+        return (self.turn_player == p and not self.chain and c.controller == p and c.is_monster() and self.on_field(c)
+                and c.faceup and c.summon_turn != self.turn and c.pos_turn != self.turn and not c.flags.get('no_pos_change')
+                and (c.pos == 'def' or self.def_allowed(p)))
+
+    def change_position(self, c, p):
+        c.pos = 'def' if c.pos == 'atk' else 'atk'; c.pos_turn = self.turn
+        self.L(f'{self.pname(p)} {c} 표시 형식 변경 → {"공격" if c.pos == "atk" else "수비"} 표시')
+        self.emit('position', card=c, player=p)
+
     def special_summon(self, c, p, pos='atk', by=None):
         if not self.can_special(c, p): return False
         if c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok():
             self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
+        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         prev = c.zone
         self._remove(c)
         self.place_monster(c, p, pos)
@@ -332,10 +365,13 @@ class Game:
         return True
 
     def normal_summon(self, c, p, tributes=(), pos='atk'):
+        """일반소환 (§5-2): 패에서 앞면 공격 표시 또는 앞면 수비 표시. 레벨에 따른 제물은 호출하는 쪽이 고른다"""
+        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         for t in tributes: self.tribute(t, ('summon', None))
         self._remove(c); self.place_monster(c, p, pos); c.summon_turn = self.turn
         self.p[p].normal_summons -= 1
-        self.L(f'{self.pname(p)} {c} 일반소환' + (f' (제물 {", ".join(map(str, tributes))})' if tributes else ''))
+        self.L(f'{self.pname(p)} {c} 일반소환' + (' (수비 표시)' if c.pos == 'def' else '')
+               + (f' (제물 {", ".join(map(str, tributes))})' if tributes else ''))
         self.emit('summon', card=c, player=p, how='normal', prev='hand', by=None)
 
     @staticmethod
@@ -475,17 +511,16 @@ class Game:
         return True
 
     def spell_speed_ok(self, c, p, e):
-        """마법 카드 발동 시점 (정본):
-        일반 · 지속 · 필드 — 자신 진행/정비 단계, 체인 없음, 패 또는 세트에서
+        """마법 카드 발동 시점 (§8-2):
+        일반 · 지속 · 필드 — 자신 턴, 체인이 없을 때 (단계 제한 없음, 사용자 재정 2026-09-30), 패 또는 세트에서
         신속 — 자신 턴: 패에서 발동 가능 / 상대 턴: 세트한 카드만 (「패에서도 발동할 수 있다」 카드는 예외)
                세트한 그 턴에는 발동 불가 (「이 턴에도 발동할 수 있다」로 세트된 카드는 예외) — 사용자 재정 2026-09-23
         트리거 — 패 또는 필드에서 (정본 1-2)"""
         if not e.spell_act: return True
         sub = c.d.get('subtype', '')
         own = self.turn_player == p
-        main_ph = self.phase in ('진행', '정비') and not self.chain
         if c.type == '필드' or sub in ('일반', '지속'):
-            return own and main_ph and (c.zone == 'hand' or (c.zone == 's' and not c.faceup))
+            return own and not self.chain and (c.zone == 'hand' or (c.zone == 's' and not c.faceup))
         if sub == '신속':
             # 사용자 재정: 자신 턴에는 패에서 발동 가능 / 상대 턴에는 세트한 카드만 / 세트한 그 턴에는 발동 불가
             if c.zone == 'hand': return own or getattr(e, 'hand_ok', False)
@@ -804,9 +839,8 @@ class Game:
                 cap = getattr(self, 'turn_cap', None)
                 if cap and self.turn >= cap[0] and getattr(self, 'script', None) and self.script['forced']:
                     return 'eval', self.evaluate(cap[1])
-                if self.turn >= TURN_LIMIT:
-                    a, b = self.p[0].hp, self.p[1].hp
-                    raise GameOver(None if a == b else (0 if a > b else 1), f'턴 상한 {TURN_LIMIT} — HP 판정')
+                if self.turn >= SAFETY_TURNS:   # 판정 없음 — 무한 진행 방지용 중단
+                    raise StalledGame(f'{SAFETY_TURNS}턴 안에 라운드 종료 조건(§11-1)이 충족되지 않음')
                 self.play_turn()
         except GameOver as go:
             for i in (0, 1):

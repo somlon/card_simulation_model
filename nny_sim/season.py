@@ -64,7 +64,7 @@ def adjust(d, decks, log):
         for lab, delta in ((f'「{w}」 1장 감소', {w: -1}), (f'「{w}」 제거', {w: -act[w]})) + tuple((f'「{w}」 1장 → 「{r}」', {w: -1, r: +1}) for r in repl):
             a2 = dict(act)
             for k2, v in delta.items(): a2[k2] = a2.get(k2, 0) + v
-            nd = M.deck_from(d, a2, st); e, _ = D.validate(nd)
+            nd = M.deck_from(d, a2, st); e, _ = D.validate(nd, policy=False)   # 전략 덱은 바꾸지 않으므로 규칙만 검사
             if not e: opts.append((lab, nd))
     seed = random.randrange(10 ** 9)
     s1 = sorted(((eval_deck(od, decks, 3, seed)[0], lab, od) for lab, od in opts), key=lambda x: -x[0])

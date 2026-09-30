@@ -25,11 +25,20 @@ def to_deck(name, skill, counts, strat=None):
     return d
 
 def valid(skill, counts, strat):
-    e, _ = D.validate(to_deck('x', skill, counts, strat)); return not e
+    """덱 구축 규칙을 지키고 전략 덱이 방침 매수(STRATEGY_FILL) 이하인가 — 채우는 중인 덱도 후보로 다룬다"""
+    e, _ = D.validate(to_deck('x', skill, counts, strat), policy=False)
+    return not e and sum(strat.values()) <= D.STRATEGY_FILL
 
 def neighbors(skill, counts, strat, rng, n_swap=140, n_strat=60):
-    """한 장 단위 이웃: 메인/상급 추가 · 제거 · 교체, 전략 덱 교체(10장 유지). 교체류는 무작위 표본."""
+    """한 장 단위 이웃: 메인/상급 추가 · 제거 · 교체, 전략 덱 교체(매수 유지). 교체류는 무작위 표본.
+    전략 덱이 방침 매수(STRATEGY_FILL)보다 적으면 전략 덱에 1장 추가하는 후보만 만든다."""
     names = legal_names(skill); out = []
+    if sum(strat.values()) < D.STRATEGY_FILL:
+        for a in names:
+            if strat.get(a, 0) < 3:
+                s2 = dict(strat); s2[a] = s2.get(a, 0) + 1
+                if valid(skill, counts, s2): out.append((f'전략 +{a}', counts, s2))
+        return out
     for a in names:
         if counts.get(a, 0) < 3:
             c = dict(counts); c[a] = c.get(a, 0) + 1
@@ -74,6 +83,7 @@ def paired_z(a, b):
 
 def one_round(state, opps, budget=270):
     t0 = time.time(); skill = state['skill']; cur = state['counts']; cst = state['strat']; rnd = len(state['history']) + 1
+    filling = sum(cst.values()) < D.STRATEGY_FILL   # 방침상 채워야 하므로 가장 좋은 추가 후보를 유의성 검정 없이 채택
     seed = 1000003 * rnd; rng = random.Random(seed)
     cands = neighbors(skill, cur, cst, rng)
     s1 = [(rate(evaluate(skill, c, opps, 2, seed, s)), lab, c, s) for lab, c, s in cands]
@@ -87,9 +97,9 @@ def one_round(state, opps, budget=270):
     s3.sort(key=lambda x: -x[0]); best = s3[0]
     m, z = paired_z(best[4], base3)
     rec = {'round': rnd, 'candidates': len(cands), 'base': round(rate(base3) * 100, 1), 'best': best[1],
-           'best_rate': round(best[0] * 100, 1), 'diff': round(m * 100, 2), 'z': round(z, 2), 'accepted': z > 1.96,
+           'best_rate': round(best[0] * 100, 1), 'diff': round(m * 100, 2), 'z': round(z, 2), 'accepted': z > 1.96 or filling, 'filling': filling,
            'top3': [(lab, round(r * 100, 1)) for r, lab, _, _, _ in s3], 'matches_final': len(base3), 'sec': round(time.time() - t0)}
-    if z > 1.96: state['counts'] = best[2]; state['strat'] = best[3]
+    if z > 1.96 or filling: state['counts'] = best[2]; state['strat'] = best[3]
     state['history'].append(rec)
     return rec
 
@@ -98,7 +108,7 @@ def load_state(skill, start_deck):
     if os.path.exists(path):
         st = json.load(open(path, encoding='utf-8'))
         if 'strat' in st: return st, path
-    d, e, _ = D.load(start_deck); assert not e, e
+    d, e, _ = D.load(start_deck, policy=False); assert not e, e   # 전략 덱을 채우는 중인 덱도 시작점으로 쓸 수 있다
     counts = {}; strat = {}
     for sec in ('메인', '상급'):
         for k, n in d[sec]: counts[n] = counts.get(n, 0) + k

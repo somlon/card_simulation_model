@@ -83,7 +83,7 @@ ul{list-style:none;margin:0;padding:0}
 <script>
 const POOL=__POOL__;
 const COLORS=['적','녹','황','청','자','백','흑'];
-const LIM={메인:[20,40],상급:[0,20],전략:[0,20]};  // 규칙 명세서 §3-2 (시뮬레이션 방침은 전략 10장 — deck.py STRATEGY_FILL)
+const LIM={메인:[20,40],상급:[0,20],전략:[0,20]};  // 규칙 명세서 §3-2 (시뮬레이션 방침은 전략 20장 채우기 — deck.py STRATEGY_FILL)
 const byName=Object.fromEntries(POOL.map(c=>[c.name,c]));
 const byCode=Object.fromEntries(POOL.filter(c=>c.code).map(c=>[c.code,c]));
 const skills=POOL.filter(c=>c.type==='스킬');

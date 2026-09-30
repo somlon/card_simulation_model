@@ -17,7 +17,7 @@ POOL=json.load(open(os.path.join(HERE,'card_pool.json'),encoding='utf-8'))
 BY_NAME={c['name']:c for c in POOL}
 BY_CODE={c['code']:c for c in POOL if c.get('code')}
 LIMITS={'메인':(20,40),'상급':(0,20),'전략':(0,20)}   # 규칙 명세서 §3-2
-STRATEGY_FILL=10   # 시뮬레이션 방침: 전략 덱은 항상 이 매수를 채운다 (규칙상 0~20장)
+STRATEGY_FILL=20   # 시뮬레이션 방침: 전략 덱은 항상 이 매수를 채운다 (규칙상 0~20장, 사용자 재정 2026-09-30)
 MAX_COPIES=3
 
 def lookup(key):
@@ -41,7 +41,8 @@ def parse(text):
         deck[sec].append((int(m.group(1)),c['name']))
     return deck,errs
 
-def validate(deck):
+def validate(deck,policy=True):
+    """덱 구축 규칙 검사. policy=False면 시뮬레이션 방침(전략 덱 STRATEGY_FILL장 채우기)은 빼고 규칙만 본다"""
     errs=[];warns=[]
     sk=lookup(deck['스킬'] or '')
     if not sk or sk['type']!='스킬':
@@ -62,7 +63,7 @@ def validate(deck):
             elif sec=='메인' and c['deck']!='메인': errs.append(f'[메인] 「{name}」(레벨 {c.get("level")})는 상급 덱 카드')
             elif sec=='상급' and c['deck']!='상급': errs.append(f'[상급] 「{name}」는 메인 덱 카드')
     st=sum(n for n,_ in deck['전략'])
-    if st!=STRATEGY_FILL: errs.append(f'[전략] {st}장 — 시뮬레이션 방침상 {STRATEGY_FILL}장을 채워야 함')
+    if policy and st!=STRATEGY_FILL: errs.append(f'[전략] {st}장 — 시뮬레이션 방침상 {STRATEGY_FILL}장을 채워야 함')
     cnt=Counter(); 
     for sec in('메인','상급'):
         for n,name in deck[sec]: cnt[name]+=n
@@ -73,9 +74,9 @@ def validate(deck):
             warns.append(f'[전략] 「{name}」 전량 교체 시 {cnt[name]+n}장이 될 수 있음 — 교체 시점에 3장 제한 검사')
     return errs,warns
 
-def load(path):
+def load(path,policy=True):
     deck,perr=parse(open(path,encoding='utf-8').read())
-    verr,warn=validate(deck) if not perr else ([],[])
+    verr,warn=validate(deck,policy) if not perr else ([],[])
     return deck,perr+verr,warn
 
 if __name__=='__main__':

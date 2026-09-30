@@ -203,6 +203,9 @@ class LearnedAI(HeuristicAI):
                     if alt and alt[0](g, p) and g.can_place(c, p):
                         lab = f'특수 일반소환:{c.name}'
                         if lab not in seen: seen.add(lab); acts.append((lab, 70, ('alt', c, None)))
+            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
+                if s <= VETO or lab in seen: continue
+                seen.add(lab); acts.append((lab, s, ('extra', pay[1], pay)))
             for c, e in g.options(p, ('ignition', 'quick')):
                 lab = f'발동:{c.name}#{e.num}'
                 if lab in seen: continue
@@ -223,6 +226,7 @@ class LearnedAI(HeuristicAI):
             elif kind == 'alt':
                 c.alt_normal[1](g, p); g.L(f'{g.pname(p)} {c} 조건 충족 — 제물 없이 일반소환'); g.normal_summon(c, p); g.after_action(p)
             elif kind == 'act': g.act(p, c, e)
+            elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
 
     # ── 전투 ──

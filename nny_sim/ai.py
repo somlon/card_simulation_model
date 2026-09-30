@@ -2,7 +2,7 @@
 모든 판단은 로그에 '판단' 항목으로 남는다(후보와 점수, 선택).
 덱별 지침은 DECK_POLICY에 모은다: 시작 패 배분 / 드로우 덱 선택 / 멀리건 / 서치 우선순위.
 """
-from cards import value
+from cards import value, VETO
 import json, os, random as _r
 
 LEARN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'learned')
@@ -176,6 +176,8 @@ class HeuristicAI:
                             g.L(f'판단[{g.pname(p)}] {c.name} 일반소환 검토: 소환 후 직접공격 합계 {dmg} / 상대 HP {g.p[1-p].hp} → {"결착 가능, 허용" if s else "결착 불가, 보류"}', 'decision')
                     if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): s = 0
                     acts.append((s, 'summon', c, None))
+            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
+                acts.append((s, lab.split(':')[0], pay[1], pay))
             for c, e in g.options(p, ('ignition', 'quick')):
                 s = e.score(g, c, p, None) if e.score else 0
                 acts.append((s, 'act', c, e))
@@ -187,7 +189,7 @@ class HeuristicAI:
             acts = [a for a in acts if a[0] > 0]
             if not acts: return
             acts.sort(key=lambda a: -a[0])
-            self.note(g, p, f'{ph} 행동', [(f'{a[1]}:{a[2].name}' + (f'#{a[3].num}' if a[3] else ''), a[0]) for a in acts],
+            self.note(g, p, f'{ph} 행동', [(f'{a[1]}:{a[2].name}' + (f'#{a[3].num}' if a[1] == 'act' else ''), a[0]) for a in acts],
                       f'{acts[0][1]}:{acts[0][2].name}')
             s, kind, c, e = acts[0]
             if kind == 'summon':
@@ -196,6 +198,8 @@ class HeuristicAI:
                 g.act(p, c, e)
             elif kind == 'set':
                 g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
+            else:
+                self.do_extra(g, p, e)
 
     # ── 번식지 서치 (학습) ──
     def breeding_pick(self, g, p, cands):
@@ -221,11 +225,68 @@ class HeuristicAI:
 
     # ── 공유 존 ──
     def use_shared(self, g, p, c, full=True):
-        """빈 공유 존에 놓을지. 규칙상 언제든 고를 수 있으나(§10-2) 지침상 몬스터 존이 가득 찼을 때만 검토하고,
-        이 몬스터를 더해야 이번 턴 결착이 될 때만 쓴다. (빈 공유 존에는 마커가 없어 놓는 것만으로 상대에게 페널티를 줄 수는 없다, §10-1)"""
+        """빈 공유 존에 놓을지. 규칙상 언제든 고를 수 있으나(§10-2) 지침상 몬스터 존이 가득 찼을 때만 검토하고, 필요할 때만 사용:
+        ① 비어 있는 공유 존의 마커가 상대 것 → 놓는 순간 마커가 뒤집혀 상대에게 페널티 (마커는 비어도 남는다, 사용자 재정 2026-09-30)
+        ② 이 몬스터를 더해야 이번 턴 결착이 된다"""
         if not full: return False
-        if self.lethal_damage(g, p, c) < g.p[1 - p].hp: return False
-        g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — 이번 턴 결착에 필요', 'decision'); return True
+        if g.shared_owner is not None and g.shared_owner != p: why = '마커가 상대 소유(상대 페널티)'
+        elif self.lethal_damage(g, p, c) >= g.p[1 - p].hp: why = '이번 턴 결착에 필요'
+        else: return False
+        g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — {why}', 'decision'); return True
+
+    # ── 일반소환 확장 · 표시 형식 변경 (§5-2, §8-1) ──
+    def pick_tributes(self, g, p, c):
+        """일반소환에 필요한 제물을 고른다: 자신 필드의 카드 중 가치가 낮은 순. 제물이 모자라거나 소환할 자리가 없으면 None"""
+        n = g.tributes_needed(c.level)
+        if n == 0: return ()
+        cands = sorted(g.release_cands(p), key=lambda x: (value(g, x), x.uid))
+        if len(cands) < n: return None
+        ts = tuple(cands[:n])
+        if not g.free_m(p) and not any(t.zone == 'm' for t in ts): return None
+        return ts
+
+    def extra_summon_options(self, g, p):
+        """무제물 공격 표시 소환 외의 일반소환 후보: 제물 소환(공격 · 수비)과 무제물 수비 표시 소환.
+        반환 [(label, score, ('summon', card, tributes, pos))]. 기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지.
+        새 선택지는 학습표에 데이터가 없으므로, 휴리스틱상 타당한 경우만 후보로 내고 나머지는 VETO"""
+        out = []
+        if g.phase != '진행' or g.p[p].normal_summons <= 0: return out
+        opp_atk = max([g.atk(m) for m in g.monsters(1 - p) if m.faceup] or [0])
+        for c in g.p[p].hand:
+            if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
+            if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
+            ts = self.pick_tributes(g, p, c)
+            if ts is None or (not ts and not g.can_place(c, p)): continue
+            cost = sum(value(g, t) for t in ts)
+            if ts:
+                if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
+                gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
+                out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, 'atk')))
+            if g.def_allowed(p) and not c.has('번성충'):
+                sd = (g.df(c) - g.atk(c)) / 100 - 10 - 12 * cost if g.df(c) > g.atk(c) and opp_atk > g.atk(c) else VETO
+                out.append((f'수비 소환:{c.name}', sd, ('summon', c, ts, 'def')))
+        return out
+
+    def position_options(self, g, p, ph):
+        """표시 형식 변경 후보 (§8-1): 정비 단계에 약한 몬스터를 수비로, 진행 단계에 공격할 수 있으면 공격으로"""
+        out = []
+        opp = [m for m in g.monsters(1 - p) if m.faceup]
+        opp_atk = max([g.atk(m) for m in opp] or [0])
+        wall = max([g.df(m) if m.pos == 'def' else g.atk(m) for m in opp] or [0])
+        for m in g.monsters(p):
+            if not g.can_change_pos(m, p): continue
+            if m.pos == 'atk':
+                s = 15 if ph == '정비' and opp_atk > g.atk(m) and g.df(m) > g.atk(m) else VETO
+                out.append((f'수비 표시로:{m.name}', s, ('pos', m, None, None)))
+            else:
+                s = 15 if ph == '진행' and g.can_declare_attack(p) and g.atk(m) > wall else VETO
+                out.append((f'공격 표시로:{m.name}', s, ('pos', m, None, None)))
+        return out
+
+    def do_extra(self, g, p, pay):
+        kind, c, ts, pos = pay
+        if kind == 'summon': g.normal_summon(c, p, ts, pos); g.after_action(p)
+        else: g.change_position(c, p); g.triggers()   # 표시 형식 변경은 발동 · 소환이 아니므로 우선권이 넘어가지 않는다 (§6-1)
 
     def lethal_damage(self, g, p, extra=None):
         """이번 턴 남은 전투로 줄 수 있는 직접공격 대미지 추정 (extra: 추가로 필드에 낼 몬스터)"""
