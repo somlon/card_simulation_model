@@ -109,8 +109,9 @@ def used_cards(log_slice, pname):
         if m and m.group(1) == pname: out.add(m.group(2))
     return out
 
-def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_side=True):
-    """make_ai(deck) -> AI. 반환: (매치 승자, 라운드 목록)"""
+def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_side=True, side_fn=None):
+    """make_ai(deck) -> AI. 반환: (매치 승자, 라운드 목록)
+    side_fn(i, decks, wins, rounds, rng, side_eps, log) -> 플레이어 i의 새 덱. 없으면 학습표 교체(side_swap) — DRL 정책 연결용"""
     decks = [dA, dB]; wins = [0, 0]; rounds = []; f = first; rnd = 0
     while max(wins) < 2:   # 승점 2점 선취 (§11-2). 라운드는 규칙의 종료 조건으로만 끝나므로 무승부는 없다
         rnd += 1
@@ -126,7 +127,10 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
         if learn_side:
             for i in (0, 1): record_round(decks[i], decks[1 - i]['스킬'], w == i, used_cards(log[i0:], decks[i]['이름']))
         if max(wins) < 2 and side:
-            decks = [side_swap(decks[i], decks[1 - i]['스킬'], rng, side_eps, log, decks[i]['이름']) for i in (0, 1)]
+            if side_fn is None:
+                decks = [side_swap(decks[i], decks[1 - i]['스킬'], rng, side_eps, log, decks[i]['이름']) for i in (0, 1)]
+            else:
+                decks = [side_fn(i, decks, wins, rounds, rng, side_eps, log) for i in (0, 1)]
         # 교체 후, 이전 라운드의 패자가 선후공을 결정한다 (정본 4, §11-2)
         loser = 1 - w
         f = loser if make_ai(decks[loser]).wants_first(decks[w]['스킬']) else w
