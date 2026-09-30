@@ -34,16 +34,17 @@
 | 2026-09-30 | 제물은 자신 필드의 몬스터만(재정). 레시피 학습기 채우기 모드: 후보를 「기여도 최저 카드와 1장 바꾼 시험 덱」 승률로 순위 매김(단순 추가는 평가 결과가 같아 무의미했음), 안전장치 중단 매치는 판정 없음 처리 | `model/align-rules-spec` 3번째 커밋 → PR #5 |
 | 2026-09-30 | 7개 덱 전략 덱 10 → 20장 채움 (레시피 학습기, 메인 · 상급 불변). 세제 · 데쿠마 learned/decks 신규 | `data/fill-strategy-20` → PR #6 (base: `data/add-nny-sim-data`) |
 | 2026-09-30 | A 결착 우선 지침: 이번 공격으로 상대 HP 0이면 반드시 공격 (학습 대상 아님). 결착 누락 0건, 무한 진행 재현 해소 | `model/lethal-first` → PR #7 (base: `model/align-rules-spec`) |
+| 2026-09-30 | R1 수정: RF 형세 판정이 모델 파일에 저장된 학습 당시 스킬 목록으로 특징을 만듦(28개 일치). 탐색 AI 10매치 오류 0 · 재현 불일치 0. 옛 규칙 모델이지만 새 규칙에서도 AUC 0.87/0.81 (수동 공식 0.72/0.73) | `model/fix-rf-feature-mismatch` → PR #8 (base: `model/lethal-first`) |
 | 2026-09-30 | 학습표 B(감쇠 0.1 후 이어서) vs C(초기화 후 재학습) 비교 실험 (방식당 4만 매치): B · C 차이 없음, 둘 다 현행보다 우세 → C 채택 권고. 보고서 · 스크립트는 .docx로 대화창에 전달 (저장소 미반영 — 사용자 지시) | 저장소 반영 없음 |
 
 ## 실행 환경 메모
 
 - 2026-09-30 세션에서 numpy 2.4.6 · scipy 1.17.1 · scikit-learn 1.8.0(RF 모델 저장 버전과 일치) 설치 — **세션 한정**. 유지하려면 클라우드 환경 설정의 Setup script에 `pip install numpy==2.4.6 scipy==1.17.1 scikit-learn==1.8.0` 추가 (사용자에게 안내함).
-- RF 형세 모델은 로드되지만 형세 판정은 특징 수 불일치(32 ≠ 28)로 실패 — 해설서 리뷰 R1 버그, 수정 대기.
+- RF 형세 모델: R1 수정(PR #8)으로 형세 판정 정상. 7개 덱 · 새 규칙으로 재학습(`python rf_eval.py <초>`)하면 더 정확해질 수 있음.
 
 ## 진행 중
 
-- PR #3 · #4 · #5 · #6 · #7 사용자 검토 · 머지 대기.
+- PR #3 · #4 · #5 · #6 · #7 · #8 사용자 검토 · 머지 대기. 머지 순서 안내함: 데이터 #4 → #6, 코드 #3 → #5 → #7 → #8 (각 머지 후 다음 PR base를 계열 기준 브랜치로 변경 또는 머지된 브랜치 삭제로 자동 변경, 「Create a merge commit」 방식). 이후 계열 → main 반영은 R1에 따라 사용자 지시 시.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
 - 학습표 결정 대기: C 학습표 채택 여부, 저장 방식(105MB — GitHub 100MB 한도 초과: gzip 압축 추천 / L2 정리 / Git LFS), 채택 전 R2 · R4 수정. 학습된 표는 임시 컨테이너에만 있음(세션 종료 시 소실, 스크립트로 재생성 약 30분).
 
@@ -55,7 +56,6 @@
    - 새 AI 선택지(제물 · 수비 소환, 표시 형식 변경, 스킬 교체)는 학습표에 데이터가 없음 → season/train 학습 필요 (analysis 계열).
    - PR #5 답변 반영은 같은 브랜치 `model/align-rules-spec` 에 이어서.
 2. 해설서 리뷰의 높은 심각도 항목 수정 (`model` 계열, 사용자 지시 후 — "수정은 나중에 명령"):
-   - R1 RF 형세 모델 특징 수 불일치로 SearchAI 오류 → `model/fix-rf-feature-mismatch`
    - R2 run.py · batch.py 실행 시 학습표가 갱신되는 문제 → `model/run-no-learn-default`
    - R3 실행 위치(상대 경로) 의존 → `model/fix-relative-paths`
 3. 중간 심각도: R4 학습 파일 원자적 저장, R5 제외 존 복귀 시 카드 소실.
@@ -75,6 +75,7 @@
 | `model/align-rules-spec` | 규칙 명세서 기준 코드 수정 (`model/add-nny-sim-code` 에서 분기) | PR #5 열림 |
 | `data/fill-strategy-20` | 전략 덱 20장 채우기 결과 (`data/add-nny-sim-data` 에서 분기) | PR #6 열림 |
 | `model/lethal-first` | 결착 우선 지침 (`model/align-rules-spec` 에서 분기) | PR #7 열림 |
+| `model/fix-rf-feature-mismatch` | R1 수정 (`model/lethal-first` 에서 분기) | PR #8 열림 |
 | `exp/main` | exp 계열 기준 (`main` 에서 분기, 내용은 main과 같음) | 실험 파일은 올리지 않음 |
 | `config/sync-rules-to-main` | main 규정 동기화용 | 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
