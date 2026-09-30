@@ -193,6 +193,41 @@ def eval_job(job):
     return out
 
 
+def eval_match_job(job):
+    """Bo3 매치 평가(전략 덱 교체 포함). x = DRL(자리 0), y = 학습표 {'kind': 'table', 'path', 'side'} 또는 휴리스틱.
+    학습표 쪽 교체는 y['side'] 표(없으면 learned/side.json), 휴리스틱 쪽 교체도 기존과 같이 학습표 교체 규칙을 쓴다"""
+    import policy as P, match as M
+    from engine import StalledGame
+    decks = _W['decks']; out = {'w': 0, 'n': 0, 'stalled': 0, 'turns': 0, 'errors': 0, 'err_msgs': [], 'by_deck': {}}
+    x = job['x']; y = job['y']
+    actor = _actor(x['arrays'], x.get('remap'))
+    old = (P.POLICY, M.SIDE)
+    try:
+        if y['kind'] == 'table':
+            P.POLICY = _table(y['path'])
+            if y.get('side'):
+                M.SIDE = _table(y['side'])
+        role = 'table' if y['kind'] == 'table' else 'heuristic'
+        nrng = np.random.default_rng(0)
+        for a, b, first, seed in job['games']:
+            try:
+                mw, rounds = play_one_match(decks[a], decks[b], first, seed, ['past', role], [actor, None], None, nrng)
+            except StalledGame:
+                out['stalled'] += 1; continue
+            except Exception:
+                out['errors'] += 1
+                if len(out['err_msgs']) < 3:
+                    out['err_msgs'].append(f'{a} vs {b}: ' + traceback.format_exc()[-1200:])
+                continue
+            if mw is None:
+                continue
+            out['n'] += 1; out['w'] += int(mw == 0); out['turns'] += len(rounds)
+            e = out['by_deck'].setdefault(a, [0, 0]); e[0] += int(mw == 0); e[1] += 1
+    finally:
+        P.POLICY, M.SIDE = old
+    return out
+
+
 def merge_eval(parts):
     w = sum(p['w'] for p in parts); n = sum(p['n'] for p in parts)
     by = {}
