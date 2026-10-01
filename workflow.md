@@ -17,6 +17,24 @@
   - 라운드마다 **승리 · 패배 요인**(종료 원인, 결정타 종류, 대미지 출처, 턴 수, 역전 여부, 사용 카드, 멀리건, 전략 덱 교체 등)을 저장해 나중에 통계 분석할 수 있게 한다.
   - 표본 크기 주의: 49~51%(±1%p)를 판정하려면 덱당 약 1만 매치가 필요하다(95% 신뢰구간 ±1%p 기준).
 
+## 다음 세션에서 이어서 하기 (2026-10-01 세션 종료 시점)
+
+- **열린 PR 없음.** PR #9 ~ #12까지 모두 계열 기준 브랜치에 머지됨. `main` 은 그대로(PR #2 시점).
+- **첫 작업은 사용자 선택 대기** — 지난 세션 끝에 아래 세 갈래 중 무엇부터 할지 물었고 답을 받지 못함:
+  1. 기준 결과 원자료(`analysis/main` 의 `nny_sim/sim_results/2026-10-01_table_n700/rounds.jsonl.gz`)로 덱별 승리 · 패배 요인을 분석해 49~51%에 맞출 조정 방향 제안 → `analysis` 계열.
+  2. 2 · 3라운드 「직전 패자 → 항상 선공」 지침(`wants_first`)이 실제로 불리한지 검증(1라운드는 후공 우위) → 측정은 `analysis`, 지침을 바꾸면 `model`.
+  3. DRL 추가 학습 → `model` · `data` 계열. 덱 간 힘 차이를 먼저 다룰지 함께 결정.
+- **실행용 작업 폴더 만들기** — 코드(`model/main`)와 데이터(`data/main`)가 다른 브랜치라 합쳐서 써야 한다:
+  ```bash
+  git fetch origin model/main data/main analysis/main
+  git worktree add --detach ../run origin/model/main
+  git archive origin/data/main nny_sim | tar -x -C ../run                          # 카드 풀 · 덱 · 학습표 · DRL 모델
+  git archive origin/analysis/main nny_sim/sim_results | tar -x -C ../run          # 기준 결과 원자료(분석할 때만)
+  cd ../run/nny_sim && python -m unittest test_match_sim drl.test_drl              # 35개 (PyTorch 없으면 학습망 3개 건너뜀)
+  ```
+  - 코드 브랜치에 데이터 파일이 섞여 커밋되지 않도록 `.git/info/exclude` 에 `nny_sim/card_pool.json` · `nny_sim/decks/` · `nny_sim/learned/` · `nny_sim/덱_등록기.html` · `nny_sim/sim_results/` 를 넣는다. data · analysis 작업 브랜치에서는 `git add -f` 로 올린다.
+- 지난 세션의 작업 폴더(worktree) · PyTorch 가상환경은 컨테이너와 함께 사라짐. 결과물은 모두 원격 브랜치에 있다. DRL 학습을 다시 하려면 PyTorch 재설치(아래 「실행 환경 메모」).
+
 ## 현재 상태 요약
 
 - 저장소 규정 체계(CLAUDE.md · 세션 시작 훅 · workflow.md) 구축 완료.
@@ -25,13 +43,21 @@
   - `data/main` = nny_sim 데이터 최신 (#4 원본 + #6 전략 덱 20장)
   - 두 브랜치는 같은 `nny_sim/` 폴더에 겹치지 않는 파일을 담는다. 실행하려면 둘 다 필요 (합쳐도 충돌 없음 확인, 7개 덱 21매치 스모크 오류 0).
 - `model/main` · `data/main` 은 `main` 에서 분기함 (사용자 지시: main에 연결).
-- 심층 강화 학습(DRL) 판단 정책 `nny_sim/drl/` 을 PR #9로 올림(`model/drl-policy` → `model/main`) — **머지 대기**. 학습표 버전은 그대로 유지, 학습 요소 동일.
-  - 시험 학습(모방 학습 + PPO 59분)에서 학습에 쓰지 않은 시드 기준 C 학습표 상대 단판 64.1% · 매치 65.5%, 현행 학습표 상대 68.2%. 아직 수렴 전.
-  - 시험 학습 모델 · 이어 학습용 체크포인트 · C 교사 학습표(gzip 9.6MB)는 PR #10(`data/add-drl-pilot-model` → `data/main`)으로 보존 — 머지 대기.
-  - PR #9 · #10 감시 중(리뷰 · CI 이벤트 대응, 사용자 지시 2026-10-01). 저장소에 CI 없음.
-- 매치 전용 시뮬레이션 · 라운드 통계 도구 `nny_sim/match_sim.py` 를 PR #11로 올림(`model/match-round-stats` → `model/main`) — **머지 대기**. 첫 기준 결과(현행 학습표 AI, 34,300매치)는 PR #12(`analysis/sim-table-baseline` → `analysis/main`).
+- PR #9 ~ #12 머지 완료 (2026-10-01, 「Create a merge commit」, 사용자 지시). **`main` 에는 미반영.**
+  - `model/main` = 위 코드 + #9 DRL 판단 정책(`nny_sim/drl/`) + #11 매치 전용 시뮬레이션(`nny_sim/match_sim.py`) (`2d9a1f6`)
+  - `data/main` = 위 데이터 + #10 DRL 시험 학습 모델 · C 교사 학습표(`nny_sim/learned/drl/`) (`6c23725`)
+  - `analysis/main` = #12 기준 매치 시뮬레이션 결과 · 원자료(`nny_sim/sim_results/2026-10-01_table_n700/`) (`a8ccd32`)
+  - 머지 전 세 갈래를 합친 상태로 확인: 테스트 35개(DRL 23 · match_sim 12) 통과, DRL AI 매치 시뮬레이션 98매치 중단 · 오류 0. 머지 결과 트리 = 확인한 트리.
+- 심층 강화 학습(DRL) 판단 정책: 학습표 버전은 그대로 유지, 학습 요소 동일. 학습표를 기본 AI로 둘지 DRL로 바꿀지는 미정.
+  - 시험 학습(모방 학습 + PPO 59분)에서 학습에 쓰지 않은 시드 기준 C 학습표 상대 단판 64.1% · 매치 65.5%, 현행 학습표 상대 68.2%. **아직 수렴 전.**
+  - 대국 모델 `learned/drl/pilot/model_best.npz`, 이어 학습 체크포인트 `learned/drl/pilot/ckpt.pt`, 교사 `learned/drl/teacher/policy_C.json.gz`.
+- 매치 전용 시뮬레이션 기준 결과(현행 학습표 AI, 순서쌍 49 × 700 = 34,300매치, 중단 · 오류 0):
   - **이상 범위(49~51%) 안의 덱 없음**: 달그림자 78.9 · 투기장 70.3 · 번성충-대발생 63.1 · 솔루나 아츠 61.9 · 데쿠마 33.2 · 세제 26.4 · 번성충-기생 16.3%.
   - 1라운드 후공 우위(선공 승률 46.3%, 미러전 42.7%)인데 2 · 3라운드 패자 선택 지침(`wants_first`)은 항상 선공.
+  - 2 · 3라운드 선후공 승률에는 「직전 패자 = 선공」 선택 효과가 섞여 있음 — 순수 순서 효과는 1라운드(특히 미러전)로 판단.
+  - 결정타: 직접공격 52,093 · 전투 12,119 · 자해 2,749(대부분 달그림자 자멸) · 효과 1,830 · 공유 존 마커 48. 종료 원인: HP 0 68,839 · 덱아웃 8,797(세제 승리 요인 2위).
+- 시뮬레이션 대상 덱 7개: 달그림자에 잠식된 태양 · 데쿠마 · 번성충-기생 · 번성충-대발생 · 세제 · 솔루나 아츠 · 투기장의 규칙. 카드 풀 217장 중 96장 구현, 스킬 14종 중 7종 미구현(던전마스터 셔플!, 데이터버그 패키지 프로그램, 소원의 분수, 올인, 호박옥-몽식의 계약, 호박옥-봉인의 계약, 희생제).
+  - 공용 카드 10종은 모두 구현. 메인 · 상급 덱에 쓰는 덱은 투기장(메인 8 · 상급 2) · 번성충-기생(메인 7) · 번성충-대발생(메인 2)뿐이고, 전략 덱에는 7개 덱 모두 4~20장 있음.
 - 규칙 명세서 파일 자체는 저장소에 없음(업로드 파일로만 받음). 코드 주석의 §번호가 이 문서를 가리킴.
 - zip의 문서 `.md` 8개(README, 규칙명세, 보고서, 기보 등)는 아직 저장소에 없음.
 - 코드 해설서(.docx)를 만들어 사용자에게 전달함(저장소에는 올리지 않음).
@@ -60,6 +86,8 @@
 | 2026-10-01 | 목표 기준 기록(덱 종합 승률 49~51% · 매치 전용 시뮬레이션). 매치 전용 시뮬레이션 도구: 모든 순서쌍(미러전 포함) Bo3, 양쪽 같은 AI · 학습 안 함, 덱별 1 · 2 · 3라운드 × 선후공 승률, 라운드별 승패 요인 원자료(gzip JSONL), 이상 범위 판정. 테스트 12개, 독립 리뷰 4건 반영. 기준 실행 34,300매치(중단 · 오류 0) | `model/match-round-stats` → PR #11 (`model/main`), 결과 `analysis/sim-table-baseline` → PR #12 (`analysis/main`, 기준 브랜치 신규 — `default` 에서 분기) |
 | 2026-10-01 | DRL 시험 학습 결과물 보존: model_best · model_bc · ckpt.pt · 상대군 스냅숏 5개 · 설정 · 학습 기록 · 최종 평가, C 교사 학습표(101MB → gzip 9.6MB, 원본과 동일 확인) + side_C. 코드 쪽은 `.json.gz` 학습표 읽기 추가(PR #9 `ab7c529`) | `data/add-drl-pilot-model` → PR #10 (`data/main`) |
 | 2026-09-30 | PR 순서대로 머지 (main 반영 없음 — 사용자 지시). 쌓인 PR은 base를 계열 기준 브랜치로 바꾼 뒤 변경분 · 충돌 확인 후 머지 | `data/main`: #4 `b2c5419` → #6 `366f910` / `model/main`: #3 `92b5ba7` → #5 `89d9a23` → #7 `4e6acd3` → #8 `4b1e0a7` |
+| 2026-10-01 | 현재 덱 목록(7개) · 미구현 스킬 7종 · 공용 카드 사용 현황 안내 (대화창) | 저장소 반영 없음 |
+| 2026-10-01 | PR #9 ~ #12 순서대로 머지 (main 반영 없음 — 사용자 지시). 머지 전 세 갈래를 합친 상태로 테스트 35개 · DRL 매치 시뮬레이션 스모크(98매치 오류 0) 확인, 감시 · 정기 점검 종료 | `model/main`: #9 `c3182d9` → #11 `2d9a1f6` / `data/main`: #10 `6c23725` / `analysis/main`: #12 `a8ccd32` |
 
 ## 실행 환경 메모
 
@@ -71,14 +99,14 @@
   - 실행 시간: 백그라운드 명령은 최대 2시간이고, 세션이 유휴 상태가 되면 VM이 회수되어 실행 중이던 프로세스는 복구되지 않음. 학습은 체크포인트를 저장하고 이어서 재개하는 구조로 설계해야 함.
   - 메모리: 명령 실행 cgroup 한도 약 14.3GB. 표본을 파이썬 객체로 들면 한도 초과로 작업자가 종료됨 → `drl/buffer.py` 열 단위 저장으로 해결(시험 학습 최대 약 5.9GB).
   - 실행 방법: `nny_sim` 폴더에서 `python -m drl.train bc|ppo --run learned/drl/<이름>`(PyTorch 필요), 평가 `python -m drl.evaluate`(numpy만). 모델 · 교사 파일은 `learned/drl/`(data 계열, git 제외).
+  - PyTorch 재설치(세션마다, 학습할 때만): `python3 -m venv --system-site-packages <임시폴더>/drl_venv && <임시폴더>/drl_venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu`. 지난 세션은 PyPI판 `torch==2.14.0` 을 썼고, `ckpt.pt` 를 불러올 때 버전 차이로 문제가 생기면 같은 버전으로 맞춘다. 유지하려면 Setup script에 넣는다.
 
 ## 진행 중
 
-- 계열 기준 브랜치(`model/main` · `data/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
+- 다음 작업 선택 대기 — 「다음 세션에서 이어서 하기」의 세 갈래(승패 요인 분석 · 패자 선공 지침 검증 · DRL 추가 학습).
+- 계열 기준 브랜치(`model/main` · `data/main` · `analysis/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
-- PR #11(매치 시뮬레이션 도구) · #12(기준 결과) 사용자 검토 · 머지 대기 — 감시 중.
-- DRL PR #9(코드) · #10(모델 · 교사 표) 사용자 검토 · 머지 대기. #10은 #9 코드(.json.gz 읽기)가 있어야 쓸 수 있다.
-- DRL 추가 학습: 사용자가 먼저 현재 덱 목록 확인을 요청함(2026-10-01, 7개 덱 · 스킬 14종 중 7종 구현 안내). 이어 학습은 `config.json` 의 `total_iters` 를 400보다 크게 바꾸고 `python -m drl.train ppo --run learned/drl/pilot`. 학습표 대신 DRL을 기본 AI로 쓸지는 결정 대기.
+- DRL 추가 학습 방법: 실행용 작업 폴더에서 `learned/drl/pilot/config.json` 의 `total_iters` 를 400보다 크게 바꾸고 `python -m drl.train ppo --run learned/drl/pilot --minutes 100`(PyTorch 필요, 다시 실행하면 이어서). 결과 모델은 `data` 계열 새 작업 브랜치로 올린다. 학습표 대신 DRL을 기본 AI로 쓸지는 결정 대기.
 - 학습표 결정 대기: C 학습표 채택 여부, 저장 방식(105MB — GitHub 100MB 한도 초과: gzip 압축 추천 / L2 정리 / Git LFS), 채택 전 R2 · R4 수정. 학습된 표는 임시 컨테이너에만 있음(세션 종료 시 소실, 스크립트로 재생성 약 30분).
 
 ## 다음 할 일 (우선순위 순)
@@ -88,14 +116,14 @@
    - `시제_*.deck` 은 전략 10장 그대로 — 갱신 여부 사용자 확인.
    - 새 AI 선택지(제물 · 수비 소환, 표시 형식 변경, 스킬 교체)는 학습표에 데이터가 없음 → season/train 학습 필요 (analysis 계열). C 학습표 채택 결정과 함께 진행.
    - PR #5 남은 확인 사항 반영은 `model/main` 에서 새 작업 브랜치로 (`model/align-rules-spec` 은 머지 완료).
-   - 머지된 작업 브랜치 삭제 (사용자가 GitHub에서 — 원격 삭제 권한 없음).
+   - 머지된 작업 브랜치 삭제 (사용자가 GitHub에서 — 원격 삭제 권한 없음). 아래 「브랜치 현황」의 「삭제 가능」 항목.
 2. 해설서 리뷰의 높은 심각도 항목 수정 (`model` 계열, 사용자 지시 후 — "수정은 나중에 명령"):
    - R2 run.py · batch.py 실행 시 학습표가 갱신되는 문제 → `model/run-no-learn-default`
    - R3 실행 위치(상대 경로) 의존 → `model/fix-relative-paths`
 3. 중간 심각도: R4 학습 파일 원자적 저장, R5 제외 존 복귀 시 카드 소실.
 4. 문서 `.md` 8개를 올릴지 결정 — README · 규칙명세 · 미해결 재정 목록은 `docs`, 보고서 · 결과 · 분석 · 기보는 `analysis` 계열 후보.
 5. 번성충-기생 덱 승률 5.0% 원인 조사 (`analysis` 계열). DRL도 이 덱을 쥐면 22~27%.
-6. 덱 밸런스(목표 49~51%) — 사용자 지시 후: 기준 결과의 승패 요인 분석(`analysis`), 패자 선후공 선택 지침(항상 선공)이 불리한지 검증, 덱 · 카드 조정 방향 제안. DRL 추가 학습 전 덱 간 힘 차이를 다룰지 결정.
+6. 덱 밸런스(목표 49~51%) — 사용자 지시 후: 기준 결과의 승패 요인 분석(`analysis`), 패자 선후공 선택 지침(항상 선공)이 불리한지 검증, 덱 · 카드 조정 방향 제안. DRL 추가 학습 전 덱 간 힘 차이를 다룰지 결정. 시뮬레이션은 `python match_sim.py run --matches 700 --out sim_results/<이름> [--ai table|heuristic|drl:<모델.npz>]`(4코어 약 6분, 학습표 AI 기준), 결과는 `analysis` 계열 새 작업 브랜치로 올린다.
 7. DRL 후속 (`model` 계열, 사용자 지시 후): 추론 속도 개선(공격력 계산 캐시 · 영역 모음 한 번에 계산 — 현재 학습표의 1/3.7), 추가 학습 · 수렴 확인, 덱 자동 조정(시즌 ③)에 DRL 평가자 연결 검토.
 
 ## 브랜치 현황
@@ -104,19 +132,19 @@
 | --- | --- | --- |
 | `main` | 최종 결과물 | CLAUDE.md · 세션 시작 훅 반영됨 (PR #1, #2) |
 | `default` | 규정 · 진척 원본 (CLAUDE.md, workflow.md, 훅) | 사용 중 |
-| `model/main` | model 계열 기준 (`main` 에서 분기) | PR #3 · #5 · #7 · #8 머지됨 (`4b1e0a7`), main 미반영 |
+| `model/main` | model 계열 기준 (`main` 에서 분기) | PR #3 · #5 · #7 · #8 · #9 · #11 머지됨 (`2d9a1f6`), main 미반영 |
 | `model/add-nny-sim-code` | nny_sim 코드 원본 | PR #3 머지 완료, 삭제 가능 |
-| `data/main` | data 계열 기준 (`main` 에서 분기) | PR #4 · #6 머지됨 (`366f910`), main 미반영 |
+| `data/main` | data 계열 기준 (`main` 에서 분기) | PR #4 · #6 · #10 머지됨 (`6c23725`), main 미반영 |
 | `data/add-nny-sim-data` | nny_sim 데이터 원본 | PR #4 머지 완료, 삭제 가능 |
 | `model/align-rules-spec` | 규칙 명세서 기준 코드 수정 | PR #5 머지 완료, 삭제 가능 |
 | `data/fill-strategy-20` | 전략 덱 20장 채우기 결과 | PR #6 머지 완료, 삭제 가능 |
 | `model/lethal-first` | 결착 우선 지침 | PR #7 머지 완료, 삭제 가능 |
 | `model/fix-rf-feature-mismatch` | R1 수정 | PR #8 머지 완료, 삭제 가능 |
-| `model/drl-policy` | DRL 판단 정책 (`model/main` 에서 분기) | PR #9 열림 (감시 중) |
-| `data/add-drl-pilot-model` | DRL 시험 학습 모델 · C 교사 표 (`data/main` 에서 분기) | PR #10 열림 (감시 중) |
-| `model/match-round-stats` | 매치 전용 시뮬레이션 · 라운드 통계 (`model/main` 에서 분기) | PR #11 열림 (감시 중) |
-| `analysis/main` | analysis 계열 기준 (`default` 에서 분기, 2026-10-01) | 기준 결과 PR #12 대상 |
-| `analysis/sim-table-baseline` | 기준 매치 시뮬레이션 결과 34,300매치 | PR #12 열림 (감시 중) |
+| `model/drl-policy` | DRL 판단 정책 | PR #9 머지 완료, 삭제 가능 |
+| `data/add-drl-pilot-model` | DRL 시험 학습 모델 · C 교사 표 | PR #10 머지 완료, 삭제 가능 |
+| `model/match-round-stats` | 매치 전용 시뮬레이션 · 라운드 통계 | PR #11 머지 완료, 삭제 가능 |
+| `analysis/main` | analysis 계열 기준 (`default` 에서 분기, 2026-10-01 — CLAUDE.md · workflow.md · 훅도 그 시점 사본으로 들어 있음) | PR #12 머지됨 (`a8ccd32`), main 미반영 |
+| `analysis/sim-table-baseline` | 기준 매치 시뮬레이션 결과 34,300매치 | PR #12 머지 완료, 삭제 가능 |
 | `exp/main` | exp 계열 기준 (`main` 에서 분기, 내용은 main과 같음) | 실험 파일은 올리지 않음 |
 | `config/sync-rules-to-main` | main 규정 동기화용 | 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
