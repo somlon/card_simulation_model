@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-09-30
+마지막 갱신: 2026-10-01
 
 ## 현재 상태 요약
 
@@ -15,7 +15,8 @@
 - `model/main` · `data/main` 은 `main` 에서 분기함 (사용자 지시: main에 연결).
 - 심층 강화 학습(DRL) 판단 정책 `nny_sim/drl/` 을 PR #9로 올림(`model/drl-policy` → `model/main`) — **머지 대기**. 학습표 버전은 그대로 유지, 학습 요소 동일.
   - 시험 학습(모방 학습 + PPO 59분)에서 학습에 쓰지 않은 시드 기준 C 학습표 상대 단판 64.1% · 매치 65.5%, 현행 학습표 상대 68.2%. 아직 수렴 전.
-  - 시험 학습 모델 · 교사 표는 임시 컨테이너(`nny_sim/learned/drl/`, git 제외)에만 있음 — 보존 여부 결정 필요.
+  - 시험 학습 모델 · 이어 학습용 체크포인트 · C 교사 학습표(gzip 9.6MB)는 PR #10(`data/add-drl-pilot-model` → `data/main`)으로 보존 — 머지 대기.
+  - PR #9 · #10 감시 중(리뷰 · CI 이벤트 대응, 사용자 지시 2026-10-01). 저장소에 CI 없음.
 - 규칙 명세서 파일 자체는 저장소에 없음(업로드 파일로만 받음). 코드 주석의 §번호가 이 문서를 가리킴.
 - zip의 문서 `.md` 8개(README, 규칙명세, 보고서, 기보 등)는 아직 저장소에 없음.
 - 코드 해설서(.docx)를 만들어 사용자에게 전달함(저장소에는 올리지 않음).
@@ -41,6 +42,7 @@
 | 2026-09-30 | 심층 강화 학습(DRL)을 클라우드 세션에서 돌릴 때의 조사 · 실측: GPU 없음(4 vCPU · 16GB · 30GB), PyTorch는 PyPI판만 설치 가능(5.4GB, CPU 동작 확인), 신경망 정책 자기 대국 코어당 약 43판/초 · 4코어 선형 확장(BLAS 스레드 1 필수), 2시간 백그라운드 한도 · 유휴 시 VM 회수로 체크포인트 · 재개 필요. 결과는 대화창으로 전달 | 저장소 반영 없음 (측정 스크립트는 임시 폴더) |
 | 2026-09-30 | DouZero 성과 수준 조사 (원문 7편 대조: DouZero · DeltaDou · PerfectDou · DouZero+ · OADMCDou · AlphaDou · DouRN): 2021년 당시 공개 AI 중 최강은 확실, 인간 최고수 대비 직접 검증은 없음, 후속 PerfectDou가 표본 10배 적게 추월. 사용자 지시로 환경 네트워크 Custom 허용(논문 사이트 · download.pytorch.org). 결과는 대화창으로 전달 | 저장소 반영 없음 |
 | 2026-09-30 | DRL 판단 정책 구현: 행동 점수망(DouZero 행동 인코딩) + 완전 정보 비평가(PerfectDou PTIE) + 학습표 교사 모방 학습 초기화 → 자기 대국 PPO(교사 KL 감소 · 상대군 혼합). 학습 요소 = 학습표 버전(게임 판단 11종 + 전략 덱 교체 2단계 분해). numpy 추론(PyTorch는 학습만). 테스트 22개, 독립 코드 리뷰 10건 + 검증 리뷰 1건 반영, 기존 동작 불변 확인. 시험 학습 결과 C 학습표 상대 단판 64.1% ±3.0 · 매치 65.5% ±5.1 (추론은 학습표보다 3.7배 느림) | `model/drl-policy` → PR #9 (`model/main`) |
+| 2026-10-01 | DRL 시험 학습 결과물 보존: model_best · model_bc · ckpt.pt · 상대군 스냅숏 5개 · 설정 · 학습 기록 · 최종 평가, C 교사 학습표(101MB → gzip 9.6MB, 원본과 동일 확인) + side_C. 코드 쪽은 `.json.gz` 학습표 읽기 추가(PR #9 `ab7c529`) | `data/add-drl-pilot-model` → PR #10 (`data/main`) |
 | 2026-09-30 | PR 순서대로 머지 (main 반영 없음 — 사용자 지시). 쌓인 PR은 base를 계열 기준 브랜치로 바꾼 뒤 변경분 · 충돌 확인 후 머지 | `data/main`: #4 `b2c5419` → #6 `366f910` / `model/main`: #3 `92b5ba7` → #5 `89d9a23` → #7 `4e6acd3` → #8 `4b1e0a7` |
 
 ## 실행 환경 메모
@@ -58,8 +60,8 @@
 
 - 계열 기준 브랜치(`model/main` · `data/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
-- DRL PR #9 사용자 검토 · 머지 대기 (`model/drl-policy` → `model/main`).
-- DRL 후속 결정 대기: 시험 학습 모델(`model_best.npz` 1.5MB) · 교사 C 표 보존(`data` 계열 PR 여부), 추가 학습(이어 학습 — 수렴 전), 학습표 대신 DRL을 기본 AI로 쓸지.
+- DRL PR #9(코드) · #10(모델 · 교사 표) 사용자 검토 · 머지 대기. #10은 #9 코드(.json.gz 읽기)가 있어야 쓸 수 있다.
+- DRL 추가 학습: 사용자가 먼저 현재 덱 목록 확인을 요청함(2026-10-01, 7개 덱 · 스킬 14종 중 7종 구현 안내). 이어 학습은 `config.json` 의 `total_iters` 를 400보다 크게 바꾸고 `python -m drl.train ppo --run learned/drl/pilot`. 학습표 대신 DRL을 기본 AI로 쓸지는 결정 대기.
 - 학습표 결정 대기: C 학습표 채택 여부, 저장 방식(105MB — GitHub 100MB 한도 초과: gzip 압축 추천 / L2 정리 / Git LFS), 채택 전 R2 · R4 수정. 학습된 표는 임시 컨테이너에만 있음(세션 종료 시 소실, 스크립트로 재생성 약 30분).
 
 ## 다음 할 일 (우선순위 순)
@@ -92,7 +94,8 @@
 | `data/fill-strategy-20` | 전략 덱 20장 채우기 결과 | PR #6 머지 완료, 삭제 가능 |
 | `model/lethal-first` | 결착 우선 지침 | PR #7 머지 완료, 삭제 가능 |
 | `model/fix-rf-feature-mismatch` | R1 수정 | PR #8 머지 완료, 삭제 가능 |
-| `model/drl-policy` | DRL 판단 정책 (`model/main` 에서 분기) | PR #9 열림 |
+| `model/drl-policy` | DRL 판단 정책 (`model/main` 에서 분기) | PR #9 열림 (감시 중) |
+| `data/add-drl-pilot-model` | DRL 시험 학습 모델 · C 교사 표 (`data/main` 에서 분기) | PR #10 열림 (감시 중) |
 | `exp/main` | exp 계열 기준 (`main` 에서 분기, 내용은 main과 같음) | 실험 파일은 올리지 않음 |
 | `config/sync-rules-to-main` | main 규정 동기화용 | 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
