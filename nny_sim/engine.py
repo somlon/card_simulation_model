@@ -349,10 +349,19 @@ class Game:
         self.L(f'{self.pname(p)} {c} 표시 형식 변경 → {"공격" if c.pos == "atk" else "수비"} 표시')
         self.emit('position', card=c, player=p)
 
-    def special_summon(self, c, p, pos='atk', by=None):
+    def summon_pos(self, c, p, how):
+        """소환 표시 형식 (§5-2): 카드 텍스트가 정하지 않은 소환은 소환하는 플레이어가 앞면 공격 / 앞면 수비 표시를 고른다.
+        수비 표시로 존재할 수 없으면(격투가의 투기장 1번 등) 공격 표시. 텍스트가 표시 형식을 정한 소환은 호출하는 쪽이 pos를 넘긴다"""
+        if not self.def_allowed(p): return 'atk'
+        f = getattr(self.p[p].ai, 'choose_summon_pos', None)
+        return f(self, p, c, how) if f else 'atk'
+
+    def special_summon(self, c, p, pos=None, by=None):
+        """pos=None: 표시 형식을 AI가 고른다(summon_pos). 텍스트가 「공격 표시로 · 수비 표시로」를 정한 효과는 pos를 넘긴다"""
         if not self.can_special(c, p): return False
         if c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok():
             self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
+        if pos is None: pos = self.summon_pos(c, p, 'special')
         if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         prev = c.zone
         self._remove(c)
@@ -362,10 +371,12 @@ class Game:
         self.emit('summon', card=c, player=p, how='special', prev=prev, by=by)
         return True
 
-    def normal_summon(self, c, p, tributes=(), pos='atk'):
-        """일반소환 (§5-2): 패에서 앞면 공격 표시 또는 앞면 수비 표시. 레벨에 따른 제물은 호출하는 쪽이 고른다"""
-        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
+    def normal_summon(self, c, p, tributes=(), pos=None):
+        """일반소환 (§5-2): 패에서 앞면 공격 표시 또는 앞면 수비 표시. 레벨에 따른 제물은 호출하는 쪽이 고른다.
+        pos=None: 제물을 바친 뒤 표시 형식을 AI가 고른다(summon_pos)"""
         for t in tributes: self.tribute(t, ('summon', None))
+        if pos is None: pos = self.summon_pos(c, p, 'normal')
+        if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         self._remove(c); self.place_monster(c, p, pos); c.summon_turn = self.turn
         self.p[p].normal_summons -= 1
         self.L(f'{self.pname(p)} {c} 일반소환' + (' (수비 표시)' if c.pos == 'def' else '')
