@@ -254,6 +254,22 @@ class SideTest(unittest.TestCase):
         self.assertEqual(strip(r1), strip(r2))
 
 
+class TableIOTest(unittest.TestCase):
+    def test_gzip_table_loads_same(self):
+        """압축한 학습표(.json.gz)도 원본과 같은 값을 돌려준다"""
+        import gzip, json as _json
+        d = {'games': 3, 'L1': {'a|b': [2, 3]}, 'L2': {'a|b|c': [1, 2]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            p1 = os.path.join(tmp, 't.json'); p2 = p1 + '.gz'
+            with open(p1, 'w', encoding='utf-8') as f:
+                _json.dump(d, f)
+            with gzip.open(p2, 'wt', encoding='utf-8') as f:
+                _json.dump(d, f)
+            t1, t2 = R.load_table(p1), R.load_table(p2)
+        self.assertEqual((t1.L1, t1.L2, t1.games), (t2.L1, t2.L2, t2.games))
+        self.assertEqual(t1.value('a|b', 'a|b|c', 0.5), t2.value('a|b', 'a|b|c', 0.5))
+
+
 class ModelIOTest(unittest.TestCase):
     def test_save_load_roundtrip(self):
         arr = MD.init_arrays(3)
