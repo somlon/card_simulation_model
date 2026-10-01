@@ -1,0 +1,23 @@
+{
+ "ai": {
+  "ai": "table",
+  "policy": null,
+  "side": null
+ },
+ "matches_per_pair": 700,
+ "seed": 1,
+ "workers": 4,
+ "decks_list": [
+  "달그림자에 잠식된 태양",
+  "데쿠마",
+  "번성충-기생",
+  "번성충-대발생",
+  "세제",
+  "솔루나 아츠",
+  "투기장의 규칙"
+ ],
+ "planned_matches": 34300,
+ "started": "2026-10-01 03:48:43",
+ "complete": true,
+ "sec": 347.6
+}
