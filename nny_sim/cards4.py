@@ -11,7 +11,7 @@ ASSUME (재정 목록 G):
 """
 import math
 from engine import Effect
-from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is
+from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO
 from cards2 import targets
 
 SERI = lambda x: x.has('세리') and x.type == '몬스터'
@@ -77,7 +77,8 @@ def _(c):
         a, b = len(g.p[p].main), len(g.p[1 - p].main)
         if a != b: big = p if a > b else 1 - p; g.mill(big, abs(a - b), 'main', '멘소르')
     c.effects = [Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c,
-                        res=res, score=lambda g, c, p, ev: 80 if len(g.p[1 - p].main) > len(g.p[p].main) else 5, threat=500), seri_lastwill()]
+                        # 메인 덱이 많은 쪽을 같은 매수까지 깎는다. 내 덱이 더 많으면 내 덱을 깎게 되므로(제외에 반응하는 카드 없음 — 손해뿐) 쓰지 않는다
+                        res=res, score=lambda g, c, p, ev: 80 if len(g.p[1 - p].main) > len(g.p[p].main) else VETO, threat=500), seri_lastwill()]
 
 def alt_normal(c, can, pay):
     c.alt_normal = (can, pay)
