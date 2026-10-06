@@ -10,10 +10,11 @@
 실행 (nny_sim 폴더)
   python match_sim.py run --matches 50 --out sim_results/run1 [--ai table|heuristic|drl:<모델.npz>] [--policy P --side S]
   python match_sim.py summarize sim_results/run1/rounds.jsonl.gz       # 저장된 원자료로 요약 다시 계산
+  python match_sim.py compare sim_results/A sim_results/B               # 같은 일정(시드)의 두 실행을 매치 단위 짝 비교
 결과 (--out 폴더)
   rounds.jsonl.gz  라운드 1개 = 1줄(gzip 압축 JSON Lines, round_record 참고). 안전장치로 중단된 매치도
                    {"type": "stalled_match", ...} 줄로 남긴다 — 원자료만으로 요약을 그대로 다시 만들 수 있다
-  meta.json      실행 설정(AI · 시드 · 순서쌍당 매치 수 · 완료 여부)
+  meta.json      실행 설정(AI · 시드 · 순서쌍당 매치 수 · 완료 여부), 학습표 · 모델 파일 해시, 코드 커밋
   summary.json   덱별 · 라운드별 · 선후공별 집계, 상성표, 요인 분포 (+ 실행 설정)
   summary.md     사람이 읽는 요약
 """
@@ -23,10 +24,18 @@ for _k in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 import argparse, collections, concurrent.futures as cf, itertools, json, math, multiprocessing as mp, random, re, sys, time
 
 IDEAL = (49.0, 51.0)            # 덱 종합 승률 이상 범위(%) — workflow.md 「목표 기준」
-SCHEMA = 1                      # rounds.jsonl 형식 판 — 필드를 바꾸면 올린다
+SCHEMA = 2                      # rounds.jsonl 형식 판 — 필드를 바꾸면 올린다 (2: decisions · failures 추가)
 _RE_DMG = re.compile(r'^(.+?) (\d+) 대미지 \((.*)\) → HP (-?\d+)$')
 _RE_USE = re.compile(r'^(.+?) 「(.+?)」 (\d번 효과 발동|일반소환|특수소환)')
 _RE_MULL = re.compile(r'^(.+?) 멀리건 (\d+)장')
+# 처리 실패 로그 (규칙상 처리할 수 없게 된 효과). 발동 뒤 상황이 바뀐 정당한 불발도 함께 센다
+FAILURES = {
+    '같은 이름 특수소환 불가': re.compile(r'같은 이름의 카드를 덱에서 특수소환할 수 없음'),
+    '대상 없음': re.compile(r': 대상 없음'),
+    '불발': re.compile(r'불발'),
+    '발동 취소(코스트/대상)': re.compile(r'발동 취소 \(코스트/대상 불가\)'),
+    '릴리스 불가': re.compile(r'릴리스할 수 없음'),
+}
 
 
 # ─────────────── 요인 추출 ───────────────
@@ -104,6 +113,16 @@ def factor_tags(rec):
     return tags
 
 
+def _decision_stats(log_slice):
+    """자리별 학습표 판단 수(후보 2개 이상) · 고른 후보에 그 매치업의 학습 데이터(L1)가 있었던 수"""
+    out = [[0, 0], [0, 0]]
+    for e in log_slice:
+        d = e.get('data') if e.get('k') == 'decision' else None
+        if d and 'pick_n1' in d and d.get('p') in (0, 1):
+            x = out[d['p']]; x[0] += 1; x[1] += int(d['pick_n1'] > 0)
+    return [{'total': t, 'with_data': w} for t, w in out]
+
+
 def round_record(g, rnd, rinfo, decks, names, log, match_meta, swaps_before):
     """라운드 하나의 원자료 + 요인 태그"""
     i0, i1 = rinfo['log']; sl = log[i0:i1]
@@ -124,6 +143,9 @@ def round_record(g, rnd, rinfo, decks, names, log, match_meta, swaps_before):
         'end_turn_player': g.turn_player, 'final_blow': blow if 'HP 0' in rinfo['reason'] else None,
         'side_swaps_before': swaps_before, 'players': players,
     }
+    rec['decisions'] = _decision_stats(sl)
+    fails = collections.Counter(k for e in sl for k, pat in FAILURES.items() if pat.search(e.get('m', '')))
+    rec['failures'] = dict(fails)
     rec['winner_min_hp_lead'], rec['winner_max_hp_lead'], rec['lead_changes'] = _hp_trend(g, w) if w is not None else (0, 0, 0)
     rec['tags'] = factor_tags(rec) if w is not None else ['무승부']
     return rec
@@ -256,7 +278,8 @@ def summarize(records):
     stalled_recs = [r for r in records if r.get('type') == 'stalled_match']
     stalled = len(stalled_recs); errors = [r for r in records if r.get('type') == 'error_match']
     per = collections.defaultdict(lambda: {'match': [0, 0], 'round_all': [0, 0], 'round': collections.defaultdict(lambda: [0, 0]),
-                                           'win_tags': collections.Counter(), 'loss_tags': collections.Counter()})
+                                           'win_tags': collections.Counter(), 'loss_tags': collections.Counter(), 'dec': [0, 0]})
+    fails = collections.Counter()
     vs = collections.defaultdict(lambda: [0, 0]); matches = {}
     for r in rounds:
         matches.setdefault(r['match_id'], r)
@@ -266,6 +289,9 @@ def summarize(records):
             st['round_all'][0] += won; st['round_all'][1] += 1
             e = st['round'][(r['round'], pos)]; e[0] += won; e[1] += 1
             (st['win_tags'] if won else st['loss_tags']).update(r['tags'])
+            if r.get('decisions'):
+                st['dec'][0] += r['decisions'][s]['total']; st['dec'][1] += r['decisions'][s]['with_data']
+        fails.update(r.get('failures', {}))
     for r in matches.values():
         for s in (0, 1):
             d = r['decks'][s]; won = r['match_winner_seat'] == s
@@ -282,7 +308,10 @@ def summarize(records):
             'rounds': {f'{rn}R {pos}': _rate(*st['round'][(rn, pos)]) for rn in (1, 2, 3) for pos in ('선공', '후공')},
             'win_factors': dict(st['win_tags'].most_common()), 'loss_factors': dict(st['loss_tags'].most_common()),
             'stalled_match_seats': st_by.get(d, 0),
+            'decision_coverage': {'decisions': st['dec'][0], 'with_data': st['dec'][1],
+                                  'rate': round(100 * st['dec'][1] / st['dec'][0], 2) if st['dec'][0] else None},
         }
+    out['failures'] = {k: {'count': v, 'per_match': round(v / len(matches), 4) if matches else None} for k, v in fails.most_common()}
     out['vs'] = {f'{a} vs {b}': _rate(*v) for (a, b), v in sorted(vs.items())}
     return out
 
@@ -299,6 +328,13 @@ def to_markdown(s):
     for d, v in s['decks'].items():
         cells = [f"{x['rate']}% ({x['games']})" if x['games'] else '—' for x in v['rounds'].values()]
         L.append(f"| {d} | " + ' | '.join(cells) + ' |')
+    L += ['', '## 판단 데이터 보유율 · 처리 실패', '',
+          '- 판단 데이터 보유율 = 학습표 판단(후보 2개 이상) 중 고른 후보에 그 매치업의 학습 데이터가 있었던 비율', '']
+    for d, v in s['decks'].items():
+        c = v.get('decision_coverage') or {}
+        if c.get('decisions'): L.append(f"  - {d}: {c['rate']}% ({c['with_data']}/{c['decisions']})")
+    if s.get('failures'):
+        L.append('- 처리 실패(매치당): ' + ', '.join(f"{k} {v['count']}건 ({v['per_match']})" for k, v in s['failures'].items()))
     L += ['', '## 승리 · 패배 요인 (상위 5개, 라운드 수)', '']
     for d, v in s['decks'].items():
         top = lambda c: ', '.join(f'{k} {n}' for k, n in list(c.items())[:5])
@@ -315,7 +351,8 @@ def cmd_run(a):
     batches = [sched[i::a.workers * 4] for i in range(a.workers * 4)]
     os.makedirs(a.out, exist_ok=True); t0 = time.time(); records = []
     meta = {'ai': spec, 'matches_per_pair': a.matches, 'seed': a.seed, 'workers': a.workers, 'decks_list': names,
-            'planned_matches': len(sched), 'started': time.strftime('%Y-%m-%d %H:%M:%S')}
+            'planned_matches': len(sched), 'started': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'inputs': input_files(spec), 'code': code_version()}
     complete = False
     try:
         with cf.ProcessPoolExecutor(a.workers, mp_context=mp.get_context('spawn'), initializer=_init, initargs=(spec,)) as ex:
@@ -331,6 +368,41 @@ def cmd_run(a):
     s = summarize(records); s['run'] = meta
     _write_summary(a.out, s)
     print(to_markdown(s))
+
+
+def file_info(path):
+    """결과를 만든 입력 파일 확인용: 경로 · 크기 · SHA-1"""
+    import hashlib
+    if not path or not os.path.exists(path):
+        return {'path': path, 'missing': True}
+    h = hashlib.sha1()
+    with open(path, 'rb') as f:
+        for b in iter(lambda: f.read(1 << 20), b''): h.update(b)
+    return {'path': os.path.relpath(path), 'bytes': os.path.getsize(path), 'sha1': h.hexdigest()}
+
+
+def input_files(spec):
+    """AI가 읽는 학습표 · 모델 파일 (같은 설정 이름이라도 파일이 바뀌면 결과가 달라진다)"""
+    import policy as P, match as M
+    if spec['ai'] == 'table':
+        pol = spec.get('policy') or P.POLICY.source; side = spec.get('side') or M.SIDE.source
+        return {'policy': file_info(pol), 'side': file_info(side)}
+    if spec['ai'].startswith('drl:'):
+        return {'model': file_info(spec['ai'][4:])}
+    return {}
+
+
+def code_version():
+    """코드 커밋과 nny_sim 아래 추적 파일의 미커밋 변경 여부 (git이 없으면 None)"""
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=here, capture_output=True, text=True, timeout=10).stdout.strip()
+        dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no', '--', '.'], cwd=here,
+                               capture_output=True, text=True, timeout=10).stdout.strip()
+        return {'commit': head or None, 'dirty': bool(dirty)}
+    except Exception:
+        return None
 
 
 def write_records(path, records):
@@ -366,6 +438,65 @@ def cmd_summarize(a):
     print(to_markdown(s))
 
 
+def _outcomes(records):
+    """(match_id, 자리) → (덱, 매치 승리 0/1, 매치를 끝낸 라운드를 덱아웃으로 이겼는지, 시드)"""
+    out = {}
+    for r in sorted((r for r in records if r.get('type', 'round') == 'round'), key=lambda r: (r['match_id'], r['round'])):
+        for s in (0, 1):   # 같은 매치의 뒤 라운드가 앞 라운드를 덮어써서 마지막(결정) 라운드가 남는다
+            out[(r['match_id'], s)] = (r['decks'][s], int(r['match_winner_seat'] == s),
+                                       r['winner_seat'] == s and '덱아웃' in r['reason'], r['seed'])
+    return out
+
+
+def compare(dir_a, dir_b):
+    """같은 일정(시드 · 매치 수 · 덱 목록)으로 돌린 두 실행의 덱별 매치 승률 차이를 매치 단위 짝 비교로 계산.
+    차이의 표준오차는 짝지은 매치 결과 차(−1/0/1)의 표본분산으로 구한다(같은 시드라 독립 표본보다 정밀)"""
+    rec = [read_records(os.path.join(d, 'rounds.jsonl.gz')) for d in (dir_a, dir_b)]
+    meta = []
+    for d in (dir_a, dir_b):
+        p = os.path.join(d, 'meta.json')
+        meta.append(json.load(open(p, encoding='utf-8')) if os.path.exists(p) else {})
+    oa, ob = _outcomes(rec[0]), _outcomes(rec[1])
+    common = [k for k in oa if k in ob and oa[k][3] == ob[k][3]]
+    by = collections.defaultdict(list); dko = collections.defaultdict(lambda: [0, 0, 0, 0])
+    for k in common:
+        d = oa[k][0]; by[d].append((oa[k][1], ob[k][1]))
+        x = dko[d]; x[0] += oa[k][1]; x[1] += oa[k][1] and oa[k][2]; x[2] += ob[k][1]; x[3] += ob[k][1] and ob[k][2]
+    rows = {}
+    for d, pairs in sorted(by.items()):
+        n = len(pairs); a = sum(p[0] for p in pairs) / n; b = sum(p[1] for p in pairs) / n
+        diffs = [p[1] - p[0] for p in pairs]; md = sum(diffs) / n
+        sd = math.sqrt(sum((x - md) ** 2 for x in diffs) / (n - 1)) if n > 1 else 0.0
+        x = dko[d]
+        rows[d] = {'n': n, 'a': round(100 * a, 2), 'b': round(100 * b, 2), 'diff': round(100 * (b - a), 2),
+                   'ci95': round(196 * sd / math.sqrt(n), 2) if n > 1 else None, 'changed_matches': sum(1 for v in diffs if v),
+                   'deckout_share_of_wins': [round(100 * x[1] / x[0], 1) if x[0] else None, round(100 * x[3] / x[2], 1) if x[2] else None]}
+    same = all(meta[0].get(k) == meta[1].get(k) for k in ('seed', 'matches_per_pair', 'decks_list'))
+    return {'a': dir_a, 'b': dir_b, 'same_schedule': same, 'paired_matches': len(common) // 2 if common else 0,
+            'only_a': len(oa) - len(common), 'only_b': len(ob) - len(common),
+            'inputs': [{'inputs': m.get('inputs'), 'code': m.get('code'), 'ai': m.get('ai')} for m in meta],
+            'decks': rows}
+
+
+def cmd_compare(a):
+    c = compare(a.a, a.b)
+    print(f"A = {c['a']}\nB = {c['b']}")
+    if not c['same_schedule']:
+        print('주의: 두 실행의 일정(시드 · 매치 수 · 덱 목록)이 다르다 — 같은 match_id끼리만 짝지었다')
+    for tag, m in zip('AB', c['inputs']):
+        ins = m.get('inputs') or {}
+        desc = ', '.join(f"{k} {v.get('sha1', '없음')[:10]}" for k, v in ins.items()) or '기록 없음'
+        code = m.get('code') or {}
+        print(f"  {tag}: AI {(m.get('ai') or {}).get('ai')} · {desc} · 코드 {str(code.get('commit'))[:10]}{' (미커밋 변경)' if code.get('dirty') else ''}")
+    print(f"짝지은 매치 {c['paired_matches']} (A에만 {c['only_a']} · B에만 {c['only_b']} 자리)")
+    print('| 덱 | A | B | 차이(%p) | 95% CI | 결과가 바뀐 매치 | 승리 중 덱아웃 A→B |')
+    print('|---|---|---|---|---|---|---|')
+    for d, r in c['decks'].items():
+        da, db = r['deckout_share_of_wins']
+        print(f"| {d} | {r['a']}% | {r['b']}% | {r['diff']:+.2f} | ±{r['ci95']} | {r['changed_matches']}/{r['n']} | {da}% → {db}% |")
+    return c
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='매치 시뮬레이션 · 라운드 통계')
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -375,8 +506,9 @@ def main(argv=None):
     r.add_argument('--policy', help='table AI의 판단 학습표(기본: learned/policy.json)'); r.add_argument('--side', help='table AI의 교체표(기본: learned/side.json)')
     r.add_argument('--workers', type=int, default=4); r.add_argument('--seed', type=int, default=1)
     s = sub.add_parser('summarize'); s.add_argument('rounds')
+    c = sub.add_parser('compare', help='같은 일정으로 돌린 두 실행 폴더를 매치 단위 짝 비교'); c.add_argument('a'); c.add_argument('b')
     a = ap.parse_args(argv)
-    {'run': cmd_run, 'summarize': cmd_summarize}[a.cmd](a)
+    {'run': cmd_run, 'summarize': cmd_summarize, 'compare': cmd_compare}[a.cmd](a)
 
 
 if __name__ == '__main__':
