@@ -320,8 +320,15 @@ class Game:
 
     # ── 소환 ──
     def can_special(self, c, p):
+        """c를 지금 특수소환할 수 있는가. 규칙상 불가능한 후보는 처리 전에 걸러낸다(처리 중 실패 방지):
+        소환 금지 [지속] · 같은 이름 규칙(정본 3-6 f: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음) · 놓을 자리"""
         if self.rule('no_special', c, p): return False
+        if self.same_name_blocked(c): return False
         return self.can_place(c, p)
+
+    def same_name_blocked(self, c):
+        """정본 3-6 f: 지금 처리(또는 발동 판정) 중인 효과의 주체와 같은 이름의 카드를 덱에서 특수소환할 수 없다"""
+        return c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok()
 
     def can_place(self, c, p):
         """놓을 자리가 있는가. 공유 존은 언제든 고를 수 있으나(§10-2), 몬스터 존이 가득 찼을 때 공유 존을 쓸지는 AI가 판단"""
@@ -359,7 +366,7 @@ class Game:
     def special_summon(self, c, p, pos=None, by=None):
         """pos=None: 표시 형식을 AI가 고른다(summon_pos). 텍스트가 「공격 표시로 · 수비 표시로」를 정한 효과는 pos를 넘긴다"""
         if not self.can_special(c, p): return False
-        if c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok():
+        if self.same_name_blocked(c):   # can_special이 걸러내므로 여기 오면 후보 선택 쪽 누락 — 안전장치
             self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
         if pos is None: pos = self.summon_pos(c, p, 'special')
         if pos == 'def' and not self.def_allowed(p): pos = 'atk'
@@ -452,11 +459,19 @@ class Game:
         for w in which: out += getattr(self.p[p], w)
         return out
 
-    def search(self, p, pred, which=('main', 'upper'), why='서치', source=None):
-        """덱에서 패에 넣기. 서치 효과의 주체 카드와 같은 이름의 카드는 가져올 수 없다 (사용자 재정)"""
+    def search_cands(self, p, pred, which=('main', 'upper'), source=None):
+        """서치 후보: 덱에서 pred를 만족하고, 서치 효과의 주체 카드와 이름이 다른 카드 (사용자 재정)"""
         src = source or self.src
         ok = self.same_name_ok() and source is None
-        cands = [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
+        return [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
+
+    def can_search(self, p, pred, which=('main', 'upper'), source=None):
+        """발동 조건용: 지금 서치할 수 있는 카드가 있는가 (발동 판정 중에는 src = 발동하려는 카드)"""
+        return bool(self.search_cands(p, pred, which, source))
+
+    def search(self, p, pred, which=('main', 'upper'), why='서치', source=None):
+        """덱에서 패에 넣기. 서치 효과의 주체 카드와 같은 이름의 카드는 가져올 수 없다 (사용자 재정)"""
+        cands = self.search_cands(p, pred, which, source)
         if not cands: self.L(f'{why}: 대상 없음', 'sys'); return None
         c = self.p[p].ai.pick_search(self, p, cands, why)
         self.L(f'{self.pname(p)} {why}: {c} 패에 넣음')
@@ -541,7 +556,13 @@ class Game:
     # ═════════════════════════ 발동 · 체인 ═════════════════════════
     def legal(self, p, c, e, ev=None):
         if c.type == '마법' and c.d.get('subtype') == '트리거' and e.spell_act and self.rule('no_trigger_spell', p): return False
-        if not self.can_act(p, c, e, ev): return False
+        # 발동 조건은 「그 카드가 효과의 주체」인 상태로 판정한다 — 처리 때와 같은 규칙(같은 이름 서치 · 특수소환 금지 등)으로
+        # 후보가 있는지 보아, 규칙상 처리할 수 없는 발동을 미리 막는다
+        prev = (self.src, getattr(self, 'src_eff', None)); self.src, self.src_eff = c, e
+        try:
+            if not self.can_act(p, c, e, ev): return False
+        finally:
+            self.src, self.src_eff = prev
         if not self.spell_speed_ok(c, p, e): return False
         if e.spell_act and c.zone == 'hand':
             if c.type == '필드': pass
