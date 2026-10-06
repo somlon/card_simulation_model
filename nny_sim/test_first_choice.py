@@ -12,7 +12,7 @@ A, B = '투기장의 규칙', '세제'
 class EmptyTable:
     def __enter__(self):
         self.orig = P.POLICY
-        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L1 = {}; t.L2 = {}; t.games = 0
+        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L0 = {}; t.L1 = {}; t.L2 = {}; t.games = 0
         P.POLICY = t
         return t
 
@@ -24,7 +24,7 @@ class NoSide:
     """전략 덱 교체 학습표(SIDE)를 건드리지 않게 비운다"""
     def __enter__(self):
         self.orig = M.SIDE
-        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L1 = {}; t.L2 = {}; t.games = 0
+        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L0 = {}; t.L1 = {}; t.L2 = {}; t.games = 0
         M.SIDE = t
 
     def __exit__(self, *exc):
