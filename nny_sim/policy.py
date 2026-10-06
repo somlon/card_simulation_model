@@ -190,6 +190,9 @@ class LearnedAI(HeuristicAI):
             seen.add(lab)
             cand.append((lab, s, (c, e)))
         if len(cand) == 1: return None
+        if self.PASS_EVAL:   # 패스 = 남겨 둔 선택지의 가치, 발동 = 즉시 이득 + 남은 가치 − 쓰는 카드의 보유 가치(위협도만큼 할인)
+            R = self.reserve(g, p)
+            cand = [(lab, R if pay is None else s + R - self.spend_cost(g, p, pay[0], respond=True), pay) for lab, s, pay in cand]
         return self.choose(g, p, '대응' if g.chain else '우선권', cand)
 
     # ── 진행 / 정비 ──
@@ -228,6 +231,10 @@ class LearnedAI(HeuristicAI):
                         lab = f'세트:{c.name}'
                         if lab not in seen: seen.add(lab); acts.append((lab, 8, ('set', c, None)))
             if len(acts) == 1: return
+            if self.PASS_EVAL:   # 종료 = 남겨 둔 선택지의 가치, 행동 = 즉시 이득 + 남은 가치 − 패에서 쓰는 카드의 보유 가치
+                R = self.reserve(g, p)
+                acts = [(lab, R if pay is None else s + R - (self.spend_cost(g, p, pay[1]) if pay[0] in ('summon', 'alt', 'act', 'extra') else 0), pay)
+                        for lab, s, pay in acts]
             pick = self.choose(g, p, f'{ph} 행동', acts)
             if pick is None: return
             kind, c, e = pick

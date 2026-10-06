@@ -72,6 +72,7 @@ class Recorder:
 
 
 class DRLAI(LearnedAI):
+    PASS_EVAL = False   # 종료 · 패스 보유 가치 평가는 끈다 — 후보 점수 h가 DRL 입력 특징이라 학습 당시 분포를 유지 (재학습 때 켠다)
     def __init__(self, skill, actor=None, mode='greedy', temperature=1.0, rng=None, recorder=None, seat=0,
                  teacher=None, teacher_eps=0.0, teacher_temp=0.03, split_override=None, log_decisions=True):
         super().__init__(skill, split_override, learn=False, eps=teacher_eps if mode == 'teacher' else 0.0)

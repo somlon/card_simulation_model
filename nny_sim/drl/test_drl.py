@@ -153,10 +153,14 @@ class FeatureTest(unittest.TestCase):
 
 class AgentTest(unittest.TestCase):
     def test_teacher_mode_reproduces_learnedai(self):
-        """교사 모드(탐색 0)는 LearnedAI(학습 끔)와 판 전체가 똑같아야 한다 — 모방 학습 자료가 곧 학습표의 수"""
+        """교사 모드(탐색 0)는 LearnedAI(학습 끔)와 판 전체가 똑같아야 한다 — 모방 학습 자료가 곧 학습표의 수.
+        DRLAI는 종료 · 패스 보유 가치 평가를 끄므로(PASS_EVAL=False) 같은 설정의 LearnedAI와 비교한다"""
+        def table_ai(name):
+            ai = P.LearnedAI(DECKS[name]['스킬'], learn=False); ai.PASS_EVAL = DRLAI.PASS_EVAL
+            return ai
         for k in range(4):
             a, b = NAMES[k], NAMES[(k + 2) % len(NAMES)]
-            g1 = _game(a, b, [P.LearnedAI(DECKS[a]['스킬'], learn=False), P.LearnedAI(DECKS[b]['스킬'], learn=False)], k % 2, 50 + k)
+            g1 = _game(a, b, [table_ai(a), table_ai(b)], k % 2, 50 + k)
             r1 = g1.run()
             g2 = _game(a, b, [DRLAI(DECKS[a]['스킬'], mode='teacher', teacher=P.POLICY), DRLAI(DECKS[b]['스킬'], mode='teacher', teacher=P.POLICY)], k % 2, 50 + k)
             r2 = g2.run()
