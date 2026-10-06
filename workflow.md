@@ -30,8 +30,8 @@
   - 반복 60까지 판단만 학습(덱 승률 안정, 직전 표 대비 51~52%로 수렴 중) → 반복 60부터 시즌별 레시피 학습 방식으로 전환(사용자 지시).
   - 시즌 = 판단 10반복 → 평가 → 덱마다 레시피 학습기 1라운드. 시즌 1: 번성충-기생 채택(−기생완전체 +매수당한 킬러), 나머지 유지.
   - 중간 체크포인트: `data/retrain-all-pairs` 브랜치 `nny_sim/learned/train_49/` (푸시만, PR은 수렴 후). 이어서 돌리려면 실행 폴더에서
-    `python train_table.py --out learned/train_49 --per-pair 60 --eval-every 10 --eval-matches 100 --h2h-matches 100 --patience 3 --min-iters 20 --time-limit 6300`
-    (같은 명령 반복 실행 = 이어하기, 2시간 백그라운드 한도 때문에 105분 단위).
+    `python train_table.py --out learned/train_49 --per-pair 60 --eval-every 10 --eval-matches 100 --h2h-matches 100 --patience 3 --min-iters 20 --time-limit 5400`
+    (같은 명령 반복 실행 = 이어하기. 시간 한도는 반복 경계에서만 확인하고 평가 · 레시피 단계가 약 20분 더 걸리므로, 2시간 백그라운드 한도 안에 끝나도록 90분).
   - 수렴하면: `--export learned` → 학습표 `policy.json.gz` · 교체표 · 마지막 레시피 · 시즌별 레시피 기록을 `data/retrain-all-pairs` 에 올려 `data/main` 으로 PR, 34,300매치 리그 결과와 보고서(지침 #13 형식)는 `analysis` 새 브랜치(기준 `analysis/report-guide`)로 PR.
 - **사용자 재정 대기 (카드 해석 — 대화창에 해석서 2개 전달):**
   - 솔루나 아츠 스킬 1번 적용 범위(일반소환 · 제외 복귀 · 컨트롤 획득도 막는가, 막힌 카드의 행방) — 대표 로그에서 「솔루나 시엘」 2장 공존 위반 확인.
