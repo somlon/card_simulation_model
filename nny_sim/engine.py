@@ -756,9 +756,9 @@ class Game:
         pl.ai.main_phase(self, tp, '정비')
         # 종료 단계 (§5-5): a 「턴 종료 시」 효과 → b 패 7장 → c 「턴 종료 시까지」 해제 → d 턴 종료
         self.set_phase('종료')
-        for c in self.continuous_sources():
+        for c in self.continuous_sources():   # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다)
             f = getattr(c, 'end_process', None)
-            if f and self.on_field(c): f(self, c)
+            if f and (self.on_field(c) or c.zone == 'skill'): f(self, c)
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()

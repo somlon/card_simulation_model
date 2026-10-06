@@ -165,7 +165,7 @@ def _(c):
         g.decuma_skip = g.turn; g.decuma_double = p
         g.L('이 턴 데쿠마 1번의 제외 무효, 다음 자신 턴 종료 시 2배')
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True,
-        cond=lambda g, c, p, ev: g.phase == '종료' and any(x.skill and x.skill.name == '데쿠마' for x in g.p),
+        cond=lambda g, c, p, ev: any(l.card.name == '데쿠마' and l.eff.num == 1 for l in g.chain),   # 「데쿠마」 1번 발동에 대응해서만
         res=res, score=lambda g, c, p, ev: 30 if own_turn(g, p) and len(g.p[p].main) <= 12 else 0, threat=100), spell_lastwill()]
 
 @card('아이라리움')
@@ -199,18 +199,20 @@ def _(c):
 
 @card('데쿠마')
 def _(c):
-    def end(g, src):
+    def res1(g, c, p, l):
+        """1번: 서로의 턴 종료 시 강제 발동 — 그 턴 플레이어가 메인 덱 매수/10(올림)만큼 메인 덱 위에서 제외.
+        발동하는 효과(체인 1)이므로 「아나보케」(데쿠마 1번 발동 시)로 대응할 수 있다. 2번: 이 효과로 자신이 제외했고 제외 존에 세리가 있으면 1드로우"""
         q = g.turn_player
-        n = math.ceil(len(g.p[q].main) / 10)
-        if q != src.controller and g.rule('decuma_plus', src.controller): n += 1
         if getattr(g, 'decuma_skip', -1) == g.turn: g.L('아나보케: 이 턴 데쿠마 제외 무효', 'sys'); return
-        if getattr(g, 'decuma_double', None) == q and q == src.controller: n *= 2; g.decuma_double = None
+        n = math.ceil(len(g.p[q].main) / 10)
+        if q != p and g.rule('decuma_plus', p): n += 1
+        if getattr(g, 'decuma_double', None) == q and q == p: n *= 2; g.decuma_double = None
         k = g.mill(q, n, 'main', '데쿠마')
-        p = src.controller
         if q == p and k and any(x.has('세리') for x in g.p[p].banish) and g.p[p].main and g.p[p].opt.get(('데쿠마', 2), 0) == 0:
             g.p[p].opt[('데쿠마', 2)] = 1; g.draw(p, 1, 'main')
-    c.end_process = end
-    c.effects = [Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].banish) >= 20
+    c.effects = [Effect(1, 'trigger', ('skill',), cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and bool(g.p[g.turn_player].main),
+                        res=res1, mandatory=True, threat=300, label='턴 종료 시 메인 덱 1/10 제외'),
+                 Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].banish) >= 20
                         and any(x.has('치프 세리') and g.can_special(x, p) for x in g.p[p].upper),
                         res=lambda g, c, p, l: (lambda cs: cs and g.special_summon(cs[0], p))([x for x in g.p[p].upper if x.has('치프 세리')]),
                         score=lambda *a: 80, threat=700, label='치프 세리 특수소환')]
