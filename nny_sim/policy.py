@@ -151,6 +151,39 @@ class LearnedAI(HeuristicAI):
         return LearnedAI.choose(self, g, p, f'시작 패 재배분({pos}·{n}장·남은 상급 {min(ups, 3)})',
                                 self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10, explore='thompson')
 
+    # ── 2 · 3라운드 선후공 ──
+    # 이전 라운드 패자가 정한다(정본 4, §11-2). 키 = 덱 · 상대 · 라운드, 결과 = 그 선택으로 시작한 라운드의 승패.
+    # (2라운드 패배 = 매치 패배, 2라운드 승리 후 3라운드 선후공은 상대가 정하므로 라운드 승률 최대화가 곧 매치 승률 최대화)
+    LEARN_FIRST = True
+
+    def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
+        h = self.wants_first(opp_skill)
+        self._first_key = None
+        if not self.LEARN_FIRST:
+            return h
+        base = f'{me_skill} vs {opp_skill}|선후공 선택({rnd}라운드)|'
+        scored = []
+        for lab, go in (('선공', True), ('후공', False)):
+            k1 = base + lab; k2 = k1 + '|-'
+            v, n1, n2 = POLICY.value(k1, k2, prior_of(5 if go == h else 0, 10))
+            scored.append((v, lab, go, k1, k2, n1, n2))
+        scored.sort(key=lambda x: -x[0]); pick = scored[0]; why = '학습값'
+        if self.learn and self.eps:   # 매치마다 한 번뿐인 결정 → 톰슨 표본으로 탐색
+            pick = max(scored, key=lambda x: rng.betavariate(max(x[0] * (x[6] + A), 1e-3), max((1 - x[0]) * (x[6] + A), 1e-3)))
+            why = '톰슨 탐색' if pick is not scored[0] else why
+        if self.learn: self._first_key = (pick[3], pick[4])
+        if log is not None:
+            cs = ', '.join(f'{lab}={v*100:.1f}%(n{n2})' for v, lab, _, _, _, _, n2 in scored)
+            log.append({'t': 0, 'ph': '', 'tp': 0, 'k': 'decision', 'm': f'판단[{pname}] {rnd}라운드 선후공: {{{cs}}} → {pick[1]} ({why})',
+                        'data': {'decision': f'선후공 선택({rnd}라운드)', 'pick': pick[1], 'why': why,
+                                 'opts': [(lab, round(v * 100, 1), n2) for v, lab, _, _, _, _, n2 in scored]}})
+        return pick[2]
+
+    def first_result(self, won):
+        k = getattr(self, '_first_key', None)
+        if k and self.learn: POLICY.update(k[0], k[1], int(won))
+        self._first_key = None
+
     def mulligan(self, g, p, hand):
         heur = set(id(c) for c in super().mulligan(g, p, hand))
         back = []
