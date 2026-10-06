@@ -312,10 +312,10 @@ def main(argv=None):
         cap_counts(T.L1, a.cap1); cap_counts(T.L2, a.cap2); T.rebuild_L0(); cap_counts(T.L0, a.cap0)
         cap_counts(S.L1, a.cap1)
         state = {'iter': 0, 'args': vars(a), 'history': [], 'evals': [], 'calm': 0, 'converged': False, 'before': before}
-    state.setdefault('seasons', []); state.setdefault('recipe_hist', {}); state.setdefault('recipe_done', -1)
-    if not state['seasons']:   # 시즌 0 = 학습 시작 시점 레시피
-        state['seasons'].append({'season': 0, 'iter': state['iter'], 'changes': {}, 'accepted': 0, 'recipes': {n: deck_rows(decks[n]) for n in names}})
         prev = None
+    state.setdefault('seasons', []); state.setdefault('recipe_hist', {}); state.setdefault('recipe_done', -1)
+    if not state['seasons']:   # 시즌 0 = 학습 시작(또는 시즌 방식으로 전환한) 시점 레시피
+        state['seasons'].append({'season': 0, 'iter': state['iter'], 'changes': {}, 'accepted': 0, 'recipes': {n: deck_rows(decks[n]) for n in names}})
     P.POLICY = T; M.SIDE = S
     # 리그 평가용 match_sim 작업자 상태 (포크로 전달)
     a.recipe_n = tuple(int(x) for x in str(a.recipe_n).split(','))
