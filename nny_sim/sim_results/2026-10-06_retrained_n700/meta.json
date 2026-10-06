@@ -1,0 +1,41 @@
+{
+ "ai": {
+  "ai": "table",
+  "policy": null,
+  "side": null
+ },
+ "matches_per_pair": 700,
+ "seed": 1,
+ "workers": 4,
+ "decks_list": [
+  "달그림자에 잠식된 태양",
+  "데쿠마",
+  "번성충-기생",
+  "번성충-대발생",
+  "세제",
+  "솔루나 아츠",
+  "투기장의 규칙"
+ ],
+ "planned_matches": 34300,
+ "started": "2026-10-06 11:38:20",
+ "inputs": {
+  "policy": {
+   "path": "learned/policy.json.gz",
+   "bytes": 30841871,
+   "sha1": "b7810229496b7061a4bbc1cfbef215683afe39c0"
+  },
+  "side": {
+   "path": "learned/side.json",
+   "bytes": 243587,
+   "sha1": "7f78f0dc3ae5af6e6bc53dfb7aeeb018fe9c4c63"
+  }
+ },
+ "code": {
+  "commit": "98592286733198a43cdb8f761384704113215b50",
+  "branch": "model/recipe-learning-stages",
+  "dirty": false,
+  "note": "git archive로 만든 실행 폴더라 실행 시점에는 커밋을 읽지 못해 나중에 기록"
+ },
+ "complete": true,
+ "sec": 467.7
+}
