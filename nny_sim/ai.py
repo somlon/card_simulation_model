@@ -246,7 +246,7 @@ class HeuristicAI:
         o = 1 - p
         opp = [m for m in g.monsters(o) if m.faceup]
         if g.can_declare_attack(p) and a > 0 and not c.flags.get('no_attack'):
-            direct = not g.monsters(o) or 'direct_attack' in getattr(c, 'rules', {})
+            direct = not g.blockers(o) or 'direct_attack' in getattr(c, 'rules', {})
             wins = any(a > (g.atk(t) if t.pos == 'atk' else g.df(t)) for t in opp)
             if direct or wins: return 'atk', '이번 턴 공격 가능'
         if a == 0: return 'def', '공격력 0'
@@ -317,7 +317,7 @@ class HeuristicAI:
             if m.faceup and m.pos == 'atk' and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
                 tot += (g.atk(m) + (bonus if m.has('번성충') else 0)) * (self.max_attacks(g, m) - m.attacks_made)
         if extra is not None:
-            direct_ok = 'direct_attack' in getattr(extra, 'rules', {}) or not g.monsters(1 - p)
+            direct_ok = 'direct_attack' in getattr(extra, 'rules', {}) or not g.blockers(1 - p)
             if direct_ok: tot += g.atk(extra) + bonus + (g.atk_bonus_if_on_field(extra, p) if hasattr(g, 'atk_bonus_if_on_field') else 0)
         return tot
 
