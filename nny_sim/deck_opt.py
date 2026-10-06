@@ -6,7 +6,8 @@
      기여도 · 가치는 라운드 로그로 쌓은 교체표(learned/side.json: 상대 덱별 카드 사용 · 승패)에서 온다.
      덱 매수는 규칙 범위(메인 20~40 · 상급 0~20) 안에서 늘거나 줄 수 있다 — 매수 증감도 학습 대상.
   2) 모든 후보를 짧게 평가 → 상위만 길게 평가 → 최종 후보를 현재 레시피와 같은 시드로 맞대결 비교.
-  3) 차이가 통계적으로 유의(쌍대 비교 z > 1.96)하면 채택, 아니면 현재 레시피 유지.
+  3) 차이가 통계적으로 유의(쌍대 비교 z > 1.96)하면 새 시드로 한 번 더 짝 비교(확인 단계)해, 그것도 유의할 때만 채택.
+     후보를 고른 표본으로 바로 검정하면 승자의 저주로 오채택이 늘기 때문이다.
 평가 상대는 구현된 다른 덱 전부(균등 가중), 선공 5:5, 판단은 학습형 정책(학습 끔).
 평가기(ev)를 바꿔 끼울 수 있다 — 기본은 한 프로세스, train_table · season은 병렬 평가기를 넘긴다.
 상태는 learned/deckopt_<스킬>.json에 저장되어 여러 번에 나눠 이어서 돌릴 수 있다.
@@ -181,11 +182,19 @@ def one_round(state, opps, ev=None, contrib=None, value_of=None, n=(2, 8, 40), t
     base3 = r3[0]
     s3 = sorted(((rate(r), lab, c, s, r) for r, (_, lab, c, s) in zip(r3[1:], top2)), key=lambda x: -x[0]); best = s3[0]
     m, z = paired_z(best[4], base3)
+    # 확인 단계: 최종 후보 3개 중 가장 좋은 것을 같은 표본으로 고르고 그 표본으로 검정하면 승자의 저주로 오채택이 는다.
+    # 새 시드로 현재 레시피와 다시 짝 비교해 그 결과로만 채택한다 (선택과 검정의 표본 분리)
+    zc = mc = None
+    if z > 1.96:
+        r4 = ev([(skill, cur, opps, n[2], seed + 29, cst), (skill, best[2], opps, n[2], seed + 29, best[3])])
+        mc, zc = paired_z(r4[1], r4[0])
+    ok = zc is not None and zc > 1.96
     rec = {'round': rnd, 'candidates': len(cands), 'base': round(rate(base3) * 100, 1), 'best': best[1],
-           'best_rate': round(best[0] * 100, 1), 'diff': round(m * 100, 2), 'z': round(z, 2), 'accepted': z > 1.96,
+           'best_rate': round(best[0] * 100, 1), 'diff': round(m * 100, 2), 'z': round(z, 2), 'accepted': ok,
+           'confirm': None if zc is None else {'diff': round(mc * 100, 2), 'z': round(zc, 2)},
            'top3': [(lab, round(r * 100, 1)) for r, lab, _, _, _ in s3], 'matches_final': len(base3),
            'sizes_before': sizes(cur, cst), 'stalled': STALLS[0], 'sec': round(time.time() - t0)}
-    if z > 1.96: state['counts'] = best[2]; state['strat'] = best[3]
+    if ok: state['counts'] = best[2]; state['strat'] = best[3]
     rec['sizes_after'] = sizes(state['counts'], state['strat'])
     state['history'].append(rec)
     return rec

@@ -57,6 +57,22 @@ class OneRoundTest(unittest.TestCase):
         self.assertEqual(len(st['history']), 1)
         self.assertIn('sizes_after', rec)
 
+    def test_selection_noise_is_not_adopted_without_confirmation(self):
+        """최종 단계에서만 운 좋게 이긴 후보는 새 시드 확인 단계에서 걸러진다"""
+        st = DO.state_from_deck(DECKS['세제'])
+        opps = [d for k, d in DECKS.items() if k != '세제']
+        def ev(jobs):
+            out = []
+            for sk, counts, o, n, seed, strat in jobs:
+                m = n * len(o) * 2
+                lucky = counts != st['counts'] and seed % 1000003 == 13     # 최종 단계(seed+13)에서만 후보가 이김
+                out.append([1 if (i < m * 0.6 if lucky else i < m * 0.3) else 0 for i in range(m)])
+            return out
+        rec = DO.one_round(st, opps, ev=ev, n=(1, 2, 20))
+        self.assertGreater(rec['z'], 1.96)
+        self.assertFalse(rec['accepted'])
+        self.assertIsNotNone(rec['confirm'])
+
     def test_keeps_recipe_when_nothing_is_better(self):
         st = DO.state_from_deck(DECKS['세제']); before = dict(st['counts'])
         opps = [d for k, d in DECKS.items() if k != '세제']

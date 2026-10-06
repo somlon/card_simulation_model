@@ -363,9 +363,11 @@ def main(argv=None):
                 accepted += 1
                 base = d['이름'].split(' [')[0]
                 decks[n] = DO.to_deck(f'{base} [시즌 {len(state["seasons"])} 레시피]', d['스킬'], st['counts'], st['strat'])
-            changes[n] = {k: rec.get(k) for k in ('best', 'base', 'best_rate', 'diff', 'z', 'accepted', 'candidates', 'sizes_before', 'sizes_after', 'top3')}
+            changes[n] = {k: rec.get(k) for k in ('best', 'base', 'best_rate', 'diff', 'z', 'confirm', 'accepted', 'candidates', 'sizes_before', 'sizes_after', 'top3')}
+            cf = rec.get('confirm')
             print(f'  [레시피 {n}] {"채택" if rec.get("accepted") else "유지"}: {rec.get("best")} '
-                  f'({rec.get("base")}% → {rec.get("best_rate")}%, z={rec.get("z")}) 매수 {rec.get("sizes_after")}', flush=True)
+                  f'({rec.get("base")}% → {rec.get("best_rate")}%, z={rec.get("z")}' + (f', 확인 z={cf["z"]}' if cf else '') +
+                  f') 매수 {rec.get("sizes_after")}', flush=True)
         season = {'season': len(state['seasons']), 'iter': it, 'changes': changes, 'accepted': accepted,
                   'recipes': {n: deck_rows(decks[n]) for n in names}, 'sec': round(time.time() - t0, 1)}
         state['seasons'].append(season); state['recipe_done'] = it
