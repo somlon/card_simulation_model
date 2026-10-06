@@ -1,6 +1,8 @@
 """시즌 학습: 구현된 모든 덱의 모든 조합을 Bo3 매치로 돌리며
   ① 판단 정책(learned/policy.json) ② 전략 덱 교체 · 카드 기여도(learned/side.json)를 학습하고
-  ③ 덱마다 매치 패배가 ADJUST_EVERY회 쌓이면 기여도가 가장 낮은 카드 3종류의 매수를 조정 · 제거한다(자동 덱 조정).
+  ③ 덱마다 매치 패배가 ADJUST_EVERY회 쌓이면 그 덱에 레시피 학습기(deck_opt.one_round) 한 라운드를 돌린다(자동 덱 조정).
+     후보 = 한 장 추가 · 제거 · 교체(매수 증감 포함, 로그 기여도 하위 카드 교체를 우선), 짧게 → 길게 → 최종 짝 비교,
+     유의(z > 1.96)할 때만 채택. 예전 방식(기여도 하위 3종의 감소 · 제거 · 교체만)은 매수를 줄이기만 해서 바꿈(사용자 지시 2026-10-06).
 덱 레시피의 현재 버전은 learned/decks/<스킬>.json 에 저장되며, 조정 이력은 learned/adjust_log.json.
 """
 import json, os, glob, random, time, itertools, sys, math
@@ -50,35 +52,17 @@ def eval_deck(d, decks, n, seed):
             if mw is not None: m += 1; w += (mw == 0)
     return w / max(1, m), m
 
-def adjust(d, decks, log):
-    me = d['스킬']; con = contribution(d, decks)
-    act = M.counts_of(d); st = M.counts_of(d, ('전략',))
-    worst = sorted(act, key=lambda n: con[n])[:3]
-    sk = POOL[me]; tags = set(sk['skill_tags']) | (set() if sk.get('no_common') else {'공용'})
-    pool = [n for n, c in POOL.items() if c['type'] != '스킬' and set(c['tags']) & tags and n in IMPL]
-    opts = [('현재 유지', d)]
-    for w in worst:
-        kind = POOL[w]['deck']
-        repl = sorted([n for n in pool if POOL[n]['deck'] == kind and n != w and act.get(n, 0) < 3],
-                      key=lambda n: -(con.get(n) if n in con else max([M.card_value(me, op, n) for op in decks if op != me] or [0.5])))[:1]
-        for lab, delta in ((f'「{w}」 1장 감소', {w: -1}), (f'「{w}」 제거', {w: -act[w]})) + tuple((f'「{w}」 1장 → 「{r}」', {w: -1, r: +1}) for r in repl):
-            a2 = dict(act)
-            for k2, v in delta.items(): a2[k2] = a2.get(k2, 0) + v
-            nd = M.deck_from(d, a2, st); e, _ = D.validate(nd, policy=False)   # 전략 덱은 바꾸지 않으므로 규칙만 검사
-            if not e: opts.append((lab, nd))
-    seed = random.randrange(10 ** 9)
-    s1 = sorted(((eval_deck(od, decks, 3, seed)[0], lab, od) for lab, od in opts), key=lambda x: -x[0])
-    base = next(x for x in s1 if x[1] == '현재 유지')
-    best = next((x for x in s1 if x[1] != '현재 유지'), None)
-    rec = {'deck': me, '기여도 하위 3종': {w: round(con[w] * 100, 1) for w in worst},
-           '후보': [(lab, round(r * 100, 1)) for r, lab, _ in s1]}
-    if best:
-        rb, nb = eval_deck(best[2], decks, 30, seed + 1); rc, nc = eval_deck(d, decks, 30, seed + 1)
-        se = math.sqrt(max(1e-9, rb * (1 - rb) / max(1, nb) + rc * (1 - rc) / max(1, nc)))
-        rec['재측정'] = {'현재': round(rc * 100, 1), best[1]: round(rb * 100, 1), '판수': nb, 'z': round((rb - rc) / se, 2)}
-        if (rb - rc) / se > 1.64:
-            rec['결정'] = best[1]; d = best[2]; d['이름'] = d['이름'].split(' [')[0] + f' [자동 조정 {time.strftime("%m-%d %H:%M")}]'
-        else: rec['결정'] = '현재 유지'
+def adjust(d, decks, log, ev=None, n=(2, 8, 40)):
+    """레시피 학습기 한 라운드로 덱 d를 조정한다 (판단은 학습형 정책, 학습 끔). 반환 (새 덱, 기록)"""
+    import deck_opt as DO
+    me = d['스킬']; st = DO.state_from_deck(d)
+    con, val = DO.log_guides(me, st['counts'], st['strat'], decks)
+    opps = [od for k, od in decks.items() if k != me]
+    rec = DO.one_round(st, opps, ev=ev, contrib=con, value_of=val, n=n)
+    rec = dict(rec, deck=me, 결정=rec['best'] if rec.get('accepted') else '현재 유지')
+    if rec.get('accepted'):
+        nd = DO.to_deck(d['이름'].split(' [')[0] + f' [자동 조정 {time.strftime("%m-%d %H:%M")}]', me, st['counts'], st['strat'])
+        d = nd
     log.append(rec)
     return d, rec
 
