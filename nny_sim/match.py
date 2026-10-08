@@ -129,6 +129,7 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
     side_fn(i, decks, wins, rounds, rng, side_eps, log) -> 플레이어 i의 새 덱. 없으면 학습표 교체(side_swap) — DRL 정책 연결용"""
     decks = [dict(dA, _seat=0), dict(dB, _seat=1)]   # 자리 번호: make_ai(deck) · side_fn이 자리를 알 수 있게 (게임 · 교체 규칙에는 영향 없음)
     wins = [0, 0]; rounds = []; f = first; rnd = 0
+    chooser = None   # 직전 선후공을 정한 (AI, 자리) — 그 라운드 결과를 알려 준다
     while max(wins) < 2:   # 승점 2점 선취 (§11-2). 라운드는 규칙의 종료 조건으로만 끝나므로 무승부는 없다
         rnd += 1
         log.append({'t': 0, 'ph': '', 'tp': 0, 'k': 'round', 'm': f'████ {rnd}라운드 — 선공 {decks[f]["이름"]} ████',
@@ -140,6 +141,8 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
         w, why = g.run()
         rounds.append({'first': f, 'winner': w, 'reason': why, 'turns': g.turn, 'log': (i0, len(log))})
         wins[w] += 1
+        if chooser is not None:
+            chooser[0].first_result(w == chooser[1]); chooser = None
         if learn_side:
             for i in (0, 1): record_round(decks[i], decks[1 - i]['스킬'], w == i, used_cards(log[i0:], decks[i]['이름']))
         if max(wins) < 2 and side:
@@ -148,7 +151,9 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
             else:
                 decks = [side_fn(i, decks, wins, rounds, rng, side_eps, log) for i in (0, 1)]
         # 교체 후, 이전 라운드의 패자가 선후공을 결정한다 (정본 4, §11-2)
-        loser = 1 - w
-        f = loser if make_ai(decks[loser]).wants_first(decks[w]['스킬']) else w
+        if max(wins) < 2:
+            loser = 1 - w; ai = make_ai(decks[loser])
+            go = ai.choose_first(decks[loser]['스킬'], decks[w]['스킬'], rnd + 1, rng, log, decks[loser]['이름'])
+            f = loser if go else w; chooser = (ai, loser)
     mw = 0 if wins[0] > wins[1] else 1 if wins[1] > wins[0] else None
     return mw, rounds

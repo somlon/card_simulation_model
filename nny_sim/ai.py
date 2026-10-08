@@ -108,6 +108,13 @@ class HeuristicAI:
         """이전 라운드 패자로서 선후공을 결정 (정본 4, §11-2). 덱별 지침 go_first가 없으면 선공"""
         return self.pol.get('go_first', True)
 
+    def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
+        """rnd라운드(2 · 3)의 선후공 결정 — 이전 라운드 패자가 한다. 반환 True = 선공"""
+        return self.wants_first(opp_skill)
+
+    def first_result(self, won):
+        """choose_first로 정한 라운드의 승패 (학습형 정책이 결과를 반영)"""
+
     def choose_mill_deck(self, g, chooser, target, n):
         """「덱의 위에서부터」(덱 미지정) 제외: 메인 · 상급 중 한쪽을 고른다 (§6-7). 메인 덱에 n장 이상 있으면 메인, 아니면 많은 쪽"""
         pl = g.p[target]
