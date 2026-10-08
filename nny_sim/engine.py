@@ -700,15 +700,38 @@ class Game:
         """p가 이번 턴 아직 공격 선언을 할 수 있는 상태인가: 자신 턴 · 선공 1턴째가 아님 (§5-3) · 공격 봉인 없음 · 전투 단계 이전"""
         return self.turn_player == p and self.turn > 1 and self.no_attack.get(p) != self.turn and self.phase in ('준비', '진행', '전투')
 
+    def blockers(self, p):
+        """p 필드에서 상대의 직접공격을 막는 몬스터. 뒷면 공격 표시 몬스터는 막지 못한다 — 상대는 그 몬스터를 무시하고
+        직접공격할 수 있다 (사용자 재정 2026-10-06). 뒷면 수비 표시는 지금처럼 막는다(공격 대상은 아님, 정본 1-1)"""
+        return [m for m in self.monsters(p) if m.faceup or m.pos != 'atk']
+
     def can_direct(self, c):
         opp = 1 - c.controller
-        return not self.monsters(opp) or self.rule('direct_attack', c)
+        return not self.blockers(opp) or self.rule('direct_attack', c)
+
+    def can_attack_with(self, m):
+        """공격 선언할 수 있는 몬스터인가: 앞면 공격 표시만 (뒷면 공격 표시 몬스터는 공격할 수 없다 — 사용자 재정 2026-10-06)"""
+        return m.faceup and m.pos == 'atk'
+
+    def set_face_down(self, c, cause=None):
+        """「뒷면 표시로 한다」 효과 (사용자 재정 2026-10-06): 표시 형식은 그대로 두고 뒷면으로 — 공격 표시 몬스터는
+        뒷면 공격 표시, 수비 표시 몬스터는 뒷면 수비 표시가 된다. 텍스트가 「뒷면 수비 표시로」를 정하면 pos='def'를 넘긴다.
+        뒷면 몬스터는 [지속]이 적용되지 않는다(continuous_sources는 앞면만). 카운터 · 장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
+        cause = cause or ('effect', self.src)
+        if not self.on_field(c) or not c.is_monster() or not c.faceup: return False
+        if self.blocked(c, cause): return False
+        c.faceup = False
+        self.L(f'{c} 뒷면 {"공격" if c.pos == "atk" else "수비"} 표시로')
+        self.emit('face_down', card=c, cause=cause)
+        return True
 
     def attack_targets(self, c):
         return [m for m in self.monsters(1 - c.controller) if m.faceup and not self.rule('no_battle_target', m)]   # 뒷면은 공격 대상 아님(정본 1-1)
 
     def attack(self, a, target):
         p = a.controller; o = 1 - p
+        if not self.can_attack_with(a):   # 뒷면 공격 표시 · 수비 표시는 공격 선언 불가 — AI 후보에서 이미 거르지만 엔진에서도 막는다
+            self.L(f'{a}은(는) 공격할 수 없음 (앞면 공격 표시가 아님)', 'sys'); return
         a.attacks_made += 1
         self.L(f'{self.pname(p)} {a}(ATK {self.atk(a)}) → ' + (f'{target}' if target else '직접공격'))
         self.emit('attack', card=a, target=target)
