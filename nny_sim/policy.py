@@ -35,10 +35,10 @@ def k0_of(k1):
 class Table:
     def __init__(self, name):
         self.path = os.path.join(LEARN_DIR, name + '.json')
-        d = {}
+        d = {}; self.source = None                    # source: 실제로 읽은 파일 (결과 메타의 해시용)
         for path in (self.path, self.path + '.gz'):   # 큰 표는 압축본(.json.gz)으로 보관할 수 있다
             if os.path.exists(path):
-                try: d = self.read(path); break
+                try: d = self.read(path); self.source = path; break
                 except Exception: d = {}
         self.L0 = d.get('L0', {}); self.L1 = d.get('L1', {}); self.L2 = d.get('L2', {}); self.games = d.get('games', 0)
 
@@ -52,7 +52,7 @@ class Table:
     def load(cls, path):
         """파일 경로(.json · .json.gz) → Table"""
         t = cls.__new__(cls); d = cls.read(path)
-        t.path = path; t.L0 = d.get('L0', {}); t.L1 = d.get('L1', {}); t.L2 = d.get('L2', {}); t.games = d.get('games', 0)
+        t.path = path; t.source = path; t.L0 = d.get('L0', {}); t.L1 = d.get('L1', {}); t.L2 = d.get('L2', {}); t.games = d.get('games', 0)
         return t
 
     def value(self, k1, k2, prior):
@@ -148,7 +148,7 @@ class LearnedAI(HeuristicAI):
         if log and len(scored) > 1 and getattr(g, 'script', None) is None:
             cs = ', '.join(f'{lab}={v*100:.1f}%(n{n2}/{n1})' for v, lab, _, _, _, n1, n2 in scored[:8])
             g.L(f'판단[{g.pname(p)}] {decision}: {{{cs}}} → {pick[1]} ({why})', 'decision')
-            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': pick[1], 'why': why,
+            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': pick[1], 'why': why, 'pick_n1': pick[5], 'pick_n2': pick[6],
                                  'opts': [(lab, round(v * 100, 1), n2) for v, lab, _, _, _, n1, n2 in scored[:4]]}
         idx = next(i for i, o in enumerate(opts) if o[0] == pick[1])
         return self._rec(g, p, idx, opts)
