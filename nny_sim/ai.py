@@ -80,14 +80,17 @@ class HeuristicAI:
         return base - 4 * dup
 
     # ── 시작 패 · 드로우 ──
-    def choose_split(self, g, p, n):
+    def split_default(self, g, p, n):
+        """지침 · 측정표의 시작 패 배분 → (메인 장수, 출처)"""
         pos = 'first' if g.first == p else 'second'
         opp_skill = g.p[1 - p].skill.name if g.p[1 - p].skill else None
         table = self.split_override or SPLIT_BY_MATCHUP.get((g.p[p].skill.name, opp_skill)) or self.pol.get('split_table')
         if table and pos in table:
-            k = min(table[pos], n); src = f'학습 배분표({"선공" if pos=="first" else "후공"})'
-        else:
-            k = min(self.pol['split'], n); src = '임시 고정값'
+            return min(table[pos], n), f'학습 배분표({"선공" if pos=="first" else "후공"})'
+        return min(self.pol['split'], n), '임시 고정값'
+
+    def choose_split(self, g, p, n):
+        k, src = self.split_default(g, p, n)
         g.L(f'판단[{g.pname(p)}] 시작 패 배분: 메인 {k} / 상급 {n-k} ({src})', 'decision'); return k
 
     def mulligan(self, g, p, hand):
