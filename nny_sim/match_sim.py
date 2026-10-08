@@ -169,13 +169,8 @@ def _ai_factory(spec):
 
 
 def _load_table(path):
-    import gzip
     import policy as P
-    t = P.Table.__new__(P.Table)
-    with (gzip.open(path, 'rt', encoding='utf-8') if path.endswith('.gz') else open(path, encoding='utf-8')) as f:
-        d = json.load(f)
-    t.path = path; t.L1 = d.get('L1', {}); t.L2 = d.get('L2', {}); t.games = d.get('games', 0)
-    return t
+    return P.Table.load(path)
 
 
 # ─────────────── 매치 실행 ───────────────

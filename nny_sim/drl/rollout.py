@@ -20,14 +20,10 @@ _W = {}
 
 
 def load_table(path):
-    """학습표 JSON(policy.json 형식) → policy.Table과 같은 조회 객체.
+    """학습표 JSON(policy.json 형식) → policy.Table.
     .json.gz 압축본도 읽는다 — 큰 학습표(예: C 표 101MB)는 GitHub 파일 한도(100MB) 때문에 압축해 보관한다"""
-    import gzip, policy as P
-    t = P.Table.__new__(P.Table)
-    with (gzip.open(path, 'rt', encoding='utf-8') if path.endswith('.gz') else open(path, encoding='utf-8')) as f:
-        d = json.load(f)
-    t.path = path; t.L1 = d.get('L1', {}); t.L2 = d.get('L2', {}); t.games = d.get('games', 0)
-    return t
+    import policy as P
+    return P.Table.load(path)
 
 
 def init_worker(cfg):

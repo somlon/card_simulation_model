@@ -30,7 +30,7 @@ class Capture:
 class EmptyTable:
     def __enter__(self):
         self.orig = P.POLICY
-        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L1 = {}; t.L2 = {}; t.games = 0
+        t = P.Table.__new__(P.Table); t.path = '/dev/null'; t.L0 = {}; t.L1 = {}; t.L2 = {}; t.games = 0
         P.POLICY = t
         return t
 

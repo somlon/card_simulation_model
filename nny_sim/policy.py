@@ -2,10 +2,12 @@
 모든 판단 지점을 「후보 → 학습 승률표로 선택」으로 바꾼다. 휴리스틱 점수는 데이터가 없을 때의 사전값(prior)으로만 쓰이고,
 판이 쌓일수록 실제 승률이 사전값을 대체한다.
 
-승률표는 두 단계로 추정한다(축소 추정).
+승률표는 세 단계로 추정한다(계층 축소 추정).
+  L0: (덱 · 판단 종류 · 후보)                    — 상대를 묶은 평균. 처음 보는 상대 · 드문 판단의 공백을 채운다
   L1: (덱 · 상대 · 판단 종류 · 후보)           — 상황과 무관한 평균
   L2: L1 + 상황 구간(턴 · 차례 · HP 차 · 상대 필드 · 내 몬스터 · 패 수)
-  값 = (L2 승수 + a·L1추정) / (L2 판수 + a),  L1추정 = (L1 승수 + a·사전값) / (L1 판수 + a)
+  값 = (L2 승수 + a·L1추정) / (L2 판수 + a),  L1추정 = (L1 승수 + a·L0추정) / (L1 판수 + a),
+  L0추정 = (L0 승수 + a·사전값) / (L0 판수 + a).  L0이 없는 예전 표는 L1추정이 곧바로 사전값으로 줄어든다(예전과 같음).
 판이 끝나면 그 판에서 내린 모든 판단에 승패를 반영한다(몬테카를로 학습).
 
 사용자 지침(하드 제약)은 학습 대상이 아니다: 번성충 일반소환은 결착 시에만, 공유 존 사용 조건,
@@ -23,24 +25,68 @@ class ReplayDesync(Exception):
     pass
 
 
+def k0_of(k1):
+    """L1 키 「덱 vs 상대|판단|후보」 → L0 키 「덱 vs *|판단|후보」"""
+    i = k1.find(' vs ')
+    j = k1.find('|', i) if i >= 0 else -1
+    return k1[:i] + ' vs *' + k1[j:] if j > 0 else None
+
+
 class Table:
     def __init__(self, name):
         self.path = os.path.join(LEARN_DIR, name + '.json')
-        try: d = json.load(open(self.path, encoding='utf-8'))
-        except Exception: d = {}
-        self.L1 = d.get('L1', {}); self.L2 = d.get('L2', {}); self.games = d.get('games', 0)
+        d = {}
+        for path in (self.path, self.path + '.gz'):   # 큰 표는 압축본(.json.gz)으로 보관할 수 있다
+            if os.path.exists(path):
+                try: d = self.read(path); break
+                except Exception: d = {}
+        self.L0 = d.get('L0', {}); self.L1 = d.get('L1', {}); self.L2 = d.get('L2', {}); self.games = d.get('games', 0)
+
+    @staticmethod
+    def read(path):
+        import gzip
+        with (gzip.open(path, 'rt', encoding='utf-8') if path.endswith('.gz') else open(path, encoding='utf-8')) as f:
+            return json.load(f)
+
+    @classmethod
+    def load(cls, path):
+        """파일 경로(.json · .json.gz) → Table"""
+        t = cls.__new__(cls); d = cls.read(path)
+        t.path = path; t.L0 = d.get('L0', {}); t.L1 = d.get('L1', {}); t.L2 = d.get('L2', {}); t.games = d.get('games', 0)
+        return t
 
     def value(self, k1, k2, prior):
+        k0 = k0_of(k1)
+        if k0 is not None and self.L0:
+            w0, n0 = self.L0.get(k0, (0, 0)); prior = (w0 + A * prior) / (n0 + A)
         w1, n1 = self.L1.get(k1, (0, 0)); m1 = (w1 + A * prior) / (n1 + A)
         w2, n2 = self.L2.get(k2, (0, 0)); return (w2 + A * m1) / (n2 + A), n1, n2
 
     def update(self, k1, k2, won):
         a = self.L1.setdefault(k1, [0, 0]); a[0] += won; a[1] += 1
         b = self.L2.setdefault(k2, [0, 0]); b[0] += won; b[1] += 1
+        k0 = k0_of(k1)
+        if k0 is not None:
+            c = self.L0.setdefault(k0, [0, 0]); c[0] += won; c[1] += 1
 
-    def save(self):
-        os.makedirs(LEARN_DIR, exist_ok=True)
-        json.dump({'games': self.games, 'L1': self.L1, 'L2': self.L2}, open(self.path, 'w', encoding='utf-8'), ensure_ascii=False)
+    def rebuild_L0(self):
+        """L1을 상대에 걸쳐 합해 L0을 다시 만든다 (L0이 없던 예전 표에 붙일 때)"""
+        self.L0 = {}
+        for k1, (w, n) in self.L1.items():
+            k0 = k0_of(k1)
+            if k0 is None: continue
+            c = self.L0.setdefault(k0, [0, 0]); c[0] += w; c[1] += n
+
+    def save(self, path=None):
+        import gzip
+        path = path or self.path
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        r = lambda x: round(x, 3) if isinstance(x, float) else x     # 망각(γ)으로 생긴 실수 판수는 소수 3자리로
+        rd = lambda D: {k: [r(v[0]), r(v[1])] for k, v in D.items()}
+        d = {'games': self.games, 'L1': rd(self.L1), 'L2': rd(self.L2)}
+        if self.L0: d['L0'] = rd(self.L0)
+        with (gzip.open(path, 'wt', encoding='utf-8', compresslevel=6) if path.endswith('.gz') else open(path, 'w', encoding='utf-8')) as f:
+            json.dump(d, f, ensure_ascii=False)
 
 
 POLICY = Table('policy')
@@ -51,9 +97,14 @@ def prior_of(h, scale):
 
 
 class LearnedAI(HeuristicAI):
-    def __init__(self, skill, split_override=None, learn=True, eps=0.0):
+    def __init__(self, skill, split_override=None, learn=True, eps=0.0, table=None):
         super().__init__(skill, split_override)
         self.learn = learn; self.eps = eps; self.trace = []
+        self.table = table          # 이 AI만 쓰는 학습표(표끼리 맞대결 평가용). None이면 전역 POLICY
+
+    @property
+    def T(self):
+        return self.table if self.table is not None else POLICY
 
     # ── 공통 선택기 ──
     def bucket(self, g, p):
@@ -83,7 +134,7 @@ class LearnedAI(HeuristicAI):
         scored = []
         for lab, h, pay in opts:
             k1 = base + lab; k2 = k1 + '|' + b
-            v, n1, n2 = POLICY.value(k1, k2, prior_of(h, scale))
+            v, n1, n2 = self.T.value(k1, k2, prior_of(h, scale))
             scored.append((v, lab, pay, k1, k2, n1, n2))
         scored.sort(key=lambda x: -x[0])
         if explore == 'thompson' and self.learn and self.eps:
@@ -109,7 +160,7 @@ class LearnedAI(HeuristicAI):
 
     def end_game(self, g, p, winner):
         if winner is not None and self.learn:
-            for k1, k2 in self.trace: POLICY.update(k1, k2, int(winner == p))
+            for k1, k2 in self.trace: self.T.update(k1, k2, int(winner == p))
         self.trace = []
 
     # ── 드로우 · 멀리건 ──
@@ -165,7 +216,7 @@ class LearnedAI(HeuristicAI):
         scored = []
         for lab, go in (('선공', True), ('후공', False)):
             k1 = base + lab; k2 = k1 + '|-'
-            v, n1, n2 = POLICY.value(k1, k2, prior_of(5 if go == h else 0, 10))
+            v, n1, n2 = self.T.value(k1, k2, prior_of(5 if go == h else 0, 10))
             scored.append((v, lab, go, k1, k2, n1, n2))
         scored.sort(key=lambda x: -x[0]); pick = scored[0]; why = '학습값'
         if self.learn and self.eps:   # 매치마다 한 번뿐인 결정 → 톰슨 표본으로 탐색
@@ -181,7 +232,7 @@ class LearnedAI(HeuristicAI):
 
     def first_result(self, won):
         k = getattr(self, '_first_key', None)
-        if k and self.learn: POLICY.update(k[0], k[1], int(won))
+        if k and self.learn: self.T.update(k[0], k[1], int(won))
         self._first_key = None
 
     def mulligan(self, g, p, hand):
