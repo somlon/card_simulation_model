@@ -147,10 +147,54 @@ class HeuristicAI:
         if sc: self.note(g, p, '트리거 발동', sc, ', '.join(f'{c.name}#{e.num}' for _, c, e, _ in out) or '없음')
         return [(c, e, ev) for _, c, e, ev in out]
 
+    # ── 종료 · 패스의 평가: 보유 가치(기회비용) ──
+    # 후보 점수는 「그 행동으로 얻는 것」만 세고 「그 카드를 지금 써서 잃는 것」을 빼지 않아, 종료 · 패스(0점)가 늘 졌다.
+    # 상대 턴에 쓸 수 있는 카드를 남겨 두는 가치(보유 가치)를 정의해, 행동 = 즉시 이득 − 쓰는 카드의 보유 가치,
+    # 종료 · 패스 = 남겨 둔 선택지의 가치로 같은 척도에서 비교한다.
+    PASS_EVAL = True      # False면 예전 점수(종료 · 패스 = 0). DRLAI는 False — 학습 당시 후보 특징(h) 분포 유지
+    HOLD_SCALE = 50.0     # 효과 위협도(threat) → 점수: 위협도 500 = 10점 (「세트」 후보 8점과 같은 크기)
+    HOLD_CAP = 20.0
+
+    def hold_value(self, g, p, c):
+        """카드 c를 지금 쓰지 않고 남겨 둘 때의 가치. 상대 턴에도 쓸 수 있는 효과가 있을 때만 양수:
+        패의 몬스터 [신속] · 대응 · 트리거(패에서 발동), 패의 신속 · 트리거 마법(세트해 두고 상대 턴에 발동), 세트한 신속 · 트리거 마법.
+        일반 · 지속 · 필드 마법과 자신 턴 전용 효과만 있는 카드는 0 — 지금 쓰지 않아도 얻는 것이 없다"""
+        if c is None: return 0.0
+        v = 0.0
+        sub = c.d.get('subtype', '')
+        for e in c.effects:
+            if e.kind not in ('quick', 'resp', 'trigger'): continue
+            if c.zone == 'hand':
+                if 'hand' not in e.zones and not (e.spell_act and sub in ('신속', '트리거')): continue
+                if e.spell_act and sub not in ('신속', '트리거'): continue
+            elif c.zone == 's' and not c.faceup:
+                if not (e.spell_act and sub in ('신속', '트리거')): continue
+            else:
+                continue
+            v = max(v, min(self.HOLD_CAP, e.threat / self.HOLD_SCALE))
+        return v
+
+    def reserve(self, g, p):
+        """지금 남겨 둔 선택지의 가치 합 (패 + 세트한 마법) — 종료 · 패스의 평가 점수"""
+        return sum(self.hold_value(g, p, c) for c in g.p[p].hand) + sum(self.hold_value(g, p, c) for c in g.p[p].s if c)
+
+    def urgency(self, g, p):
+        """대응 중인 상대 효과의 위협도(0~1): 위협이 클수록 지금 카드를 쓰는 기회비용이 줄어든다"""
+        if g.chain and g.chain[-1].player != p:
+            return max(0.0, min(1.0, g.chain[-1].eff.threat / 1000.0))
+        return 0.0
+
+    def spend_cost(self, g, p, c, respond=False):
+        """행동이 패 · 세트에서 카드를 쓰면 그 카드의 보유 가치를 잃는다 (대응이면 위협도만큼 할인)"""
+        if not self.PASS_EVAL or c is None or c.zone not in ('hand', 's'): return 0.0
+        h = self.hold_value(g, p, c)
+        return h * (1.0 - self.urgency(g, p)) if respond else h
+
     def respond(self, g, p, opts):
         best = None; sc = []
         for c, e in opts:
             s = e.score(g, c, p, g.chain) if e.score else 0
+            if s > 0: s -= self.spend_cost(g, p, c, respond=True)
             if s > 0: sc.append((f'{c.name}#{e.num}', s))
             if s > 0 and (best is None or s > best[0]): best = (s, c, e)
         if sc:
@@ -186,6 +230,8 @@ class HeuristicAI:
                     if c.type == '마법' and c.d.get('subtype') in ('트리거', '신속') and not getattr(c.effects[0], 'hand_ok', False) \
                        and any(e.kind in ('resp', 'trigger', 'quick') for e in c.effects):
                         acts.append((8, 'set', c, None))
+            if self.PASS_EVAL:   # 패의 카드를 쓰는 행동은 그 카드의 보유 가치만큼 뺀다 (세트는 보유 가치를 지킨다)
+                acts = [(s - (self.spend_cost(g, p, c) if kind in ('summon', 'act', '소환') and s > 0 else 0), kind, c, e) for s, kind, c, e in acts]
             acts = [a for a in acts if a[0] > 0]
             if not acts: return
             acts.sort(key=lambda a: -a[0])
