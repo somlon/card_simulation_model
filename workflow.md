@@ -20,25 +20,23 @@
 ## 다음 세션에서 이어서 하기 (2026-10-08 세션 시점)
 
 - **카드 DB를 비웠다 (사용자 지시 2026-10-08, PR #27 `data/clear-card-pool`).** 카드 업데이트가 많아 그동안 쓰던 카드 217장을 모두 지우고 새로 올리기로 함.
-  - `nny_sim/card_pool.json` = `[]`, `덱_등록기.html` 내장 카드 목록 = `[]`. 지운 카드는 git 기록(#27의 기준 커밋 = `data/retrain-all-pairs`)에 남아 있다.
-  - **새 카드를 올리기 전까지 시뮬레이터는 돌지 않는다.** 옛 카드로 다시 돌려야 하면 `data/retrain-all-pairs`(또는 `data/main`)의 데이터를 쓴다.
+  - `nny_sim/card_pool.json` = `[]`, `덱_등록기.html` 내장 카드 목록 = `[]`. #27이 머지되어 **`data/main` 의 카드 풀도 비어 있다.** 지운 카드는 git 기록(`data/main` 의 #25 머지 커밋 `e4b589c` = `data/retrain-all-pairs`)에 남아 있다.
+  - **새 카드를 올리기 전까지 시뮬레이터는 돌지 않는다.** 옛 카드로 다시 돌려야 하면 `e4b589c`(또는 `data/retrain-all-pairs`)의 데이터를 쓴다.
   - **다음 할 일 — 새 카드 반영 순서:**
     1. 사용자가 새 카드 자료를 올림.
-    2. 카드 풀 재생성: `parse_pool.py` → `build_pool.py`(원본 md → `card_pool.json`), 등록기 재생성(`builder_template.html` 의 `__POOL__` 자리에 새 풀) → data 계열 새 브랜치(기준 `data/clear-card-pool`).
-    3. 바뀐 카드의 효과 구현(`cards*.py`) · 재정 목록 갱신 → model 계열 새 브랜치(기준 사슬 끝 `model/recipe-learning-stages`).
+    2. 카드 풀 재생성: `parse_pool.py` → `build_pool.py`(원본 md → `card_pool.json`), 등록기 재생성(`builder_template.html` 의 `__POOL__` 자리에 새 풀) → data 계열 새 브랜치(기준 `data/main`).
+    3. 바뀐 카드의 효과 구현(`cards*.py`) · 재정 목록 갱신 → model 계열 새 브랜치(기준 `model/main`).
     4. 덱 파일(`decks/` · `learned/decks/`) 갱신.
     5. 재학습(`train_table.py`).
     6. 34,300매치 리그 · 보고서(지침 #13).
   - 아래 「사용자 재정 대기」 항목은 옛 카드 텍스트 기준이다. 새 카드에서 텍스트가 바뀌면 다시 확인한다.
-- **열린 PR — #13 ~ #27 (15개) + 이 workflow.md 기록 PR, 모두 리뷰 · 머지 대기 (main 반영 없음, R1).**
-  - analysis: #13 `analysis/report-guide` → `analysis/main` (덱별 승률 보고서 작성 지침 `보고서_작성_지침.md`) → #26 `analysis/retrain-results` (기준 #13, 재학습 결과 34,300매치 · 결과 보고서)
-  - data 사슬: #25 `data/retrain-all-pairs` → `data/main` (재학습 학습표 `policy.json.gz` · 교체표 · 시즌 17 레시피 · 체크포인트 — **`.json.gz` 읽기 코드가 model 사슬(#21)에 있어 model 사슬과 함께 머지해야 함**) → #27 `data/clear-card-pool` (기준 #25, 카드 DB 비움).
-  - model 사슬(앞 브랜치를 기준으로 쌓음 — **번호 순서대로 머지**, 각 PR은 자기 변경분만 보임):
-    #14 summon-position-choice(→ model/main) → #15 skill-end-process → #16 block-illegal-actions → #17 facedown-attack →
-    #18 pass-evaluation → #19 split-mulligan-decision → #20 round-first-choice → #21 train-all-pairs →
-    #22 mensor-no-self-mill → #23 sim-metadata-compare → #24 recipe-learning-stages
-  - 앞 PR이 머지되면 다음 PR의 기준 브랜치를 `model/main` 으로 바꾸고 변경분 · 충돌 확인 후 머지(PR #5 ~ #8 때와 같은 방식).
-- **재학습 완료 — 반복 230 · 시즌 17에서 수렴 (PR #25 · #26):**
+- **PR #13 ~ #28 모두 머지 완료 (2026-10-08, 사용자 지시, 「Create a merge commit」). 열린 PR 없음. `main` 에는 미반영 (R1).**
+  - `model/main` = 2026-10-06 모델 · 학습 개선 사슬 전체(#14 ~ #24, `e65238e`) — 트리가 사슬 끝 `model/recipe-learning-stages`(`9859228`)와 같음.
+  - `data/main` = 재학습 학습표 · 교체표 · 시즌 17 레시피 · 체크포인트(#25, `e4b589c`) + 카드 DB 비움(#27, `45100f2`).
+  - `analysis/main` = 보고서 작성 지침(#13) + 재학습 결과 리그 · 보고서(#26, `2b714c2`).
+  - `default` = 2026-10-08 workflow.md 기록(#28, `4f93181`).
+  - 쌓인 PR은 앞 PR 머지 뒤 기준 브랜치를 계열 기준 브랜치로 바꾸고, 자기 커밋만 보이는지 확인한 뒤 머지했다(#5 ~ #8 때와 같은 방식).
+- **재학습 완료 — 반복 230 · 시즌 17에서 수렴 (PR #25 · #26 머지됨, 옛 카드 기준):**
   - 수렴 조건(연속 3시즌: 덱 승률 변화 χ² p > 0.05 · 직전 표 대비 맞대결 향상 없음 · 레시피 변경 없음)을 반복 210 · 220 · 230에서 충족.
   - 34,300매치 리그(시즌 17 레시피): 달그림자 91.4 · 투기장 71.7 · 솔루나 70.4 · **대발생 49.1(이상 범위)** · 세제 29.8 · 데쿠마 27.6 · 기생 10.1%.
   - 수렴 표 vs 예전 표 62.7% ± 1.0, vs 학습표 C 59.4% ± 1.0, vs 반복 200 스냅숏 51.1% ± 1.0. 판단 데이터 보유율 모든 덱 100%.
@@ -51,25 +49,27 @@
   - 세제: 두플리카토르 · 델레가토르를 모든 코스트에 적용할지(지금은 세리식 코스트만 → 실측 0회 작동), 세제 2 · 3번을 상대도 쓰는지, 인지세 「카드의 발동」 범위, 이탈세 2번 「필드에서 벗어나게 하는 효과」 판정.
 - **실행용 작업 폴더 만들기** — 코드(`model/…`)와 데이터(`data/main`)가 다른 브랜치라 합쳐서 써야 한다:
   ```bash
-  git fetch origin model/recipe-learning-stages data/main analysis/main
-  git worktree add --detach ../run origin/model/recipe-learning-stages     # 머지 전에는 사슬 마지막 브랜치, 머지 후에는 model/main
+  git fetch origin model/main data/main analysis/main
+  git worktree add --detach ../run origin/model/main
   git archive origin/data/main nny_sim | tar -x -C ../run                          # 카드 풀 · 덱 · 학습표 · DRL 모델
   git archive origin/analysis/main nny_sim/sim_results | tar -x -C ../run          # 기준 결과 원자료(분석할 때만)
   cd ../run/nny_sim && python -m unittest test_match_sim drl.test_drl test_summon_pos test_end_phase test_legality test_facedown \
-      test_pass_eval test_split test_first_choice test_table test_mensor test_sim_report test_recipe   # 111개
+      test_pass_eval test_split test_first_choice test_table test_mensor test_sim_report test_recipe   # 112개
   ```
+  - **지금 `data/main` 의 카드 풀은 비어 있어(#27) 시뮬레이션 · 테스트가 돌지 않는다.** 새 카드를 올리기 전에 옛 카드로 돌리려면 데이터 줄을 `git archive e4b589c nny_sim | tar -x -C ../run` 으로 바꾼다.
   - 코드 브랜치에 데이터 파일이 섞여 커밋되지 않도록 `.git/info/exclude` 에 `nny_sim/card_pool.json` · `nny_sim/decks/` · `nny_sim/learned/` · `nny_sim/덱_등록기.html` · `nny_sim/sim_results/` 를 넣는다. data · analysis 작업 브랜치에서는 `git add -f` 로 올린다.
 - 이 세션의 작업 폴더는 컨테이너와 함께 사라진다. 결과물은 원격 브랜치와 대화창 파일에 있다.
 
 ## 현재 상태 요약
 
 - **2026-10-08:** 카드 DB(`card_pool.json` · 덱 등록기 내장 목록) 비움 — 새 카드 업로드 대기(PR #27). 옛 카드 기준 결과(아래 2026-10-06 세션)는 새 카드 반영 뒤 다시 만들어야 한다.
+  - PR #13 ~ #28 순서대로 머지 완료(사용자 지시) — 열린 PR 없음, `main` 미반영. 계열 기준 브랜치 4개의 트리가 각 사슬 마지막 PR의 머리 커밋과 같음을 확인.
 - **2026-10-06 세션** (모델 · 학습 개선, 사용자 지시 9개 + 후속 지시):
   - 엔진 · 카드: 스킬 「턴 종료 시」 처리 실행, 규칙상 불가능한 행동 사전 차단(같은 이름 실패 2,532 → 0), 뒷면 공격 표시(재정), 멘소르 자기 덱 제외 금지.
   - AI · 학습: 모든 소환의 표시 형식 선택, 종료 · 패스 보유 가치 점수(맞대결 50.5% — 손해 없음), 시작 패 배분 · 멀리건 재배분 · 2 · 3라운드 선후공을 학습 판단으로(톰슨 탐색), 학습표 L0(상대 통합) 단계, 49 순서쌍 재학습 도구, 시즌마다 레시피 학습(시즌 자동 조정도 레시피 학습기 방식 — 매수 증감 포함).
   - 시뮬레이터: 입력 학습표 해시 · 코드 커밋 기록, 판단 데이터 보유율 · 처리 실패 집계, `match_sim.py compare`(짝 비교).
   - **발견: 덱 밸런스 수치는 학습표 공백에 크게 좌우됨.** 예전 표는 데쿠마 · 세제 판단의 약 5%에만 데이터가 있었음. 재학습 표(반복 60)의 고정 시드 리그: 달그림자 91.4 · 투기장 73.8 · 솔루나 64.3 · 대발생 55.4 · 데쿠마 29.4 · 세제 26.4 · 기생 9.4% (예전 표 77.6 · 66.1 · 57.4 · 62.5 · 37.5 · 33.9 · 15.1%). 최종 수치는 레시피 학습까지 수렴한 뒤 확정.
-  - 테스트 35 → 111개.
+  - 테스트 35 → 112개.
 - 저장소 규정 체계(CLAUDE.md · 세션 시작 훅 · workflow.md) 구축 완료.
 - PR #3 ~ #8 모두 계열 기준 브랜치에 머지 완료 (2026-09-30, 「Create a merge commit」 방식). **`main` 에는 미반영** (사용자 지시).
   - `model/main` = nny_sim 코드 최신 (#3 원본 + #5 규칙 명세서 반영 + #7 결착 우선 + #8 R1 수정)
@@ -123,13 +123,14 @@
 | 2026-10-01 | PR #9 ~ #12 순서대로 머지 (main 반영 없음 — 사용자 지시). 머지 전 세 갈래를 합친 상태로 테스트 35개 · DRL 매치 시뮬레이션 스모크(98매치 오류 0) 확인, 감시 · 정기 점검 종료 | `model/main`: #9 `c3182d9` → #11 `2d9a1f6` / `data/main`: #10 `6c23725` / `analysis/main`: #12 `a8ccd32` |
 | 2026-10-06 | 덱별 승률 PDF 보고서(상대별 · 라운드별 · 선후공 · 종합) → 수정본(승리 · 패배 방식, 최빈 양상 대표 로그, 선 · 후공 1턴 운영, 프로 시선 분석, 49쪽) | 대화창 전달 (저장소 미반영 — 사용자 지시) |
 | 2026-10-06 | 질의 답변: 규칙상 불가 행동은 일부 「시도 후 실패」, 분석 모델은 DRL이 아닌 학습표, 학습은 상대 덱별(49개 중 22개만 데이터), 개선 목록(P0 ~ P2) | 대화창 |
-| 2026-10-06 | 소환 표시 형식 AI 선택 · 스킬 종료 처리 · 불가 행동 사전 차단 · 뒷면 공격 표시 · 종료/패스 평가 · 시작 패/멀리건 배분 학습 · 2 · 3라운드 선후공 학습 · 49쌍 재학습 도구(L0) · 멘소르 · 시뮬레이터 기록/compare · 시즌별 레시피 학습 | `model/…` 11개 브랜치 → PR #14 ~ #24 (사슬, 리뷰 대기) |
-| 2026-10-06 | 덱별 승률 보고서 작성 지침(시즌별 레시피 표 필수) | `analysis/report-guide` → PR #13 (리뷰 대기) |
+| 2026-10-06 | 소환 표시 형식 AI 선택 · 스킬 종료 처리 · 불가 행동 사전 차단 · 뒷면 공격 표시 · 종료/패스 평가 · 시작 패/멀리건 배분 학습 · 2 · 3라운드 선후공 학습 · 49쌍 재학습 도구(L0) · 멘소르 · 시뮬레이터 기록/compare · 시즌별 레시피 학습 | `model/…` 11개 브랜치 → PR #14 ~ #24 (사슬, 2026-10-08 머지) |
+| 2026-10-06 | 덱별 승률 보고서 작성 지침(시즌별 레시피 표 필수) | `analysis/report-guide` → PR #13 (2026-10-08 머지) |
 | 2026-10-06 | 솔루나 아츠 카드 34장 · 세제/세리 카드 해석서 + 세제 콤보 학습 실측(예전 표 vs 재학습 표) | 대화창 전달 (md 2개) |
 | 2026-10-06 | 49 순서쌍 재학습 230반복 · 시즌 17(레시피 학습 포함)에서 수렴, 34,300매치 리그 · 맞대결(예전 표 대비 62.7%, C 대비 59.4%) · 결과 보고서, 멘소르 수정 효과 측정(자기 덱 제외 149 → 0장) | `data/retrain-all-pairs` → PR #25, `analysis/retrain-results` → PR #26 |
 | 2026-10-06 | 재학습 중 발견한 문제 수정: 이어하기 때 직전 표 맞대결 누락, 레시피 학습기 승자의 저주(새 시드 확인 단계 추가 — 오채택 1건 걸러냄), 2시간 백그라운드 한도 대응(시간 한도 90분) | `model/recipe-learning-stages` (PR #24에 추가 커밋) |
 | 2026-10-08 | 카드 DB 비움: `card_pool.json` 217장 · 덱 등록기 내장 목록 삭제 (카드 업데이트가 많아 새로 올리기로 함 — 사용자 지시) | `data/clear-card-pool` → PR #27 (기준 #25) |
-| 2026-10-08 | workflow.md에 그동안 작업 기록 (사용자 지시로 PR) | `config/workflow-2026-10-08` → `default` PR |
+| 2026-10-08 | workflow.md에 그동안 작업 기록 (사용자 지시로 PR) | `config/workflow-2026-10-08` → `default` PR #28 |
+| 2026-10-08 | PR #13 ~ #28 순서대로 머지 (main 반영 없음 — 사용자 지시). 쌓인 PR은 기준 브랜치를 계열 기준 브랜치로 바꾸고 자기 커밋만 보이는지 확인 후 머지. 머지 뒤 기준 브랜치 트리 = 사슬 끝 PR 머리 커밋 트리 | `analysis/main`: #13 `5cf6795` → #26 `2b714c2` / `model/main`: #14 `8cd8ec4` → #15 `706eeb0` → #16 `4c40878` → #17 `3f4c597` → #18 `b563581` → #19 `6a40e5d` → #20 `079cf25` → #21 `34d259a` → #22 `f5aa704` → #23 `1df89ae` → #24 `e65238e` / `data/main`: #25 `e4b589c` → #27 `45100f2` / `default`: #28 `4f93181` |
 
 ## 실행 환경 메모
 
@@ -146,9 +147,7 @@
 ## 진행 중
 
 - **새 카드 업로드 대기** — 받으면 「다음 세션에서 이어서 하기」의 새 카드 반영 순서대로 진행.
-- 재학습 수렴(반복 230) — PR #25(data) · #26(analysis) 리뷰 대기.
-- PR #13 ~ #27 리뷰 · 머지 대기.
-- 카드 해석 재정 대기(솔루나 아츠 7건, 세제 4건) — 답을 받으면 model 새 브랜치(사슬 끝 `model/recipe-learning-stages` 기준)로 수정.
+- 카드 해석 재정 대기(솔루나 아츠 7건, 세제 4건) — 답을 받으면 model 새 브랜치(`model/main` 기준)로 수정.
 - 계열 기준 브랜치(`model/main` · `data/main` · `analysis/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
 - DRL: 새 판단(표시 형식 · 배분 · 선후공)과 보유 가치 점수를 특징 스키마에 넣고 새 학습표를 교사로 재학습 필요(P2). 학습표 대신 DRL을 기본 AI로 쓸지는 결정 대기.
@@ -183,9 +182,9 @@
 | --- | --- | --- |
 | `main` | 최종 결과물 | CLAUDE.md · 세션 시작 훅 반영됨 (PR #1, #2) |
 | `default` | 규정 · 진척 원본 (CLAUDE.md, workflow.md, 훅) | 사용 중 |
-| `model/main` | model 계열 기준 (`main` 에서 분기) | PR #3 · #5 · #7 · #8 · #9 · #11 머지됨 (`2d9a1f6`), main 미반영 |
+| `model/main` | model 계열 기준 (`main` 에서 분기) | PR #3 · #5 · #7 · #8 · #9 · #11 · #14 ~ #24 머지됨 (`e65238e`), main 미반영 |
 | `model/add-nny-sim-code` | nny_sim 코드 원본 | PR #3 머지 완료, 삭제 가능 |
-| `data/main` | data 계열 기준 (`main` 에서 분기) | PR #4 · #6 · #10 머지됨 (`6c23725`), main 미반영 |
+| `data/main` | data 계열 기준 (`main` 에서 분기) | PR #4 · #6 · #10 · #25 · #27 머지됨 (`45100f2` — 카드 풀 비어 있음, 옛 카드 데이터는 `e4b589c`), main 미반영 |
 | `data/add-nny-sim-data` | nny_sim 데이터 원본 | PR #4 머지 완료, 삭제 가능 |
 | `model/align-rules-spec` | 규칙 명세서 기준 코드 수정 | PR #5 머지 완료, 삭제 가능 |
 | `data/fill-strategy-20` | 전략 덱 20장 채우기 결과 | PR #6 머지 완료, 삭제 가능 |
@@ -194,14 +193,14 @@
 | `model/drl-policy` | DRL 판단 정책 | PR #9 머지 완료, 삭제 가능 |
 | `data/add-drl-pilot-model` | DRL 시험 학습 모델 · C 교사 표 | PR #10 머지 완료, 삭제 가능 |
 | `model/match-round-stats` | 매치 전용 시뮬레이션 · 라운드 통계 | PR #11 머지 완료, 삭제 가능 |
-| `analysis/main` | analysis 계열 기준 (`default` 에서 분기, 2026-10-01 — CLAUDE.md · workflow.md · 훅도 그 시점 사본으로 들어 있음) | PR #12 머지됨 (`a8ccd32`), main 미반영 |
+| `analysis/main` | analysis 계열 기준 (`default` 에서 분기, 2026-10-01 — CLAUDE.md · workflow.md · 훅도 그 시점 사본으로 들어 있음) | PR #12 · #13 · #26 머지됨 (`2b714c2`), main 미반영 |
 | `analysis/sim-table-baseline` | 기준 매치 시뮬레이션 결과 34,300매치 | PR #12 머지 완료, 삭제 가능 |
 | `exp/main` | exp 계열 기준 (`main` 에서 분기, 내용은 main과 같음) | 실험 파일은 올리지 않음 |
 | `config/sync-rules-to-main` | main 규정 동기화용 | 머지 완료, 삭제 가능 |
-| `model/summon-position-choice` ~ `model/recipe-learning-stages` (11개) | 2026-10-06 모델 · 학습 개선 사슬 | PR #14 ~ #24 리뷰 대기 (앞 브랜치 기준으로 쌓음) |
-| `analysis/report-guide` | 보고서 작성 지침 | PR #13 리뷰 대기 |
-| `data/retrain-all-pairs` | 재학습 학습표 · 레시피 · 체크포인트 (반복 230, 수렴) | PR #25 리뷰 대기 |
-| `analysis/retrain-results` | 재학습 결과 리그 · 보고서 | PR #26 리뷰 대기 (기준 `analysis/report-guide`) |
-| `data/clear-card-pool` | 카드 DB 비움(새 카드 업로드 준비) | PR #27 리뷰 대기 (기준 `data/retrain-all-pairs`) |
-| `config/workflow-2026-10-08` | workflow.md 진척 기록 | `default` 로 PR 리뷰 대기 |
+| `model/summon-position-choice` ~ `model/recipe-learning-stages` (11개) | 2026-10-06 모델 · 학습 개선 사슬 | PR #14 ~ #24 머지 완료, 삭제 가능 |
+| `analysis/report-guide` | 보고서 작성 지침 | PR #13 머지 완료, 삭제 가능 |
+| `data/retrain-all-pairs` | 재학습 학습표 · 레시피 · 체크포인트 (반복 230, 수렴) | PR #25 머지 완료, 삭제 가능 (옛 카드 데이터 — `data/main` 의 `e4b589c` 와 같음) |
+| `analysis/retrain-results` | 재학습 결과 리그 · 보고서 | PR #26 머지 완료, 삭제 가능 |
+| `data/clear-card-pool` | 카드 DB 비움(새 카드 업로드 준비) | PR #27 머지 완료, 삭제 가능 |
+| `config/workflow-2026-10-08` | workflow.md 진척 기록 | PR #28 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
