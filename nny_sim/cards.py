@@ -102,6 +102,7 @@ def _(c):
         fl.until = g.turn; g.floating.append(fl)
     def cost(g, c, p, l): g.send_grave(c, ('cost', c)); oath(g, p)
     c.effects = [Effect(1, 'quick', ('hand',), cost=cost, res=res,
+        cond=lambda g, c, p, ev: g.can_search(p, lambda x: x.type == '마법' and x.has('번성충')),   # 서치할 마법이 없으면 발동 불가
         score=lambda g, c, p, ev: 30 if (not own_turn(g, p) and g.phase == '진행' and not g.chain) else 0,
         threat=200, label='상대 소환마다 마법 서치')]
 
@@ -397,7 +398,7 @@ def _(c):
         if cands: g.special_summon(cands[0], p)
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 40, threat=300),
-        Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: mon(g, SOL),   # [신속]: 자신 · 상대 턴 모두 발동 가능 (§7)
+        Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: mon(g, SOL) and g.can_search(p, lambda x: x.has('시아') or x.has('시엘')),   # [신속]: 자신 · 상대 턴 모두 발동 가능 (§7)
                cost=cost1, res=lambda g, c, p, l: search_sc(g, p, lambda x: x.has('시아') or x.has('시엘'), '여명과 황혼'),
                score=lambda g, c, p, ev: 25 if main_ok(g, p) and g.phase == '정비' else VETO, threat=300),
         Effect(2, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['ctrl'] == p and ev['prev'] in ('m', 'shared')
@@ -412,6 +413,7 @@ def _(c):
         search_sc(g, p, lambda x: x.has('시아') or x.has('시엘'), '듀얼 컴뱃')
         if l.ctx['both']: search_sc(g, p, lambda x: x.has('솔루나'), '듀얼 컴뱃 추가')
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, res=res, cost=snap,
+        cond=lambda g, c, p, ev: g.can_search(p, lambda x: x.has('시아') or x.has('시엘')),
         score=lambda g, c, p, ev: 50 if main_ok(g, p) else 0, threat=300)]
 
 @card('솔루나 아츠 - 태양과 달의 가호')

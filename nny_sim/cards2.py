@@ -214,6 +214,12 @@ FGTR_MON = lambda x: x.has('격투가') and x.type == '몬스터'
 
 def search(g, p, pred, why, which=('main', 'upper')): return g.search(p, pred, which=which, why=why)
 
+def need(e, f):
+    """발동 조건 덧붙이기: 처리할 대상이 없으면(규칙상 처리 불가) 발동하지 않는다"""
+    old = e.cond
+    e.cond = lambda g, c, p, ev: (old is None or old(g, c, p, ev)) and f(g, c, p, ev)
+    return e
+
 def lastwill(res, score=70):
     return Effect(9, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c, res=res, score=lambda *a: score, threat=300, label='[유언]')
 
@@ -224,7 +230,7 @@ def _(c):
         if t: g.destroy(t)
         if g.p[p].hand:
             d = g.p[p].ai.pick_discard(g, p, g.p[p].hand); g.L(f'{d} 버림'); g.send_grave(d)
-    e = lastwill(lambda g, c, p, l: search(g, p, FGTR, '스네이크 스케일'))
+    e = need(lastwill(lambda g, c, p, l: search(g, p, FGTR, '스네이크 스케일')), lambda g, c, p, ev: g.can_search(p, FGTR))
     e.num = 2
     c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(targets(g, p, g.all_field())),
                         cost=lambda g, c, p, l: g.L(f'코스트: 패에서 {c} 공개'), res=res,
@@ -237,8 +243,9 @@ def _(c):
         search(g, p, FGTR, '래빗 풋')
         if g.p[p].hand:
             d = g.p[p].ai.pick_discard(g, p, g.p[p].hand); g.L(f'{d} 버림'); g.send_grave(d)
-    e = lastwill(lambda g, c, p, l: search(g, p, FGTR_MON, '래빗 풋 유언')); e.num = 2
+    e = need(lastwill(lambda g, c, p, l: search(g, p, FGTR_MON, '래빗 풋 유언')), lambda g, c, p, ev: g.can_search(p, FGTR_MON)); e.num = 2
     c.effects = [Effect(1, 'quick', ('hand',), cost=lambda g, c, p, l: g.L(f'코스트: 패에서 {c} 공개'), res=res,
+                        cond=lambda g, c, p, ev: g.can_search(p, FGTR),
                         score=lambda g, c, p, ev: 45 if main_ok(g, p) else 0, threat=300, label='공개 · 서치'), e]
 
 def fighter_ss(extra_destroy=False):
@@ -347,7 +354,7 @@ def _(c):
         Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: no_own_mon(g, p) and any(FGTR_MON(x) for x in g.deck_cards(p)), res=res2,
                score=lambda g, c, p, ev: 75 if main_ok(g, p) and g.phase == '진행' else (40 if not own_turn(g, p) and g.phase == '종료' else 0), threat=500),
         Effect(3, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'destroyed') and ev['card'].type == '몬스터'
-               and ev['card'].owner == 1 - p, res=lambda g, c, p, l: search(g, p, FGTR, '투기장 3번'), score=lambda *a: 70, threat=300)]
+               and ev['card'].owner == 1 - p and g.can_search(p, FGTR), res=lambda g, c, p, l: search(g, p, FGTR, '투기장 3번'), score=lambda *a: 70, threat=300)]
 
 @card('투기장의 규칙')
 def _(c):

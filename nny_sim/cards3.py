@@ -136,7 +136,8 @@ def _(c):
         Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: any(x.has('시엘') and x is not c for x in g.all_field()),
                cost=snap, res=res1, score=lambda g, c, p, ev: VETO if not targets(g, p, opp_cards(g, p)) else
                30 + 20 * min(2, len(opp_cards(g, p))) if main_ok(g, p) else (40 if threat(g, p) >= 900 else 0), threat=1000),
-        Effect(2, 'quick', ('grave',), cond=lambda g, c, p, ev: free(g, p, c) or any(CIEL(x) for x in g.p[p].hand), cost=cost2,
+        Effect(2, 'quick', ('grave',), cond=lambda g, c, p, ev: (g.can_search(p, lambda x: x.has('시엘')) if free(g, p, c)
+                                                                  else any(CIEL(x) for x in g.p[p].hand)), cost=cost2,
                res=lambda g, c, p, l: search_sc(g, p, lambda x: x.has('시엘'), '진월광무 2번'), score=lambda g, c, p, ev: 30 if main_ok(g, p) else 0, threat=200)]
 
 @card('시엘 아츠 - 메모리 오브 솔루나')
@@ -170,14 +171,17 @@ def _(c):
     def snap(g, c, p, l):
         l.ctx['ciel'] = mon(g, CIEL)
         fields = [x for x in g.deck_cards(p) if x.type == '필드']
-        l.ctx['mode'] = 'field' if fields and not (g.fieldz and g.fieldz.controller == p) else 'search'
+        can_s = g.can_search(p, lambda x: x.has('시엘'))
+        l.ctx['mode'] = 'field' if fields and (not (g.fieldz and g.fieldz.controller == p) or not can_s) else 'search'
     def res(g, c, p, l):
         if l.ctx['mode'] == 'field':
             f = [x for x in g.deck_cards(p) if x.type == '필드']
             if f: x = g.p[p].ai.pick_search(g, p, f, '저문 달의 세계'); g._remove(x); g.place_field(x, p); g.L(f'덱에서 {x} 발동')
         else: search_sc(g, p, lambda x: x.has('시엘'), '저문 달의 세계')
         if l.ctx['ciel']: g.draw(p, 1)
-    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cost=snap, res=res, score=lambda g, c, p, ev: 45 if main_ok(g, p) else 0, threat=300)]
+    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cost=snap, res=res,
+                        cond=lambda g, c, p, ev: any(x.type == '필드' for x in g.deck_cards(p)) or g.can_search(p, lambda x: x.has('시엘')) or mon(g, CIEL),
+                        score=lambda g, c, p, ev: 45 if main_ok(g, p) else 0, threat=300)]
 
 def field_swap():
     def res3(g, c, p, l):
@@ -211,7 +215,8 @@ def _(c):
                'no_battle_target': lambda g, src, x: SIA(x) and x.controller == src.controller and mon(g, CIEL, src.controller)}
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 50, threat=600),
-        Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: free(g, p, c) or bool(own_mon(g, p, CIEL)),
+        Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: (g.can_search(p, lambda x: x.has('시엘')) if free(g, p, c)
+                                                                  else bool(own_mon(g, p, CIEL))),
                cost=lambda g, c, p, l: pay(g, p, c, lambda: g.to_deck(own_mon(g, p, CIEL)[0], ('cost', c))),
                res=lambda g, c, p, l: search_sc(g, p, lambda x: x.has('시엘'), '만월'), score=lambda g, c, p, ev: 30 if main_ok(g, p) else 0, threat=200),
         field_swap()]
