@@ -146,6 +146,14 @@ class LearnedAI(HeuristicAI):
         for c in hand: uniq.setdefault(c.name, c)
         return self.choose(g, p, '버릴 카드', [(n, -self.card_pri(g, p, c) * 3 - value(g, c), c) for n, c in uniq.items()], scale=30, log=len(uniq) > 1)
 
+    def choose_summon_pos(self, g, p, c, how):
+        """소환 표시 형식 (모든 일반소환 · 특수소환, Game.summon_pos가 묻는다). 학습 대상 —
+        키: 「소환 표시 형식:일반|특수」 × 후보(공격 표시:카드 / 수비 표시:카드). 데이터가 없으면 휴리스틱 판단이 사전값으로 이긴다.
+        LearnedAI.choose를 직접 부른다: DRL 에이전트(DRLAI)도 이 판단은 학습표 경로로 고른다 — DRL 특징 스키마에 아직 이 판단 종류가 없음"""
+        heur, _ = self.summon_pos_heuristic(g, p, c, how)
+        opts = [(f'공격 표시:{c.name}', 5 if heur == 'atk' else 0, 'atk'), (f'수비 표시:{c.name}', 5 if heur == 'def' else 0, 'def')]
+        return LearnedAI.choose(self, g, p, f'소환 표시 형식:{"일반" if how == "normal" else "특수"}', opts)
+
     def use_shared(self, g, p, c, full=True):
         ok = HeuristicAI.use_shared(self, g, p, c, full)
         return ok   # 사용자 지침(하드 제약) — 학습 대상 아님

@@ -234,6 +234,31 @@ class HeuristicAI:
         else: return False
         g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — {why}', 'decision'); return True
 
+    # ── 소환 표시 형식 (§5-2) — 모든 일반소환 · 특수소환에서 엔진이 묻는다(Game.summon_pos) ──
+    def summon_pos_heuristic(self, g, p, c, how):
+        """→ ('atk' | 'def', 이유)
+        ① 이번 턴 아직 공격 선언을 할 수 있고(자신 턴 · 전투 단계 이전 · 선공 1턴 아님) 이 몬스터로 이득 보는 공격
+           (직접공격 또는 이기는 전투)이 있으면 공격 표시
+        ② 그 밖에는 공격력이 0이거나, 수비력이 공격력보다 높거나, 상대 필드에 이 몬스터보다 공격력이 높은 몬스터가 있으면 수비 표시
+           — 수비 표시는 공격받아도 HP 피해가 없다(정본 3-3)
+        ③ 나머지는 공격 표시"""
+        a, d = g.atk(c), g.df(c)
+        o = 1 - p
+        opp = [m for m in g.monsters(o) if m.faceup]
+        if g.can_declare_attack(p) and a > 0 and not c.flags.get('no_attack'):
+            direct = not g.monsters(o) or 'direct_attack' in getattr(c, 'rules', {})
+            wins = any(a > (g.atk(t) if t.pos == 'atk' else g.df(t)) for t in opp)
+            if direct or wins: return 'atk', '이번 턴 공격 가능'
+        if a == 0: return 'def', '공격력 0'
+        if d > a: return 'def', '수비력이 더 높음'
+        if any(g.atk(m) > a for m in opp): return 'def', '상대에 더 강한 몬스터'
+        return 'atk', '공격력 우위'
+
+    def choose_summon_pos(self, g, p, c, how):
+        pos, why = self.summon_pos_heuristic(g, p, c, how)
+        g.L(f'판단[{g.pname(p)}] {c.name} 소환 표시 형식: {"공격" if pos == "atk" else "수비"} 표시 ({why})', 'decision')
+        return pos
+
     # ── 일반소환 확장 · 표시 형식 변경 (§5-2, §8-1) ──
     def pick_tributes(self, g, p, c):
         """일반소환에 필요한 제물을 고른다: 자신 필드의 몬스터 중 가치가 낮은 순. 제물이 모자라거나 소환할 자리가 없으면 None"""
@@ -246,25 +271,20 @@ class HeuristicAI:
         return ts
 
     def extra_summon_options(self, g, p):
-        """무제물 공격 표시 소환 외의 일반소환 후보: 제물 소환(공격 · 수비)과 무제물 수비 표시 소환.
-        반환 [(label, score, ('summon', card, tributes, pos))]. 기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지.
-        새 선택지는 학습표에 데이터가 없으므로, 휴리스틱상 타당한 경우만 후보로 내고 나머지는 VETO"""
+        """무제물 일반소환 외의 일반소환 후보: 제물 소환. 반환 [(label, score, ('summon', card, tributes, None))].
+        표시 형식(공격 · 수비)은 소환할 때 choose_summon_pos가 정한다 — 예전의 별도 「수비 소환」 후보는 여기에 합쳤다.
+        기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지"""
         out = []
         if g.phase != '진행' or g.p[p].normal_summons <= 0: return out
-        opp_atk = max([g.atk(m) for m in g.monsters(1 - p) if m.faceup] or [0])
         for c in g.p[p].hand:
             if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
             if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
             ts = self.pick_tributes(g, p, c)
-            if ts is None or (not ts and not g.can_place(c, p)): continue
+            if not ts: continue   # 무제물 소환은 main_phase의 「소환:」 후보
             cost = sum(value(g, t) for t in ts)
-            if ts:
-                if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
-                gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
-                out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, 'atk')))
-            if g.def_allowed(p) and not c.has('번성충'):
-                sd = (g.df(c) - g.atk(c)) / 100 - 10 - 12 * cost if g.df(c) > g.atk(c) and opp_atk > g.atk(c) else VETO
-                out.append((f'수비 소환:{c.name}', sd, ('summon', c, ts, 'def')))
+            if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
+            gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
+            out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, None)))
         return out
 
     def position_options(self, g, p, ph):
