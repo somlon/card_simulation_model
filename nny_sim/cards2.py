@@ -43,19 +43,20 @@ def _(c):
         for x in g.spells(1 - p):
             if x.d.get('subtype') == '지속' and not g.immune(x, p): x.negated = True
         g.no_damage[p] = g.turn; g.L(f'상대 지속 마법 전부 무효, 이 턴 {g.pname(p)}는 대미지를 줄 수 없음')
-    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, res=res,
-        cond=lambda g, c, p, ev: any(x.d.get('subtype') == '지속' for x in g.spells(1 - p)),
-        score=lambda g, c, p, ev: 30 if not own_turn(g, p) and threat(g, p) >= 700 and last_opp_link(g, p).card.d.get('subtype') == '지속' else 0, threat=700)]
+    def sc(g, c, p, ev):   # 일반 마법(2026-10-08): 자신 턴에만. 이 턴 대미지를 줄 수 없게 되므로 공격할 수 있는 턴에는 손해를 뺀다
+        n = sum(1 for x in g.spells(1 - p) if x.d.get('subtype') == '지속' and x.faceup and not g.immune(x, p))
+        return 25 * n - (25 if g.can_declare_attack(p) and any(m.faceup and m.pos == 'atk' for m in g.monsters(p)) else 0) if n else 0
+    c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, res=res,
+        cond=lambda g, c, p, ev: any(x.d.get('subtype') == '지속' for x in g.spells(1 - p)), score=sc, threat=700)]
 
 @card('럭키 다이스')
 def _(c):
     def res(g, c, p, l):
-        d = g.rng.randint(1, 6); n = 1 if d == 1 else 2 if d <= 3 else 3
-        g.L(f'주사위: {d} → {n}장 파괴' + (' + 1장 드로우' if d == 6 else ''))
+        d = g.rng.randint(1, 6); n = 1 if d == 1 else 2 if d <= 5 else 3   # 2026-10-08: 1 → 1장, 2~5 → 2장, 6 → 3장 (드로우 없음)
+        g.L(f'주사위: {d} → {n}장 파괴')
         for _ in range(n):
             t = best(g, targets(g, p, opp_cards(g, p)), p)
             if t: g.destroy(t)
-        if d == 6: g.draw(p, 1)
     c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, res=res, cond=lambda g, c, p, ev: bool(opp_cards(g, p)),
         score=lambda g, c, p, ev: 20 + 15 * min(3, len(opp_cards(g, p))), threat=1200)]
 

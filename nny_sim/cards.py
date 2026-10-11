@@ -7,11 +7,21 @@ from engine import Effect, Game
 HERE = os.path.dirname(os.path.abspath(__file__))
 POOL = {c['name']: c for c in json.load(open(os.path.join(HERE, 'card_pool.json'), encoding='utf-8'))}
 IMPL = {}          # name -> function(card)
+RETIRED = set()    # 구현은 남아 있지만 지금 카드 풀에 없는 카드 (카드 DB 교체 2026-10-08 — 다시 올라오면 그대로 쓰인다)
 
 def card(name):
-    assert name in POOL, name
-    def deco(fn): IMPL[name] = fn; return fn
+    def deco(fn):
+        if name in POOL: IMPL[name] = fn
+        else: RETIRED.add(name)
+        return fn
     return deco
+
+def grp(x, name):
+    """카드군 판정 (카드 자료의 「카드군」 필드). 필드가 없는 옛 형식 카드는 이름에 포함되는지로 본다.
+    「기적의 영웅」처럼 효과로 다른 카드군으로도 취급되는 카드는 flags['also_groups']"""
+    gs = x.d.get('groups')
+    if gs is None: return name in x.name
+    return name in gs or (name in x.flags.get('also_groups', ()) and x.zone in ('m', 'shared'))   # 「필드의 이 카드는 … 로도 취급」
 
 class Impl:
     pool = POOL
@@ -306,16 +316,18 @@ def _(c):
     def res2(g, c, p, l):
         t = field_pick(g, p)   # 「필드의 카드」: 자신 카드 포함
         if t: g.destroy(t)
-    def res3(g, c, p, l): g.negate(l.ctx['t'])
+    def res3(g, c, p, l):
+        if mon(g, CIEL): g.negate(l.ctx['t'])   # 3번 「필드에 「시엘」이 있으면」: 처리 시 판정 (양쪽 필드)
+        else: g.L('필드에 「시엘」 없음 — 처리 없음 (재정)', 'sys')
     c.effects = [
-        Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: mon(g, CIEL) and g.can_special(c, p),
+        Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: mon(g, CIEL, p) and g.can_special(c, p),
                res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p),
                score=lambda g, c, p, ev: 65 if main_ok(g, p) else (30 if not own_turn(g, p) and not g.chain and g.phase == '종료' else 0), label='패에서 특수소환'),
-        Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and mon(g, CIEL),
+        Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and mon(g, CIEL, p),
                res=res2, score=lambda g, c, p, ev: 90 if opp_cards(g, p) else VETO, threat=1000, label='파괴'),   # v3: 1턴 1회
-        Effect(3, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None and mon(g, CIEL),
+        Effect(3, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,   # 재정: 시엘이 없어도 발동 선언 가능, 처리 시 없으면 아무 일도 없음
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=res3,
-               score=lambda g, c, p, ev: 60 if threat(g, p) >= 600 else 0, threat=800, label='무효')]
+               score=lambda g, c, p, ev: 60 if threat(g, p) >= 600 and mon(g, CIEL) else 0, threat=800, label='무효')]
 
 @card('솔루나 시엘')
 def _(c):
@@ -325,10 +337,10 @@ def _(c):
     def res3(g, c, p, l):
         if g.on_field(c): c.mods.append(('atk', 1000, 'turn')); c.extra_attacks += 1; g.L(f'{c} 공격력 +1000, 추가 공격')
     c.effects = [
-        Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: mon(g, SIA) and g.can_special(c, p),
+        Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: mon(g, SIA, p) and g.can_special(c, p),
                res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p),
                score=lambda g, c, p, ev: 65 if main_ok(g, p) else 0, label='패에서 특수소환'),
-        Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and mon(g, SIA),
+        Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and mon(g, SIA, p),
                res=res2, score=lambda g, c, p, ev: 90 if opp_cards(g, p) else VETO, threat=1000, label='덱 바운스'),   # v3: 1턴 1회
         Effect(3, 'battle', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'battle_win') and ev['card'] is c,
                res=res3, score=lambda *a: 80, threat=400, label='[전투] +1000·추가 공격')]
@@ -364,14 +376,13 @@ def search_sc(g, p, pred, why):
 
 @card('솔루나 인카운터')
 def _(c):
-    def snap(g, c, p, l):
-        l.ctx['had'] = mon(g, lambda x: x.has('솔루나'))   # 조건절은 발동 시점에 판정 (사용자 재정)
-        g.L(f'발동 시점 판정: 필드에 솔루나 몬스터 {"있음" if l.ctx["had"] else "없음"}', 'sys')
     def res(g, c, p, l):
+        l.ctx['had'] = mon(g, lambda x: grp(x, '솔루나'), p) and second_ok(g, c, p)   # 처리 시 「이미」 존재 = 1번 특수소환 전
         cands = [x for x in g.p[p].main if x.is_monster() and x.has('솔루나') and g.can_special(x, p)]
         if cands:
             x = g.p[p].ai.pick_search(g, p, cands, '인카운터 특수소환'); g.special_summon(x, p)
         if l.ctx['had']:
+            use_second(g, c, p)
             conts = [x for x in g.deck_cards(p) if x.has('솔루나') and x.d.get('subtype') == '지속' and not any(y.name == x.name for y in g.spells(p))]
             if conts and g.free_s(p) and g.p[p].ai.prefers_place(g, p, conts):
                 x = g.p[p].ai.pick_search(g, p, conts, '인카운터 지속 마법'); g._remove(x); g.place_spell(x, p, True)
@@ -379,8 +390,8 @@ def _(c):
             else:
                 search_sc(g, p, lambda x: x.has('시아') or x.has('시엘'), '인카운터')
         g.shuffle(p)
-    e = Effect(1, 'quick', ('hand', 'field'), spell_act=True, res=res, cost=snap,
-        cond=lambda g, c, p, ev: any(x.is_monster() and x.has('솔루나') for x in g.p[p].main) and g.can_special(c, p),
+    e = Effect(1, 'quick', ('hand', 'field'), spell_act=True, res=res,
+        cond=lambda g, c, p, ev: any(x.is_monster() and x.has('솔루나') and g.can_special(x, p) for x in g.p[p].main),
         score=lambda g, c, p, ev: 70 if main_ok(g, p) and g.phase == '진행' else 0, threat=600)
     e.hand_ok = True
     c.effects = [e]
@@ -388,8 +399,8 @@ def _(c):
 @card('솔루나 아츠 - 여명과 황혼의 궤적')
 def _(c):
     SOL = lambda m: m.has('솔루나')
-    def cost1(g, c, p, l):   # 「필드의 솔루나 몬스터」: 자신 것을 먼저, 없으면 상대 것 (§15-1)
-        t = (own_mon(g, p, SOL) or [m for m in g.monsters(1 - p) if m.faceup and SOL(m)])[0]
+    def cost1(g, c, p, l):   # 「자신 필드의 솔루나 몬스터」 (2026-10-08 텍스트)
+        t = own_mon(g, p, SOL)[0]
         l.ctx['t'] = t; g.L(f'코스트: {t} 패로'); g.to_hand(t, ('cost', c))
     def res2(g, c, p, l):
         x = l.ctx['ev']['card']
@@ -398,7 +409,7 @@ def _(c):
         if cands: g.special_summon(cands[0], p)
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 40, threat=300),
-        Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: mon(g, SOL) and g.can_search(p, lambda x: x.has('시아') or x.has('시엘')),   # [신속]: 자신 · 상대 턴 모두 발동 가능 (§7)
+        Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: mon(g, SOL, p) and g.can_search(p, lambda x: x.has('시아') or x.has('시엘')),   # [신속]: 자신 · 상대 턴 모두 발동 가능 (§7)
                cost=cost1, res=lambda g, c, p, l: search_sc(g, p, lambda x: x.has('시아') or x.has('시엘'), '여명과 황혼'),
                score=lambda g, c, p, ev: 25 if main_ok(g, p) and g.phase == '정비' else VETO, threat=300),
         Effect(2, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['ctrl'] == p and ev['prev'] in ('m', 'shared')
@@ -408,12 +419,12 @@ def _(c):
 @card('솔루나 아츠 - 듀얼 컴뱃')
 def _(c):
     def snap(g, c, p, l):
-        l.ctx['both'] = mon(g, SIA) and mon(g, CIEL)   # 발동 시점 판정
+        l.ctx['both'] = mon(g, SIA, p) and mon(g, CIEL, p)   # 발동 시점 판정
     def res(g, c, p, l):
-        search_sc(g, p, lambda x: x.has('시아') or x.has('시엘'), '듀얼 컴뱃')
+        g.search(p, lambda x: x.has('시아') or x.has('시엘'), which=('main',), why='듀얼 컴뱃')
         if l.ctx['both']: search_sc(g, p, lambda x: x.has('솔루나'), '듀얼 컴뱃 추가')
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, res=res, cost=snap,
-        cond=lambda g, c, p, ev: g.can_search(p, lambda x: x.has('시아') or x.has('시엘')),
+        cond=lambda g, c, p, ev: g.can_search(p, lambda x: x.has('시아') or x.has('시엘'), which=('main',)),
         score=lambda g, c, p, ev: 50 if main_ok(g, p) else 0, threat=300)]
 
 @card('솔루나 아츠 - 태양과 달의 가호')
@@ -464,46 +475,39 @@ def _(c):
                           score=lambda g, c, p, ev: 25 if main_ok(g, p) else 0, threat=200)]
 
 
-# ── 아츠 2단 구조 (ASSUME: 카드 1장 발동 시 1번(코스트 가능 시) → 2번(조건 충족 시) 순서로 처리,
-#    둘 중 하나라도 처리 가능하면 발동 가능. 효과 번호별 1턴 1회는 각각 소모 — 1번을 쓴 턴에도 2번만 발동할 수 있다) ──
+# ── 아츠 2단 구조 (2026-10-08 텍스트 · 재정): 2번은 「1번 효과 처리 시에 … 존재할 경우」 1번 처리에 자동으로 딸려 처리된다
+#    (별도 발동 없음). 2번도 1턴 1회 제약을 받는다 — 이번 턴 2번을 이미 처리했으면 1번만 처리한다.
+#    1번이 무효화되면 2번도 처리되지 않는다. 2번 조건은 1번 처리 시점에 판정한다 ──
+def second_ok(g, c, p, n=2):
+    """「n번 효과 처리 시에 자동 처리」 효과를 이번 턴 아직 쓰지 않았는가 (1턴 1회)"""
+    return g.p[p].opt.get((c.name, n), 0) < 1
+
+def use_second(g, c, p, n=2):
+    g.p[p].opt[(c.name, n)] = g.p[p].opt.get((c.name, n), 0) + 1
+
 def arts(c, e1cond, e1cost, e1res, e2cond, e2res, sc1=50, sc2=40, kind='quick', trig1=None, hand_ok=False, threat=800):
-    def unused(g, c, p, n): return g.p[p].opt.get((c.name, n), 0) < 1
-    def ok1(g, c, p, ev): return unused(g, c, p, 1) and e1cond(g, c, p, ev)
-    def ok2(g, c, p, ev): return unused(g, c, p, 2) and e2cond(g, c, p)
-    def cond(g, c, p, ev): return ok1(g, c, p, ev) or ok2(g, c, p, ev)
-    def cost(g, c, p, l):
-        l.ctx['do1'] = ok1(g, c, p, l.ctx.get('ev')); l.ctx['do2'] = ok2(g, c, p, l.ctx.get('ev'))
-        # 처리하는 효과 번호만 1턴 1회를 소모한다 (§6-4). 무효화되면 엔진이 이 목록을 되돌린다 (§6-5)
-        l.ctx['opt_keys'] = [(c.name, n) for n, do in ((1, l.ctx['do1']), (2, l.ctx['do2'])) if do]
-        if l.ctx['do1'] and e1cost: return e1cost(g, c, p, l)
-    def res(g, c, p, l):
-        if l.ctx['do1']: g.L('  1번 처리'); e1res(g, c, p, l)
-        if l.ctx['do2']: g.L('  2번 처리 (조건은 발동 시점에 충족)'); e2res(g, c, p, l)
     def score(g, c, p, ev):
-        parts = []
-        if ok1(g, c, p, ev) or trig1 is not None:   # 트리거 마법의 1번 발동은 항상 1번을 처리한다
-            parts.append(sc1(g, c, p, ev) if callable(sc1) else sc1)
-        if ok2(g, c, p, ev): parts.append(sc2(g, c, p) if callable(sc2) else sc2)
+        parts = [sc1(g, c, p, ev) if callable(sc1) else sc1]
+        if second_ok(g, c, p) and e2cond(g, c, p): parts.append(sc2(g, c, p) if callable(sc2) else sc2)
         if any(x <= VETO for x in parts): return VETO   # 함께 처리될 효과 중 하나라도 AI가 피하는 경우
         return sum(parts) if (main_ok(g, p) or kind == 'trigger' or (g.chain and threat_ok(g, p))) else 0
-    # 1턴 1회는 번호별로 ok1 · ok2가 직접 확인한다 (엔진의 E1 단위 검사로 2번 단독 발동이 막히지 않도록 opt=None)
-    E1 = Effect(1, kind, ('hand', 'field'), spell_act=True, cond=cond, cost=cost, res=res, score=score, threat=threat, opt=None)
+    def res(g, c, p, l):
+        e1res(g, c, p, l)
+        if second_ok(g, c, p) and e2cond(g, c, p):
+            use_second(g, c, p); g.L('  2번 처리 (1번 처리 시 조건 충족 — 별도 발동 없음)'); e2res(g, c, p, l)
+    cond = (lambda g, c, p, ev: trig1(g, c, p, ev)) if (kind == 'trigger' and trig1 is not None) else e1cond
+    E1 = Effect(1, kind, ('hand', 'field'), spell_act=True, cond=cond, cost=e1cost, res=res, score=score, threat=threat)
     E1.hand_ok = hand_ok
-    effs = [E1]
-    if kind == 'trigger' and trig1 is not None:
-        # 트리거 마법: 1번은 사건 발생 시, 2번(상태 조건)은 우선권이 있을 때 단독 발동 가능
-        E1.cond = lambda g, c, p, ev: unused(g, c, p, 1) and trig1(g, c, p, ev)
-        E2 = Effect(2, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: ok2(g, c, p, ev),
-                    cost=lambda g, c, p, l: l.ctx.update(do1=False, do2=True), res=lambda g, c, p, l: (g.L('  2번 처리 (조건은 발동 시점에 충족)'), e2res(g, c, p, l)),
-                    score=lambda g, c, p, ev: (sc2(g, c, p) if callable(sc2) else sc2) if main_ok(g, p) else 0, threat=threat)
-        def cost_t(g, c, p, l):
-            l.ctx['do1'] = True; l.ctx['do2'] = ok2(g, c, p, None)
-            if l.ctx['do2']: l.ctx['opt_keys'].append((c.name, 2))
-        E1.cost = cost_t
-        effs.append(E2)
-    c.effects = effs
+    c.effects = [E1]
 
 def threat_ok(g, p): return threat(g, p) >= 900
+
+def opp_magic(g, p):
+    """상대 필드의 「마법 카드」 (필드 카드 · 장착 마법 취급 몬스터 제외)"""
+    return [x for x in g.p[1 - p].s if x and x.type == '마법']
+
+def targets_of(g, p, cands):
+    return [x for x in cands if not g.immune(x, p)]
 
 def own_mon(g, p, pred):
     """코스트용: 가치가 낮은 순 (효과로만 소환되는 상급은 뒤로)"""
@@ -517,14 +521,15 @@ def _(c):
     def cost1(g, c, p, l):
         if g.rule('ciel_cost_free', p, c): g.L('코스트 면제 (스킬)', 'sys'); return
         m = own_mon(g, p, CIEL)[0]; g.L(f'코스트: {m} 턴 종료 시까지 제외'); g.banish(m, ('cost', c)); m.flags['return_from_banish'] = g.turn
+        l.ctx['t'] = best(g, targets_of(g, p, opp_cards(g, p)), p, 'bounce'); g.L(f'대상: {l.ctx["t"]}')
     def res1(g, c, p, l):
-        t = opp_target(g, c, p, l, 'bounce')
-        if t: g.L(f'{t} 덱으로'); g.to_deck(t)
+        t = l.ctx.get('t')
+        if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 덱으로'); g.to_deck(t)
     def res2(g, c, p, l):
         t = opp_target(g, c, p, l, 'negate')
         if t: t.negated = True; g.L(f'{t} 턴 종료 시까지 무효')
     arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or g.rule('ciel_cost_free', p, c)) and bool(opp_cards(g, p)), cost1, res1,
-         lambda g, c, p: mon(g, SIA) and bool(opp_cards(g, p)), res2, sc1=45, sc2=25)
+         lambda g, c, p: mon(g, SIA, p) and bool(opp_cards(g, p)), res2, sc1=45, sc2=25)
 
 @card('시엘 아츠 - 잔월의 유산')
 def _(c):
@@ -534,10 +539,10 @@ def _(c):
     def res1(g, c, p, l):
         g.salvage(p, [x for x in g.p[p].grave if not x.has('솔루나')], '잔월의 유산')   # v3: 「솔루나」 이외
     def res2(g, c, p, l):
-        t = opp_target(g, c, p, l)
+        t = best(g, opp_magic(g, p), p)
         if t: g.destroy(t)
     arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or g.rule('ciel_cost_free', p, c)) and any(not x.has('솔루나') and x.name != c.name for x in g.p[p].grave), cost1, res1,
-         lambda g, c, p: mon(g, SIA, p) and bool(opp_cards(g, p)), res2, sc1=10, sc2=45)
+         lambda g, c, p: mon(g, SIA, p) and bool(opp_magic(g, p)), res2, sc1=10, sc2=45)
 
 @card('시아 아츠 - 여명신광')
 def _(c):
@@ -590,10 +595,10 @@ def _(c):
     def res1(g, c, p, l):
         if g.p[1 - p].grave: t = best(g, g.p[1 - p].grave, p, 'banish_grave'); g.banish(t); g.L(f'상대 묘지 {t} 제외')
     def res2(g, c, p, l):
-        t = opp_target(g, c, p, l, 'bounce')
+        t = best(g, opp_magic(g, p), p, 'bounce')
         if t: g.L(f'{t} 덱으로'); g.to_deck(t)
     arts(c, lambda g, c, p, ev: mon(g, SIA) and bool(g.p[1 - p].grave), cost1, res1,
-         lambda g, c, p: mon(g, CIEL) and bool(opp_cards(g, p)), res2, sc1=0, sc2=40)
+         lambda g, c, p: mon(g, CIEL, p) and bool(opp_magic(g, p)), res2, sc1=0, sc2=40)
 
 @card('솔루나 아츠 - 이클립스 오버드라이브')
 def _(c):

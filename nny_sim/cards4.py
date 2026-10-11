@@ -116,8 +116,15 @@ def _(c):
 @card('인지세')
 def _(c):
     def res(g, c, p, l):
-        t = l.ctx['t']; k = g.mill(1 - p, 5, 'main', '인지세', fallback=True)
-        if k < 5: g.L('제외할 카드 부족 — 발동 무효'); g.negate(t)
+        """2026-10-08 텍스트: 상대가 「메인 덱 위 5장 제외(부족분은 상급 덱에서)」와 「그 카드 무효」 중 고른다.
+        상대 판단(휴리스틱): 덱이 넉넉하고(제외 후 10장 이상 남음) 무효화될 효과의 위협도가 600 이상이면 제외, 아니면 무효"""
+        t = l.ctx['t']; q = 1 - p
+        left = len(g.p[q].main) + len(g.p[q].upper)
+        if t in g.chain and not t.negated and left - 5 >= 10 and t.eff.threat >= 600:
+            g.L(f'판단[{g.pname(q)}] 인지세: 덱 {left}장, 위협도 {t.eff.threat} → 5장 제외 선택', 'decision')
+            g.mill(q, 5, 'main', '인지세', fallback=True)
+        else:
+            g.L(f'판단[{g.pname(q)}] 인지세: 덱 {left}장 → 무효 선택', 'decision'); g.negate(t)
     e = Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=res,
                score=lambda g, c, p, ev: 55 if threat(g, p) >= 500 or len(g.p[1 - p].main) + len(g.p[1 - p].upper) <= 12 else 25, threat=700)
@@ -169,10 +176,11 @@ def _(c):
         cond=lambda g, c, p, ev: any(l.card.name == '데쿠마' and l.eff.num == 1 for l in g.chain),   # 「데쿠마」 1번 발동에 대응해서만
         res=res, score=lambda g, c, p, ev: 30 if own_turn(g, p) and len(g.p[p].main) <= 12 else 0, threat=100), spell_lastwill()]
 
-@card('아이라리움')
+@card('세 - 아이라리움')
 def _(c):
-    def on_ev(g, src, ev):
-        if ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper'): g.mill(ev['player'], 2, None, '아이라리움')
+    def on_ev(g, src, ev):   # 2026-10-08: 드로우 · 덱에서 패에 넣기 모두 — 그 플레이어가 자신의 덱 위 2장 (덱 미지정 → 덱 주인이 고름)
+        if (ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper')) or ev['kind'] == 'draw':
+            g.mill(ev['player'], 2, None, '아이라리움')
     c.on_event = on_ev
     c.rules = {'seri_lw_one': lambda g, src, p: p == src.controller}
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 55, threat=600)]
