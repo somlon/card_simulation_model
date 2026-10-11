@@ -424,5 +424,6 @@ class HeuristicAI:
 
     def max_attacks(self, g, m):
         n = 1 + m.extra_attacks
+        if g.rule('double_attack', m): n += 1   # 용기의 전사 2번: 「2회 공격할 수 있다」
         if m.flags.get('attack_all'): n = max(n, len(g.monsters(1 - m.controller)))
         return n

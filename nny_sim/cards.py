@@ -711,3 +711,5 @@ def _(c):
 import cards2  # noqa: E402,F401  (2차 구현 등록)
 import cards3  # noqa: E402,F401  (3차 구현 등록)
 import cards4  # noqa: E402,F401  (세리)
+import cards5  # noqa: E402,F401  (소원의 분수)
+import cards6  # noqa: E402,F401  (저주인형)

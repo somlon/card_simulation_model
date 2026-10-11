@@ -10,6 +10,7 @@ import random
 from engine import Game
 from cards import Impl, POOL
 from policy import Table
+import deck as D
 
 SIDE = Table('side')
 
@@ -49,10 +50,12 @@ def swap_ins(act, st, me):
     """전략 덱에서 넣을 수 있는 카드: 스킬 카드 제외, 활성 덱 동명 3장 미만, 현재 스킬 태그에 맞음 (전략 덱 순서)"""
     return [n for n, k in st.items() if k > 0 and not is_skill(n) and act.get(n, 0) < 3 and fits(n, me)]
 
+LOCKED_NAMES = {n for v in D.LOCKED.values() for n in v}
+
 def swap_outs(act, i):
-    """넣을 카드 i와 1:1로 바꿀 수 있는 활성 덱 카드: 같은 종류(메인/상급) (활성 덱 순서)"""
+    """넣을 카드 i와 1:1로 바꿀 수 있는 활성 덱 카드: 같은 종류(메인/상급), 고정 카드(deck.LOCKED) 제외 (활성 덱 순서)"""
     kind = POOL[i]['deck']
-    return [n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i]
+    return [n for n, k in act.items() if k > 0 and POOL[n]['deck'] == kind and n != i and n not in LOCKED_NAMES]
 
 def skill_swaps(act, st, me):
     """전략 덱의 스킬 카드 (§3-1): 새 스킬의 태그로 메인 · 상급 덱을 모두 쓸 수 있을 때만 교체 후보"""

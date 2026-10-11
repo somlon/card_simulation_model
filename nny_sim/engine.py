@@ -102,6 +102,8 @@ class Game:
         self.resolving = False
         self.locked = False       # 종료 단계 a 이후: 양쪽 모두 효과를 발동할 수 없다 (§5-5)
         self.decks = decks
+        self.act_limit = {}       # 플레이어 → (턴, 그 턴에 발동할 수 있는 효과 수) — 저주인형 - 비비안 1번
+        self.act_count = {}       # (플레이어, 턴) → 발동한 효과 수
 
     # ── 로그 ──
     def L(self, msg, kind='act'):
@@ -133,13 +135,20 @@ class Game:
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
         for src in self.continuous_sources():
             f = getattr(src, 'atk_mod', None)
-            if f: v += f(self, src, c)
+            if f and (src is c or not (c.flags.get('immune_others') or c.flags.get('immune_except')) or self.is_neg(c)): v += f(self, src, c)
         if c.flags.get('atk_set') is not None: v = c.flags['atk_set']
         return max(0, v)
     def df(self, c):
         return max(0, c.base_def() + sum(x for s, x, _ in c.mods if s == 'def'))
-    def immune(self, c, by):
-        """c가 플레이어 by의 효과를 받지 않는가"""
+    def immune(self, c, by, src=None):
+        """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
+        카드 자신의 [지속]이 정한 내성(무효화되면 사라짐):
+          flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
+          flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다"""
+        if self.on_field(c) and not self.is_neg(c):
+            ex = c.flags.get('immune_except')
+            if ex is not None and src is not c and not (src is not None and src.name == ex): return True
+            if c.flags.get('immune_others') and src is not c: return True
         if by is None or by == c.controller: return False
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
@@ -148,11 +157,11 @@ class Game:
 
     def blocked(self, c, cause):
         if not cause or cause[0] != 'effect' or cause[1] is None or not self.on_field(c): return False
-        if self.immune(c, cause[1].controller):
+        if self.immune(c, cause[1].controller, cause[1]):
             self.L(f'{c}은(는) 상대의 효과를 받지 않음', 'sys'); return True
         return False
 
-    def is_neg(self, c): return c.negated or any(e.flags.get('negates_host') for e in c.equips)
+    def is_neg(self, c): return c.negated or bool(c.flags.get('perma_neg')) or any(e.flags.get('negates_host') for e in c.equips)
     def continuous_sources(self):
         srcs = [c for c in self.all_field() if c.faceup and not self.is_neg(c) and not c.flags.get('as_spell')]
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
@@ -194,7 +203,7 @@ class Game:
                     self.L(f'장착 대상 {c} 이탈 → {e} 묘지로', 'sys')
                     self.send_grave(e, cause=('rule', None))
             c.equips = []
-            c.flags.pop('as_spell', None)
+            c.flags.pop('as_spell', None); c.flags.pop('perma_neg', None)
         c.zone = None
         return was_field
 
@@ -298,8 +307,11 @@ class Game:
         c.controller = c.owner; c.zone = 'banish'; c.faceup = True; self.p[c.owner].banish.append(c)   # 제외 존은 앞면 공개 (§10-7)
         if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='banish')
 
+    def releasable(self, c):
+        return c.flags.get('no_release_until', -1) < self.turn and not (c.flags.get('no_release') and self.on_field(c) and not self.is_neg(c))
+
     def tribute(self, c, cause=None):
-        if c.flags.get('no_release_until', -1) >= self.turn: self.L(f'{c}은(는) 릴리스할 수 없음', 'sys'); return
+        if not self.releasable(c): self.L(f'{c}은(는) 릴리스할 수 없음', 'sys'); return
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
         self.L(f'{c} 릴리스'); self.send_grave(c, cause)
@@ -323,6 +335,7 @@ class Game:
         """c를 지금 특수소환할 수 있는가. 규칙상 불가능한 후보는 처리 전에 걸러낸다(처리 중 실패 방지):
         소환 금지 [지속] · 같은 이름 규칙(정본 3-6 f: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음) · 놓을 자리"""
         if self.rule('no_special', c, p): return False
+        if c.flags.get('ss_by_skill_only') and (self.src is None or self.src.type != '스킬'): return False
         if self.same_name_blocked(c): return False
         return self.can_place(c, p)
 
@@ -342,7 +355,7 @@ class Game:
     def release_cands(self, p):
         """일반소환의 제물로 릴리스할 수 있는 카드: 자신 필드의 몬스터 카드만 (사용자 재정 2026-09-30).
         장착 마법 취급된 몬스터(as_spell)는 몬스터가 아니므로 제외"""
-        return [x for x in self.monsters(p) if x.is_monster() and x.flags.get('no_release_until', -1) < self.turn]
+        return [x for x in self.monsters(p) if x.is_monster() and self.releasable(x)]
 
     def can_change_pos(self, c, p):
         """표시 형식 변경 (§8-1): 자신의 앞면 몬스터 · 몬스터당 1턴 1번 · 소환된 턴 불가.
@@ -396,7 +409,8 @@ class Game:
 
     # ── 카운터 ──
     def add_counter(self, c, name, n=1):
-        if not self.on_field(c) or not c.faceup: return False
+        """카운터는 효과 내성과 무관하게 놓인다(퇴마의 부적 1번 괄호). 스킬 존의 스킬 카드에도 놓을 수 있다(희생제)"""
+        if not (self.on_field(c) or c.zone == 'skill') or not c.faceup: return False
         c.counters[name] = c.counters.get(name, 0) + n
         self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n)
         self.state_check(); return True
@@ -453,6 +467,33 @@ class Game:
         if n: self.L(f'{pl.name} 덱 위에서 {k}장 제외{(" (" + why + ")") if why else ""} — 남은 덱 {len(pl.main)}/{len(pl.upper)}')
         if k: self.emit('milled', player=p, n=k)
         return k
+
+    def dump(self, p, n, why='', top=True):
+        """p의 메인 덱 위에서부터 n장을 묘지로 보낸다 (「메인 덱 (맨) 위에서부터 카드를 n장 묘지로 보낸다」).
+        덱에서 묘지로 간 카드도 묘지로 보내진 것이므로 [유언] 사건(to_grave, prev='main')이 생긴다 — 각 카드 텍스트의
+        「덱에서 묘지로 보내졌을 경우 발동하지 않는다」 단서는 카드 쪽에서 거른다.
+        「자신이 메인 덱 맨 위에서부터 카드를 묘지로 보낼 때 1장을 추가로 보낼 수 있다」([지속] dump_extra)는 top일 때 AI가 고른다.
+        반환: 묘지로 보낸 카드 목록"""
+        pl = self.p[p]
+        if top and n > 0 and self.rule('dump_extra', p):
+            f = getattr(pl.ai, 'choose_extra_dump', None)
+            if (f(self, p, n) if f else len(pl.main) - n >= 8):
+                n += 1; self.L(f'{pl.name} 1장 추가로 묘지로 보냄 (간절한 마음)', 'sys')
+        out = []
+        for _ in range(n):
+            if not pl.main: break
+            c = pl.main.pop(); c.zone = 'grave'; c.controller = c.owner; c.faceup = True; pl.grave.append(c); out.append(c)
+        if n: self.L(f'{pl.name} 메인 덱 위에서 {len(out)}장 묘지로{(" (" + why + ")") if why else ""}: {", ".join(map(str, out))} — 남은 덱 {len(pl.main)}/{len(pl.upper)}')
+        for c in out:
+            self.emit('to_grave', card=c, prev='main', ctrl=p, cause=('effect', self.src), destroyed=False, battle=False)
+        return out
+
+    def deck_to_grave(self, p, c, why=''):
+        """덱의 특정 카드 1장을 묘지로 (「메인 덱에서 카드 1장을 묘지로 보낸다」 — 위에서부터가 아님)"""
+        prev = c.zone
+        self._remove(c); c.zone = 'grave'; c.controller = c.owner; c.faceup = True; self.p[c.owner].grave.append(c)
+        self.L(f'{self.pname(p)} 덱에서 {c} 묘지로{(" (" + why + ")") if why else ""}')
+        self.emit('to_grave', card=c, prev=prev, ctrl=p, cause=('effect', self.src), destroyed=False, battle=False)
 
     def deck_cards(self, p, which=('main', 'upper')):
         out = []
@@ -556,6 +597,8 @@ class Game:
     # ═════════════════════════ 발동 · 체인 ═════════════════════════
     def legal(self, p, c, e, ev=None):
         if c.type == '마법' and c.d.get('subtype') == '트리거' and e.spell_act and self.rule('no_trigger_spell', p): return False
+        lim = self.act_limit.get(p)
+        if lim and lim[0] == self.turn and self.act_count.get((p, self.turn), 0) >= lim[1]: return False   # 비비안: 발동 횟수 제한
         # 발동 조건은 「그 카드가 효과의 주체」인 상태로 판정한다 — 처리 때와 같은 규칙(같은 이름 서치 · 특수소환 금지 등)으로
         # 후보가 있는지 보아, 규칙상 처리할 수 없는 발동을 미리 막는다
         prev = (self.src, getattr(self, 'src_eff', None)); self.src, self.src_eff = c, e
@@ -585,6 +628,7 @@ class Game:
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)
             return None
         for k in link.ctx['opt_keys']: self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
+        self.act_count[(p, self.turn)] = self.act_count.get((p, self.turn), 0) + 1
         self.chain.append(link)
         self.emit('activate', link=link, player=p)
         return link
@@ -643,6 +687,7 @@ class Game:
         for k in link.ctx.get('opt_keys', [(link.card.name, link.eff.num)]):   # 무효화된 발동은 사용 횟수를 소모하지 않는다 (§6-5)
             if self.p[link.player].opt.get(k): self.p[link.player].opt[k] -= 1
         self.L(f'{link.card} {link.eff.num}번 효과 무효' + (' 후 파괴' if destroy else ''))
+        self.emit('negated', link=link, player=link.player, by=by)
         if destroy and self.on_field(link.card): self.destroy(link.card, ('effect', by))
 
     # ── 트리거 수집 ──
@@ -806,6 +851,9 @@ class Game:
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()
+        # ASSUME(2026-10-11): 종료 단계 a의 「턴 종료 시」 처리 뒤, 잠기기 전에 턴 플레이어부터 우선권을 한 번 준다 —
+        # 「(이 효과는 종료 단계에서만 사용할 수 있다)」 [신속](저주인형 - 비비안 · 처키)이 쓰일 자리. 예전에는 트리거가 있을 때만 창이 열렸다
+        self.open_window()
         self.locked = True   # a가 끝나면 양쪽 모두 더 이상 효과를 발동할 수 없다
         # b. 패 7장 초과 버리기 — 버려진 카드의 [유언]은 발동하지 않는다 (§5-5 재정)
         for _ in range(30):

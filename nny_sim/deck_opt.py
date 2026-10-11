@@ -38,6 +38,7 @@ def to_deck(name, skill, counts, strat=None):
 def valid(skill, counts, strat):
     """덱 구축 규칙을 지키고 전략 덱이 방침 매수(STRATEGY_FILL) 이하인가 — 채우는 중인 덱도 후보로 다룬다"""
     e, _ = D.validate(to_deck('x', skill, counts, strat), policy=False)
+    if any(counts.get(n, 0) != k or strat.get(n, 0) for n, k in D.LOCKED.get(skill, {}).items()): return False   # 고정 카드
     return not e and sum(strat.values()) <= D.STRATEGY_FILL
 
 def neighbors(skill, counts, strat, rng, n_swap=140, n_strat=60, contrib=None, value_of=None, n_out=5, n_in=8):

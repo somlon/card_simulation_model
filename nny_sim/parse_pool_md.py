@@ -40,7 +40,7 @@ def parse_file(path):
         else:
             c.update(type='마법', deck='메인', subtype=f.get('마법 분류', ''))
         c['tags'] = _split(f.get('태그', theme))
-        if f.get('카드군'): c['groups'] = _split(f['카드군'])
+        c['groups'] = _split(f.get('카드군', ''))   # 카드군이 없는 카드는 빈 목록 (grp()가 이름으로 짐작하지 않도록)
         if c['type'] == '스킬':
             # 덱 구성 허용 태그 = 스킬 카드의 「태그」(대응 카드군 ⊆ 태그).
             # 소원의 분수는 대응 카드군에 없는 「소원의 분수」 태그 카드(기적의 영웅 등)도 쓰므로 태그 쪽을 쓴다.
