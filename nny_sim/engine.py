@@ -54,7 +54,9 @@ class Card:
     def has_attr(self, a):
         v = self.attr
         return a in v if isinstance(v, (tuple, list, set, frozenset)) else v == a
-    def is_monster(self): return self.type == '몬스터' and not self.flags.get('as_spell')
+    def is_monster(self):
+        """flags['as_monster']: 효과로 몬스터로 취급되는 마법 · 필드 카드 (짐승조커 · 표시목 부여, 포커짐승들 — 플래그가 없는 카드는 그대로)"""
+        return (self.type == '몬스터' or bool(self.flags.get('as_monster'))) and not self.flags.get('as_spell')
     def is_spell_like(self): return self.type in ('마법', '필드') or self.flags.get('as_spell')
     def deck_kind(self): return self.d['deck'] if self.d['deck'] in ('메인', '상급') else '메인'
     def has(self, s): return s in self.name
@@ -88,6 +90,17 @@ class Link:
     ctx: dict = field(default_factory=dict)
     negated: bool = False
     replaced: object = None   # 노린재 등 처리 치환
+
+
+def link_targets(link):
+    """그 발동의 「대상」: 발동 시(코스트 단계)에 골라 l.ctx에 넣어 둔 카드 (구현 관례 — 「대상으로 하고」는 코스트 단계에서 고른다).
+    처리 시에 고르는 「고르고」 효과는 대상을 지정하지 않는 효과로 본다 (호박옥의 수호자 - 마르모르 · 카르분쿨루스, 각성의 태동)"""
+    out = []
+    for k, v in link.ctx.items():
+        if k in ('ev', 'opt_keys', 'from_zone'): continue
+        if isinstance(v, Card): out.append(v)
+        elif isinstance(v, (list, tuple)): out += [x for x in v if isinstance(x, Card)]
+    return out
 
 
 # ─────────────────────────── 플레이어 ───────────────────────────
@@ -151,7 +164,11 @@ class Game:
         if c.flags.get('atk_set') is not None: v = c.flags['atk_set']
         return max(0, v)
     def df(self, c):
-        return max(0, c.base_def() + sum(x for s, x, _ in c.mods if s == 'def'))
+        v = c.base_def() + sum(x for s, x, _ in c.mods if s == 'def')
+        for src in self.continuous_sources():   # [지속] 수비력 증감 def_mod (포커짐승들 2026-10-12 추가 — def_mod가 없는 카드는 그대로)
+            f = getattr(src, 'def_mod', None)
+            if f and (src is c or not (c.flags.get('immune_others') or c.flags.get('immune_except')) or self.is_neg(c)): v += f(self, src, c)
+        return max(0, v)
     def immune(self, c, by, src=None):
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
         카드 자신의 [지속]이 정한 내성(무효화되면 사라짐):
@@ -161,10 +178,13 @@ class Game:
             ex = c.flags.get('immune_except')
             if ex is not None and src is not c and not (src is not None and src.name == ex): return True
             if c.flags.get('immune_others') and src is not c: return True
-            eg = c.flags.get('immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 카드 쪽에서 플래그를 켜고 끈다
+            eg = self.flag(c, 'immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 callable 플래그(Game.flag)
             if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
+        if self.on_field(c) and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
+            if self.flag(c, 'untargetable_opp') and self.targeting_now(by): return True        # 「상대 효과의 대상이 되지 않는다」
+            if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
@@ -175,6 +195,40 @@ class Game:
         if self.immune(c, cause[1].controller, cause[1]):
             self.L(f'{c}은(는) 상대의 효과를 받지 않음', 'sys'); return True
         return False
+
+    # ── 조건부 [지속] 플래그 · 대상 지정 (호박옥, 2026-10-12 추가 — 플래그를 쓰지 않는 카드의 동작은 그대로) ──
+    def flag(self, c, key, default=None):
+        """c.flags[key] 읽기. 값이 callable이면 (g, c) → 값으로 그때그때 계산한다 — 「이 카드에 봉인 카운터가 놓여 있는 한」 같은 조건부 [지속]"""
+        v = c.flags.get(key, default)
+        return v(self, c) if callable(v) else v
+
+    def targeting_now(self, by):
+        """by가 지금 발동하는 효과의 코스트 단계(대상을 고르는 중)인가"""
+        l = getattr(self, 'costing', None)
+        return l is not None and l.player == by
+
+    def targeted_by(self, c, by):
+        """c가 by의 효과의 대상인가: 그 발동의 코스트 단계이거나, 처리 중인 by의 효과가 발동 시 c를 골라 두었다(link_targets)"""
+        if self.targeting_now(by): return True
+        l = getattr(self, 'resolving_link', None)
+        return l is not None and l.player == by and any(x is c for x in link_targets(l))
+
+    def stays(self, c, cause, destroyed=False):
+        """「파괴 이외의 방법으로 필드를 벗어나지 않는다」(flags['leave_only_destroy'], callable 가능): 효과 · 코스트로 묘지 · 덱 · 패 · 제외로
+        옮기려 하면 남는다. 파괴와 규칙 처리(cause 'rule')는 막지 않는다 (ASSUME)"""
+        if destroyed or not self.on_field(c) or self.is_neg(c) or not self.flag(c, 'leave_only_destroy'): return False
+        if cause and cause[0] == 'rule': return False
+        self.L(f'{c}은(는) 파괴 이외의 방법으로 필드를 벗어나지 않음', 'sys'); return True
+
+    def attack_banned(self, m):
+        """「공격할 수 없다」: flags['no_attack'](callable 가능) · flags['no_attack_until'](그 턴까지)"""
+        return bool(self.flag(m, 'no_attack')) or m.flags.get('no_attack_until', -1) >= self.turn
+
+    def battle_damage(self, p, amt, src):
+        """p가 받는 전투 대미지. [지속] 규칙 'half_battle_damage'(p): 「자신이 받는 전투 대미지는 절반이 된다」 (호박옥 - 봉인의 계약 3번, 1의 자리 버림)"""
+        if amt > 0 and self.rule('half_battle_damage', p):
+            self.L(f'{self.pname(p)}이(가) 받는 전투 대미지 절반: {amt} → {amt // 2}', 'sys'); amt //= 2
+        self.damage(p, amt, src)
 
     def is_neg(self, c): return c.negated or bool(c.flags.get('perma_neg')) or any(e.flags.get('negates_host') for e in c.equips)
     def continuous_sources(self):
@@ -219,7 +273,13 @@ class Game:
                     self.send_grave(e, cause=('rule', None))
             c.equips = []
             c.flags.pop('as_spell', None); c.flags.pop('perma_neg', None)
-            for k in ('immune_opp_perm', 'stay', 'negates_host', 'immune_all_until', 'immune_opp_until', 'no_release_until'): c.flags.pop(k, None)
+            for k in ('immune_opp_perm', 'stay', 'negates_host', 'immune_all_until', 'immune_opp_until', 'no_release_until',
+                      'battle_indestr_until', 'no_pos_change_until', 'no_attack_until'): c.flags.pop(k, None)
+            # 필드에 있는 동안만 부여된 특성 되돌리기 (표시목 · 짐승조커 · 올인의 레벨/속성/몬스터 취급, 포커짐승들 2026-10-12 추가):
+            # flags['clear_on_leave'] = {플래그: 부여 전 값(None이면 삭제)} — 이 플래그가 없는 카드는 그대로
+            for k, v in (c.flags.pop('clear_on_leave', None) or {}).items():
+                if v is None: c.flags.pop(k, None)
+                else: c.flags[k] = v
         c.zone = None
         return was_field
 
@@ -268,9 +328,11 @@ class Game:
         self.fieldz = c; c.zone = 'fieldz'; c.controller = p; c.faceup = True
 
     # 이동 동작 (이벤트 발생)
-    def send_grave(self, c, cause=None, destroyed=False, from_battle=False):
+    def send_grave(self, c, cause=None, destroyed=False, from_battle=False, released=False):
+        """released: 릴리스로 묘지에 보냄 (Game.tribute) — to_grave · leave_field 사건에 released=True (「이 카드가 릴리스되었을 때」, 포커짐승들)"""
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
+        if self.stays(c, cause, destroyed): return
         prev = c.zone; ctrl = c.controller
         redirect = getattr(c, 'grave_redirect', None)
         was_field = self._remove(c)
@@ -279,14 +341,16 @@ class Game:
             if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='deck')
             return
         c.controller = c.owner; c.zone = 'grave'; c.faceup = True; self.p[c.owner].grave.append(c)
-        self.emit('to_grave', card=c, prev=prev, ctrl=ctrl, cause=cause, destroyed=destroyed, battle=from_battle)
-        if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='grave')
+        self.emit('to_grave', card=c, prev=prev, ctrl=ctrl, cause=cause, destroyed=destroyed, battle=from_battle, released=released)
+        if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='grave', released=released)
 
     def destroy(self, c, cause=None, battle=False):
         cause = cause or ('effect', self.src)
         if not battle and self.blocked(c, cause): return False
-        if self.rule('indestructible', c, battle): 
+        if self.rule('indestructible', c, battle):
             self.L(f'{c} 파괴되지 않음', 'sys'); return False
+        if battle and c.flags.get('battle_indestr_until', -1) >= self.turn and self.on_field(c):   # 「(그 턴까지) 전투로는 파괴되지 않는다」 (임시 봉인)
+            self.L(f'{c} 전투로 파괴되지 않음', 'sys'); return False
         self.L(f'{c} 파괴' + (' (전투)' if battle else ''))
         self.send_grave(c, cause, destroyed=True, from_battle=battle)
         self.emit('destroyed', card=c, cause=cause, battle=battle)
@@ -300,6 +364,7 @@ class Game:
     def to_deck(self, c, cause=None):
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
+        if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c); self._to_deck_raw(c)
         if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='deck')
@@ -309,6 +374,7 @@ class Game:
         if self.blocked(c, cause): return
         if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p):
             self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음', 'sys'); return
+        if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
         owner = c.owner if p is None else p
@@ -320,19 +386,20 @@ class Game:
     def banish(self, c, cause=None):
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
+        if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
         c.controller = c.owner; c.zone = 'banish'; c.faceup = True; self.p[c.owner].banish.append(c)   # 제외 존은 앞면 공개 (§10-7)
         if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='banish')
 
     def releasable(self, c):
-        return c.flags.get('no_release_until', -1) < self.turn and not (c.flags.get('no_release') and self.on_field(c) and not self.is_neg(c))
+        return c.flags.get('no_release_until', -1) < self.turn and not (self.flag(c, 'no_release') and self.on_field(c) and not self.is_neg(c))
 
     def tribute(self, c, cause=None):
         if not self.releasable(c): self.L(f'{c}은(는) 릴리스할 수 없음', 'sys'); return
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
-        self.L(f'{c} 릴리스'); self.send_grave(c, cause)
+        self.L(f'{c} 릴리스'); self.send_grave(c, cause, released=True)
 
     def change_control(self, c, p):
         if c.controller == p: return True
@@ -379,7 +446,8 @@ class Game:
         """표시 형식 변경 (§8-1): 자신의 앞면 몬스터 · 몬스터당 1턴 1번 · 소환된 턴 불가.
         시점은 규칙서에 없어 자신 턴 · 체인이 없을 때로 둔다"""
         return (self.turn_player == p and not self.chain and c.controller == p and c.is_monster() and self.on_field(c)
-                and c.faceup and c.summon_turn != self.turn and c.pos_turn != self.turn and not c.flags.get('no_pos_change')
+                and c.faceup and c.summon_turn != self.turn and c.pos_turn != self.turn and not self.flag(c, 'no_pos_change')
+                and c.flags.get('no_pos_change_until', -1) < self.turn
                 and (c.pos == 'def' or self.def_allowed(p)))
 
     def change_position(self, c, p):
@@ -412,14 +480,39 @@ class Game:
     def normal_summon(self, c, p, tributes=(), pos=None):
         """일반소환 (§5-2): 패에서 앞면 공격 표시 또는 앞면 수비 표시. 레벨에 따른 제물은 호출하는 쪽이 고른다.
         pos=None: 제물을 바친 뒤 표시 형식을 AI가 고른다(summon_pos)"""
+        use_extra = self.p[p].normal_summons <= 0 and self.extra_normal_left(p, c) > 0   # 기본 일반소환을 다 썼으면 추가 일반소환 권리를 쓴다
         for t in tributes: self.tribute(t, ('summon', None))
         if pos is None: pos = self.summon_pos(c, p, 'normal')
         if pos == 'def' and not self.def_allowed(p): pos = 'atk'
         self._remove(c); self.place_monster(c, p, pos); c.summon_turn = self.turn
-        self.p[p].normal_summons -= 1
+        if use_extra:
+            k = (p, self.turn); self.extra_ns_used[k] = self.extra_ns_used.get(k, 0) + 1
+            self.L(f'{self.pname(p)} 추가 일반소환 권리 사용', 'sys')
+        else: self.p[p].normal_summons -= 1
         self.L(f'{self.pname(p)} {c} 일반소환' + (' (수비 표시)' if c.pos == 'def' else '')
                + (f' (제물 {", ".join(map(str, tributes))})' if tributes else ''))
         self.emit('summon', card=c, player=p, how='normal', prev='hand', by=None)
+
+    # ── 추가 일반소환 (포커짐승들 2026-10-12 추가 — extra_normal을 주는 카드가 없으면 기본 1회 규칙 그대로) ──
+    @property
+    def extra_ns_used(self):
+        """(플레이어, 턴) → 그 턴에 쓴 추가 일반소환 횟수"""
+        d = self.__dict__.get('_extra_ns_used')
+        if d is None: d = self.__dict__['_extra_ns_used'] = {}
+        return d
+
+    def extra_normal_left(self, p, c=None):
+        """[지속] 「(「X」 몬스터를) 추가로 일반소환할 수 있다」 권리 중 이번 턴 남은 횟수.
+        각 [지속] 카드의 extra_normal(g, src, p, c) = 그 카드가 p에게 주는 횟수 (c: 소환하려는 카드 — 카드군 제한 판정, None이면 제한 없이 센다)"""
+        n = 0
+        for src in self.continuous_sources():
+            f = getattr(src, 'extra_normal', None)
+            if f: n += f(self, src, p, c)
+        return max(0, n - self.extra_ns_used.get((p, self.turn), 0)) if n else 0
+
+    def can_normal(self, p, c=None):
+        """p가 지금 (c를) 일반소환할 권리가 남았는가: 기본 1회(normal_summons) 또는 추가 일반소환 권리"""
+        return self.p[p].normal_summons > 0 or self.extra_normal_left(p, c) > 0
 
     @staticmethod
     def tributes_needed(level):
@@ -644,7 +737,10 @@ class Game:
             else: c.faceup = True
         self.L(f'{self.pname(p)} {c} {e.num}번 효과 발동' + (f' [{e.label}]' if e.label else '') + f' — 체인 {len(self.chain)+1}')
         link.ctx['opt_keys'] = [(c.name, e.num)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4). 코스트 처리에서 바꿀 수 있다
-        if e.cost and e.cost(self, c, p, link) is False:
+        prev_costing = getattr(self, 'costing', None); self.costing = link   # 코스트 단계 = 대상을 고르는 중 (Game.targeting_now)
+        try: cancel = bool(e.cost) and e.cost(self, c, p, link) is False
+        finally: self.costing = prev_costing
+        if cancel:
             self.L(f'{c} 발동 취소 (코스트/대상 불가)', 'sys')
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)
             return None
@@ -691,7 +787,9 @@ class Game:
             else:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 처리', 'res')
                 self.src = c; self.src_eff = e
+                prev_res = getattr(self, 'resolving_link', None); self.resolving_link = link   # 처리 중인 발동 (Game.targeted_by) — 엔진의 resolving(불린)과 다른 이름
                 if e.res: e.res(self, c, p, link)
+                self.resolving_link = prev_res
                 self.src = None; self.src_eff = None
             if e.spell_act and self.on_field(c) and c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') \
                and not c.flags.get('stay'):
@@ -788,7 +886,7 @@ class Game:
 
     def can_attack_with(self, m):
         """공격 선언할 수 있는 몬스터인가: 앞면 공격 표시만 (뒷면 공격 표시 몬스터는 공격할 수 없다 — 사용자 재정 2026-10-06)"""
-        return m.faceup and m.pos == 'atk'
+        return m.faceup and m.pos == 'atk' and not self.attack_banned(m)
 
     def set_face_down(self, c, cause=None):
         """「뒷면 표시로 한다」 효과 (사용자 재정 2026-10-06): 표시 형식은 그대로 두고 뒷면으로 — 공격 표시 몬스터는
@@ -817,7 +915,7 @@ class Game:
         if target is not None and (not self.on_field(target) or target.controller != o):
             self.L('공격 대상 소멸 — 공격 종료', 'sys'); return
         if target is None:
-            self.damage(o, self.atk(a), f'{a.name} 직접공격')
+            self.battle_damage(o, self.atk(a), f'{a.name} 직접공격')
             self.emit('direct_hit', card=a)
         else:
             # 전투 판정 (§5-3). battle_win = [전투] 발동 사건: 전투로 카드를 '파괴하는 데 성공'했을 때만 (§7)
@@ -825,10 +923,10 @@ class Game:
             if target.pos == 'atk':
                 tv = self.atk(target)
                 if av > tv:
-                    dt = self.destroy(target, ('battle', a), battle=True); self.damage(o, av - tv, '전투')
+                    dt = self.destroy(target, ('battle', a), battle=True); self.battle_damage(o, av - tv, '전투')
                     if dt: self.emit('battle_win', card=a, target=target, player=p)
                 elif av < tv:
-                    da = self.destroy(a, ('battle', target), battle=True); self.damage(p, tv - av, '전투')   # [유희왕] 기준선
+                    da = self.destroy(a, ('battle', target), battle=True); self.battle_damage(p, tv - av, '전투')   # [유희왕] 기준선
                     if da: self.emit('battle_win', card=target, target=a, player=o)
                 else:
                     da = self.destroy(a, ('battle', target), battle=True); dt = self.destroy(target, ('battle', a), battle=True)
@@ -838,7 +936,7 @@ class Game:
                 tv = self.df(target)
                 if av > tv:   # 수비 표시를 넘어도 HP 피해 없음 (정본 3-3)
                     if self.destroy(target, ('battle', a), battle=True): self.emit('battle_win', card=a, target=target, player=p)
-                elif av < tv: self.damage(p, tv - av, '전투(수비 반사)')   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
+                elif av < tv: self.battle_damage(p, tv - av, '전투(수비 반사)')   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
         self.triggers()
         if self.chain: self.resolve_chain()
 

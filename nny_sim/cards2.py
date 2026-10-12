@@ -136,13 +136,14 @@ def _(c):
 
 @card('번성충-기생촉수')
 def _(c):
+    def hosts(g, p): return [m for m in g.monsters(p) if m.counters.get(PARA) and g.releasable(m)]   # 「릴리스되지 않는」 몬스터는 코스트로 쓸 수 없다
     def cost(g, c, p, l):
-        m = min([m for m in g.monsters(p) if m.counters.get(PARA)], key=lambda m: value(g, m)); g.tribute(m, ('cost', c)); oath(g, p)
+        m = min(hosts(g, p), key=lambda m: value(g, m)); g.tribute(m, ('cost', c)); oath(g, p)
     def res(g, c, p, l):
         if c.zone == 'hand': g.special_summon(c, p)
         ts = targets(g, p, [m for m in g.monsters(1 - p) if m.faceup])
         if ts: g.add_counter(best(g, ts, p, 'steal'), PARA, 1)
-    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: any(m.counters.get(PARA) for m in g.monsters(p)) and any(m.faceup for m in g.monsters(1 - p)),
+    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(hosts(g, p)) and any(m.faceup for m in g.monsters(1 - p)),
         cost=cost, res=res, score=lambda g, c, p, ev: 55 if main_ok(g, p) else 0, threat=900, label='감염')]
 
 @card('번성충-기생완전체')

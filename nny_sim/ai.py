@@ -66,6 +66,21 @@ DECK_POLICY = {
                 '저주 - 불문율', '저주 - 빙의', '저주 - 타락', '저주인형 - 비비안', '저주 - 의심', '저주 - 탐욕', '저주 - 원한의 굴레',
                 '저주인형 - 저주인형', '저주인형 - 처키', '저주인형 - 조리아드'],
         mull_dead=['퇴마의 부적']),                       # 희생제 1번이 상대에게 놓는 카드 — 자신이 쓰면 손해
+    # 호박옥 (2026-10-12 시제품 지침): 에이스는 스킬이 라운드 시작 시 필드에 낸다 — 패에 온 에이스는 제물 2장이 드는 최상급
+    '호박옥 - 봉인의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['호박옥 - 침전', '호박옥 - 결정충', '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '호박옥 - 각성의 태동',
+                '호박옥 - 수액정', '호박옥 - 잔편', '호박옥 - 태고의 수해', '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 균열',
+                '호박옥의 수호자 - 레시나', '호박옥의 수호자 - 실렉스', '호박옥 - 임시 봉인', '봉인을 푸는 자',
+                '호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스'],
+        mull_dead=['호박옥 - 아우렘 티라누스']),
+    '호박옥 - 몽식의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['봉인을 푸는 자', '호박옥 - 침전', '호박옥 - 결정충', '호박옥 - 각성의 태동', '월식', '호박옥 - 수액정', '호박옥 - 잔편',
+                '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '깨어남의 종', '몽마의 도래', '호박옥 - 태고의 수해',
+                '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 임시 봉인', '호박옥 - 균열', '호박옥의 수호자 - 레시나',
+                '호박옥의 수호자 - 실렉스', '꿈의 파열', '호박옥 - 아우렘 티라누스', '호박옥 - 녹스 솜니페르'],
+        mull_dead=['호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스']),
 }
 
 
@@ -230,10 +245,10 @@ class HeuristicAI:
     def main_phase(self, g, p, ph):
         for _ in range(40):
             acts = []
-            if ph == '진행' and g.p[p].normal_summons > 0:
+            if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
-                    if g.rule('no_special', c, p) or not g.can_place(c, p): continue
+                    if g.rule('no_special', c, p) or not g.can_place(c, p) or not g.can_normal(p, c): continue
                     s = 20 + g.atk(c) / 100 + (40 if c.has('솔루나') else 0) + (10 if 'direct_attack' in getattr(c, 'rules', {}) else 0)
                     if c.has('번성충'):
                         # 지침: 번성충 몬스터는 이번 턴 결착(상대 HP 0)이 되는 경우에만 효과 대신 일반소환
@@ -316,7 +331,7 @@ class HeuristicAI:
         a, d = g.atk(c), g.df(c)
         o = 1 - p
         opp = [m for m in g.monsters(o) if m.faceup]
-        if g.can_declare_attack(p) and a > 0 and not c.flags.get('no_attack'):
+        if g.can_declare_attack(p) and a > 0 and not g.attack_banned(c):
             direct = not g.blockers(o) or 'direct_attack' in getattr(c, 'rules', {})
             wins = any(a > (g.atk(t) if t.pos == 'atk' else g.df(t)) for t in opp)
             if direct or wins: return 'atk', '이번 턴 공격 가능'
@@ -346,14 +361,18 @@ class HeuristicAI:
         표시 형식(공격 · 수비)은 소환할 때 choose_summon_pos가 정한다 — 예전의 별도 「수비 소환」 후보는 여기에 합쳤다.
         기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지"""
         out = []
-        if g.phase != '진행' or g.p[p].normal_summons <= 0: return out
+        if g.phase != '진행' or not g.can_normal(p): return out
         for c in g.p[p].hand:
             if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
             if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
+            if not g.can_normal(p, c): continue   # 추가 일반소환 권리는 카드군 제한이 있을 수 있다 (포커짐승들)
             ts = self.pick_tributes(g, p, c)
             if not ts: continue   # 무제물 소환은 main_phase의 「소환:」 후보
             cost = sum(value(g, t) for t in ts)
             if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
+            nv = getattr(c, 'ns_value', None)   # 카드가 정한 제물 소환 가치 ([소환] 효과가 본체인 상급 몬스터 — 포커짐승들). 없으면 공격력 기준
+            if nv is not None:
+                out.append((f'소환:{c.name}', nv(g, p, ts, cost), ('summon', c, ts, None))); continue
             gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
             out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, None)))
         return out
@@ -385,7 +404,7 @@ class HeuristicAI:
         bonus = 100 if (extra is not None and extra.has('번성충') and p_skill(g, p) == '번성충-대발생') else 0
         tot = 0
         for m in g.monsters(p):
-            if m.faceup and m.pos == 'atk' and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
+            if m.faceup and m.pos == 'atk' and not g.attack_banned(m) and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
                 tot += (g.atk(m) + (bonus if m.has('번성충') else 0)) * (self.max_attacks(g, m) - m.attacks_made)
         if extra is not None:
             direct_ok = 'direct_attack' in getattr(extra, 'rules', {}) or not g.blockers(1 - p)
@@ -416,7 +435,7 @@ class HeuristicAI:
     def battle_phase(self, g, p):
         for _ in range(20):
             if p in g.no_attack and g.no_attack[p] == g.turn: g.L('공격 봉인 상태', 'sys'); return
-            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not m.flags.get('no_attack')
+            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not g.attack_banned(m)
                          and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue

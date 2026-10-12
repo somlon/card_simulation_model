@@ -321,10 +321,10 @@ class LearnedAI(HeuristicAI):
     def main_phase(self, g, p, ph):
         for _ in range(40):
             acts = [('종료', 0, None)]; seen = set()
-            if ph == '진행' and g.p[p].normal_summons > 0:
+            if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
-                    if g.rule('no_special', c, p) or not g.can_place(c, p): continue
+                    if g.rule('no_special', c, p) or not g.can_place(c, p) or not g.can_normal(p, c): continue
                     if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
                     s = 20 + g.atk(c) / 100 + (40 if c.has('솔루나') else 0)
                     if c.has('번성충'):
@@ -334,7 +334,7 @@ class LearnedAI(HeuristicAI):
                     if lab not in seen: seen.add(lab); acts.append((lab, s, ('summon', c, None)))
                 for c in g.p[p].hand:   # 대체 일반소환 (치프 세리 등 「…하는 것으로 일반소환할 수 있다」)
                     alt = getattr(c, 'alt_normal', None)
-                    if alt and alt[0](g, p) and g.can_place(c, p):
+                    if alt and alt[0](g, p) and g.can_place(c, p) and g.can_normal(p, c):
                         lab = f'특수 일반소환:{c.name}'
                         if lab not in seen: seen.add(lab); acts.append((lab, 70, ('alt', c, None)))
             for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
@@ -372,7 +372,7 @@ class LearnedAI(HeuristicAI):
         for _ in range(20):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
-                         and m.attacks_made < self.max_attacks(g, m)]
+                         and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]   # 「공격할 수 없다」 (호박옥)
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue   # 결착 우선 지침 — 학습 대상 아님
             opts = [('공격 종료', 0, None)]; seen = set()
