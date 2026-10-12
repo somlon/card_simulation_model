@@ -57,8 +57,9 @@ def field_pick(g, p, purpose='remove', pool=None):
     opp = [x for x in cands if x.controller != p]
     if opp: return best(g, opp, p, purpose)
     return min(cands, key=lambda x: value(g, x)) if cands else None
-def oath(g, p):
-    g.p[p].oath = g.turn + (1 if own_turn(g, p) else 2)
+def oath(g, p, group='번성충'):
+    """「이 효과를 발동한 턴, 자신은 「group」 카드만 사용할 수 있으며, 이 제약은 다음 상대 턴 종료 시까지 적용된다」"""
+    g.p[p].oath = g.turn + (1 if own_turn(g, p) else 2); g.p[p].oath_group = group
 def last_opp_link(g, p):
     return g.chain[-1] if g.chain and g.chain[-1].player != p else None
 def threat(g, p):
@@ -142,24 +143,25 @@ def _(c):
 
 @card('번성충-넓적배사마귀')
 def _(c):
+    """2026-10-08 텍스트: 1. [신속] 상대 필드의 몬스터 1장을 대상으로 하고 발동. 이 카드를 패에서 특수소환한다.
+    그 카드를 장착카드로 취급하여 이 카드에 장착한다. (맹세 제약 문구 없음)
+    ASSUME: 장착된 상대 몬스터는 자신 마법 존의 장착 카드(장착 마법 취급)가 되고, 이 카드가 필드를 벗어나면 규칙에 따라 묘지(원래 주인)로 간다"""
     bsc_common(c)
+    def cands(g, p): return [m for m in g.monsters(1 - p) if not g.immune(m, p)]
     def cost(g, c, p, l):
-        t = best(g, [m for m in g.monsters(1 - p) if m.faceup], p, 'steal')
-        g._remove(c); g.place_spell(c, p, True); c.flags['as_spell'] = True
-        c.equip_to = t; t.equips.append(c); l.ctx['t'] = t; g.L(f'코스트: {c}를 {t}에 장착'); oath(g, p)
+        l.ctx['t'] = best(g, cands(g, p), p, 'steal'); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
         t = l.ctx['t']
-        if c.equip_to is t and g.on_field(t) and g.change_control(t, p): g.L(f'{t} 컨트롤 획득')
-    def unequip(g, e):
-        t = e.equip_to
-        if t and g.on_field(t) and t.controller != t.owner:
-            g.change_control(t, t.owner); g.L(f'{t} 컨트롤 반환', 'sys')
-    c.on_unequip = unequip
+        if c.zone != 'hand' or not g.special_summon(c, p): return
+        if not (g.on_field(t) and t.controller == 1 - p and g.free_s(p)) or g.blocked(t, ('effect', c)): return
+        g._remove(t); g.place_spell(t, p, True); t.flags['as_spell'] = True
+        t.equip_to = c; c.equips.append(t); g.L(f'{t}을(를) {c}에 장착 카드로 장착')
     c.effects = [Effect(1, 'quick', ('hand',),
-        cond=lambda g, c, p, ev: any(m.faceup for m in g.monsters(1 - p)) and bool(g.free_s(p)) and bool(g.free_m(p)),
+        cond=lambda g, c, p, ev: bool(cands(g, p)) and g.can_special(c, p) and bool(g.free_s(p)),
         cost=cost, res=res,
-        score=lambda g, c, p, ev: (40 + max(g.atk(m) for m in g.monsters(1 - p) if m.faceup) / 50) if main_ok(g, p) else 0,
-        threat=1000, label='컨트롤 탈취')]
+        score=lambda g, c, p, ev: (40 + max(g.atk(m) for m in cands(g, p)) / 50) if main_ok(g, p) else
+              (35 if threat(g, p) >= 900 and last_opp_link(g, p).card in cands(g, p) else 0),
+        threat=1000, label='상대 몬스터를 장착 카드로')]
 
 @card('번성충-주기매미')
 def _(c):
@@ -714,3 +716,7 @@ import cards3  # noqa: E402,F401  (3차 구현 등록)
 import cards4  # noqa: E402,F401  (세리)
 import cards5  # noqa: E402,F401  (소원의 분수)
 import cards6  # noqa: E402,F401  (저주인형)
+import cards7  # noqa: E402,F401  (호박옥)
+import cards8  # noqa: E402,F401  (포커짐승들)
+import cards9  # noqa: E402,F401  (던전마스터)
+import cards10  # noqa: E402,F401  (데이터버그)

@@ -42,7 +42,18 @@ class Card:
     @property
     def type(self): return self.d['type']
     @property
-    def level(self): return self.d.get('level', 0)
+    def level(self):
+        """flags['level_set']: 효과로 부여된 레벨(표시목 · 짐승조커 등)이 원래 레벨보다 우선"""
+        v = self.flags.get('level_set')
+        return v if v is not None else self.d.get('level', 0)
+    @property
+    def attr(self):
+        """속성. flags['attr_set']: 효과로 부여된 속성 — 문자열 하나 또는 여러 속성의 튜플(「모두로 취급」)"""
+        v = self.flags.get('attr_set')
+        return v if v is not None else self.d.get('attr')
+    def has_attr(self, a):
+        v = self.attr
+        return a in v if isinstance(v, (tuple, list, set, frozenset)) else v == a
     def is_monster(self): return self.type == '몬스터' and not self.flags.get('as_spell')
     def is_spell_like(self): return self.type in ('마법', '필드') or self.flags.get('as_spell')
     def deck_kind(self): return self.d['deck'] if self.d['deck'] in ('메인', '상급') else '메인'
@@ -87,6 +98,7 @@ class Player:
         self.m = [None] * MZ; self.s = [None] * SZ; self.skill = None
         self.skill_def = skill_def; self.ai = ai
         self.normal_summons = 1; self.oath = -1       # 맹세 제약 만료 턴
+        self.oath_group = '번성충'                     # 맹세 제약 동안 사용할 수 있는 카드군 (「자신은 「X」 카드만 사용할 수 있다」)
         self.opt = {}                                  # (name, num) -> 사용 횟수 (이번 턴)
 
 
@@ -149,6 +161,8 @@ class Game:
             ex = c.flags.get('immune_except')
             if ex is not None and src is not c and not (src is not None and src.name == ex): return True
             if c.flags.get('immune_others') and src is not c: return True
+            eg = c.flags.get('immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 카드 쪽에서 플래그를 켜고 끈다
+            if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
@@ -293,6 +307,8 @@ class Game:
     def to_hand(self, c, cause=None, p=None):
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
+        if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p):
+            self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음', 'sys'); return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
         owner = c.owner if p is None else p
@@ -505,6 +521,7 @@ class Game:
     def search_cands(self, p, pred, which=('main', 'upper'), source=None):
         """서치 후보: 덱에서 pred를 만족하고, 서치 효과의 주체 카드와 이름이 다른 카드 (사용자 재정)"""
         src = source or self.src
+        if self.rule('no_deck_to_hand', p): return []   # 덱에서 패에 넣을 수 없다 [지속] — 서치 후보 없음
         ok = self.same_name_ok() and source is None
         return [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
 
@@ -568,7 +585,9 @@ class Game:
         return True
 
     def oath_ok(self, p, c):
-        return self.p[p].oath < self.turn or c.has('번성충')
+        if self.p[p].oath < self.turn: return True
+        grp_ = self.p[p].oath_group; gs = c.d.get('groups')
+        return (grp_ in gs) if gs is not None else c.has(grp_)
 
     def can_act(self, p, c, e, ev=None):
         if not self.zone_ok(c, e, p): return False

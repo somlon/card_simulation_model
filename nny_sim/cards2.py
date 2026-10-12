@@ -120,7 +120,7 @@ def _(c):
                res=lambda g, c, p, l: g.add_counter(c, PARA, 1), score=lambda *a: 80, threat=200, label='카운터 1'),
         Effect(2, 'ignition', ('hand',),
                cond=lambda g, c, p, ev: main_ok(g, p) and g.can_special(c, p) and not any(m.counters.get(PARA) for m in g.monsters(p)),
-               res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p),
+               res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p), opt=None,   # 2026-10-08: 1턴 1번 문구 삭제
                score=lambda *a: 60, threat=200, label='패에서 특수소환 (ASSUME: [지속] 허가 = 기동 처리)')]
 
 @card('번성충-기생포자')
