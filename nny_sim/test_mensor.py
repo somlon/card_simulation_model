@@ -1,6 +1,9 @@
 """세리 - 멘소르 소환 유발 효과 테스트 (nny_sim 폴더에서):  python -m unittest test_mensor -v
-효과: 서로의 메인 덱 매수가 다르면 많은 쪽 덱을 위에서 차이만큼 제외한다. 내 덱이 많으면 내 덱이 깎이므로 AI는 쓰지 않는다."""
+효과: 서로의 메인 덱 매수가 다르면 많은 쪽 덱을 위에서 차이만큼 제외한다. 내 덱이 많으면 내 덱이 깎이므로 AI는 쓰지 않는다.
+「세리 - 멘소르」는 카드 풀 교체(2026-10-08)로 빠졌다 — 구현은 cards4.py에 남아 있어 카드가 풀에 돌아오면 이 테스트가 다시 돈다.
+지금 카드 중 「자기 덱을 깎으면 쓰지 않는」 판단(VETO)을 가진 소환 유발 효과는 없다(엑삭토르 · 프로쿠라토르는 점수만 다름)."""
 import random, unittest
+import cards
 import season as SE
 import policy as P
 from ai import HeuristicAI
@@ -11,7 +14,7 @@ DECKS = SE.load_decks()
 
 
 def make(ai):
-    da, db = DECKS['데쿠마'], DECKS['투기장의 규칙']
+    da, db = DECKS['세제'], DECKS['세제']                   # 세리 덱끼리: 같은 덱이라 시작 메인 덱 매수가 같다
     mk = (lambda d: P.LearnedAI(d['스킬'], learn=False)) if ai is P.LearnedAI else (lambda d: ai(d['스킬']))
     g = Game([dict(da, 이름='A'), dict(db, 이름='B')], [mk(da), mk(db)], 0, random.Random(4), [], Impl)
     g.setup(); g.turn = 3; g.turn_player = 0; g.phase = '진행'
@@ -25,6 +28,7 @@ def mensor_trigger(g):
     return c, e, {'type': 'summon', 'card': c}
 
 
+@unittest.skipUnless('세리 - 멘소르' in cards.POOL, '카드 풀에서 빠진 카드 (2026-10-08)')
 class MensorTest(unittest.TestCase):
     def check(self, ai, own_more):
         g = make(ai)

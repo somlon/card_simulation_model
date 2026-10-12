@@ -288,14 +288,15 @@ def _(c):
 
 @card('바이러스 모스키토')
 def _(c):
+    def cands(g, p): return [m for m in g.monsters(1 - p) if m.faceup and not g.immune(m, p)]   # 「대상으로 하고」: 효과를 받지 않는 몬스터는 대상이 될 수 없다
     def cost(g, c, p, l):
-        t = best(g, [m for m in g.monsters(1 - p) if m.faceup], p, 'negate_monster'); l.ctx['t'] = t
+        t = best(g, cands(g, p), p, 'negate_monster'); l.ctx['t'] = t
     def res(g, c, p, l):
         t = l.ctx['t']
-        if g.on_field(t) and g.on_field(c):
+        if g.on_field(t) and g.on_field(c) and not g.blocked(t, ('effect', c)):
             c.flags['stay'] = True; c.equip_to = t; t.equips.append(c); c.flags['negates_host'] = True
-            g.L(f'{c}를 {t}에 장착 — 효과 무효')
-    e = Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: any(m.faceup for m in g.monsters(1 - p)),
+            g.L(f'{c}를 {t}에 장착 — 효과 무효'); g.emit('negated', link=None, card=t, player=t.controller, by=c)
+    e = Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(cands(g, p)),
         cost=cost, res=res, score=lambda g, c, p, ev: (35 if main_ok(g, p) else 0) if not last_opp_link(g, p) else
         (45 if last_opp_link(g, p).card.is_monster() and last_opp_link(g, p).card.zone in ('m', 'shared') and threat(g, p) >= 800 else 0), threat=700)
     e.hand_ok = True
@@ -526,9 +527,9 @@ def _(c):
         t = l.ctx.get('t')
         if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 덱으로'); g.to_deck(t)
     def res2(g, c, p, l):
-        t = opp_target(g, c, p, l, 'negate')
-        if t: t.negated = True; g.L(f'{t} 턴 종료 시까지 무효')
-    arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or g.rule('ciel_cost_free', p, c)) and bool(opp_cards(g, p)), cost1, res1,
+        t = best(g, targets_of(g, p, [x for x in opp_cards(g, p) if x.faceup and not g.is_neg(x)]), p, 'negate')
+        if t and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
+    arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or g.rule('ciel_cost_free', p, c)) and bool(targets_of(g, p, opp_cards(g, p))), cost1, res1,
          lambda g, c, p: mon(g, SIA, p) and bool(opp_cards(g, p)), res2, sc1=45, sc2=25)
 
 @card('시엘 아츠 - 잔월의 유산')
@@ -550,10 +551,10 @@ def _(c):
         cs = [x for x in g.field_cards(p) if x.has('시아') and x.faceup and x is not c]
         m = sorted(cs, key=lambda x: (not x.is_monster(), x.type == '필드', x.flags.get('effect_only', False)))[0]
         g.L(f'코스트: {m} 덱으로'); g.to_deck(m, ('cost', c))
-        l.ctx['t'] = field_pick(g, p, 'negate')   # 「필드의 카드를 1장 대상으로」: 자신 카드 포함
+        l.ctx['t'] = field_pick(g, p, 'negate', targets_of(g, p, [x for x in g.all_field() if x is not c]))   # 「필드의 카드를 1장 대상으로」: 자신 카드 포함
     def res1(g, c, p, l):
         t = l.ctx.get('t')
-        if t and g.on_field(t): t.negated = True; g.L(f'{t} 턴 종료 시까지 무효')
+        if t and g.on_field(t) and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
         g.heal(p, 1000)
     def res2(g, c, p, l):
         g.salvage(p, [x for x in g.p[p].grave if x is not c], '여명신광')

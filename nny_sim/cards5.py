@@ -26,7 +26,8 @@ def lastwill(num, res, score=70, not_from_deck=False, not_cost=False, not_from_f
     def cnd(g, c, p, ev):
         if not (ev_is(ev, 'to_grave') and ev['card'] is c and c.zone == 'grave'): return False
         if not_from_deck and ev['prev'] in ('main', 'upper'): return False
-        if not_cost and (ev.get('cause') or ('',))[0] == 'cost': return False
+        ca = ev.get('cause') or ('', None)
+        if not_cost and ca[0] == 'cost' and ca[1] is not None and ca[1].controller == p: return False   # 「자신의」 효과의 코스트
         if not_from_field and ev['prev'] in FIELD_Z: return False
         return cond is None or cond(g, c, p, ev)
     sc = score if callable(score) else (lambda *a, s=score: s)
@@ -141,7 +142,7 @@ def _(c):
         l.ctx['t'] = field_pick(g, p, 'negate', targets(g, p, [x for x in g.all_field() if x.faceup])); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
         t = l.ctx.get('t')
-        if t and g.on_field(t): t.negated = True; g.L(f'{t} 턴 종료 시까지 무효')
+        if t and g.on_field(t) and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
     c.effects = [lastwill(2, res, lambda g, c, p, ev: 40 if targets(g, p, [x for x in opp_cards(g, p) if x.faceup]) else VETO,
                           cond=lambda g, c, p, ev: bool(targets(g, p, [x for x in g.all_field() if x.faceup])), cost=cost, label='[유언] 무효', threat=600)]
 
@@ -177,13 +178,19 @@ def _(c):
 def _(c):
     import re
     def destroys(link):
-        line = next((x for x in link.card.d.get('text', '').split('\n') if x.startswith(f'{link.eff.num}.')), '')
-        return bool(re.search(r'파괴한다|파괴하고', line))
+        """그 효과 번호의 문장(「N.」 줄과 그 아래 「-」 줄들)에 카드를 파괴하는 처리가 있는가"""
+        lines, on = [], False
+        for x in link.card.d.get('text', '').split('\n'):
+            if re.match(r'^\d+\.', x): on = x.startswith(f'{link.eff.num}.')
+            if on: lines.append(x)
+        return bool(re.search(r'파괴한다|파괴하고', ' '.join(lines)))
     def cond2(g, c, p, ev):
         l = last_opp_link(g, p)
-        return l is not None and destroys(l) and c.flags.get('wiz_cd', -1) < g.turn
+        return l is not None and destroys(l) and getattr(g, 'wiz_cd', {}).get(p, -1) < g.turn
     def res2(g, c, p, l):
-        g.negate(l.ctx['t']); c.flags['wiz_cd'] = g.turn + 1   # 「사용 후, 다음 턴까지 자신은 이 효과를 사용할 수 없다」
+        g.negate(l.ctx['t'])
+        if not hasattr(g, 'wiz_cd'): g.wiz_cd = {}
+        g.wiz_cd[p] = g.turn + 1   # 「사용 후, 다음 턴까지 자신은 이 효과를 사용할 수 없다」 — 플레이어 단위(같은 이름 다른 장도)
     c.effects = [
         Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None, cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]),
                res=lambda g, c, p, l: g.negate(l.ctx['t']), score=lambda g, c, p, ev: 60 if threat(g, p) >= 600 else 0, threat=800, label='무효'),
@@ -199,7 +206,7 @@ def _(c):
         t = l.ctx.get('t')
         if t and g.on_field(t): g.destroy(t)
         if g.on_field(c): c.mods.append(('atk', 1000, 'turn')); g.L(f'{c} 공격력 +1000 (턴 종료 시까지)')
-    c.rules = {'double_attack': lambda g, src, m: m.controller == src.controller and grp(m, '용기')}
+    c.rules = {'double_attack': lambda g, src, m: m.controller == src.controller and grp(m, '용기') and (m is src or not g.immune(m, src.controller, src))}
     c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))), cost=cost1, res=res1,
                         score=lambda g, c, p, ev: 65 if main_ok(g, p) or threat(g, p) >= 800 else 0, threat=1000, label='파괴 · 공격력 +1000'),
                  recycle(3, '용기')]
@@ -208,8 +215,12 @@ def _(c):
 def _(c):
     def res1(g, c, p, l):
         revive_best(g, p, [x for x in g.p[p].grave if x.is_monster() and g.can_special(x, p)])
-    def cond2(g, c, p, ev):
-        return own_field_to_grave(g, p, ev, exclude=c) and g.on_field(c)
+    def returnable(g, p, x):
+        if x.zone != 'grave': return False
+        if x.is_monster(): return g.can_special(x, p)
+        return x.type == '필드' or bool(g.free_s(p))
+    def cond2(g, c, p, ev):   # 처리할 수 없는 발동은 막는다 (특수소환 불가 몬스터 · 빈 마법 존 없음)
+        return own_field_to_grave(g, p, ev, exclude=c) and g.on_field(c) and returnable(g, p, ev['card'])
     def cost2(g, c, p, l):
         l.ctx['x'] = l.ctx['ev']['card']; g.L(f'코스트: {c} 묘지로'); g.send_grave(c, ('cost', c))
     def res2(g, c, p, l):
@@ -390,10 +401,9 @@ def _(c):
         xs = need2(g, p)
         for x in xs: g.banish(x, ('cost', c))
         g.L(f'코스트: {len(xs)}장 제외 ({", ".join(x.name for x in xs)})')
-        l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p)
-    def res2(g, c, p, l):
-        t = l.ctx.get('t')
-        if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 묘지로'); g.send_grave(t)
+    def res2(g, c, p, l):   # 「상대 필드의 카드 1장을 묘지로 보낸다」 — 대상 지정이 없으므로 처리 시 고른다
+        t = best(g, targets(g, p, opp_cards(g, p)), p)
+        if t: g.L(f'{t} 묘지로'); g.send_grave(t)
     def sc2(g, c, p, ev):
         ts = targets(g, p, opp_cards(g, p))
         if not ts: return VETO

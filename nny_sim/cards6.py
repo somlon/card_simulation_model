@@ -95,13 +95,13 @@ def _(c):
 
 @card('저주인형 - 비비안')
 def _(c):
-    def cost(g, c, p, l): remove_curse(g, p, 4); g.L('저주 카운터 4개 제거')
     def res(g, c, p, l):
+        remove_curse(g, p, 4); g.L('저주 카운터 4개 제거')   # 처리 문장 (코스트 「~하고 발동」이 아님) — 무효화되면 제거하지 않는다
         g.act_limit[1 - p] = (g.turn + 1, 4); g.L(f'다음 턴 {g.pname(1-p)}가 발동할 수 있는 효과 4회로 제한')
     def sc(g, c, p, ev):
         if any(l.card.name == SAC and l.eff.num == 4 for l in g.chain): return 50   # 어차피 희생제 4번에 사라질 카운터
         return 55 if own_turn(g, p) else 25
-    c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: end_only(g) and curses(g, p) >= 4, cost=cost, res=res, score=sc, threat=700,
+    c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: end_only(g) and curses(g, p) >= 4, res=res, score=sc, threat=700,
                         label='상대 발동 4회 제한'), end_counter(2)]
 
 @card('저주인형 - 쿠로하')
@@ -174,9 +174,11 @@ def _(c):
         if ev['kind'] == 'negated' and src.flags.get('replace_pending') is ev['link']:
             src.flags.pop('replace_pending', None); return   # 변경된 효과가 무효화됨 — 카운터는 그대로, 다음 발동이 다시 변경 대상
         if ev['kind'] != 'activate' or ev['player'] != src.controller or src.counters.get(EXO, 0) < 4: return
-        if src.flags.get('replace_pending'): return
-        link = ev['link']
-        if link.card is src: return
+        pend = src.flags.get('replace_pending')
+        if pend is not None:
+            if not pend.negated and pend in g.chain: return   # 이미 변경해 둔 발동이 아직 처리 전
+            src.flags.pop('replace_pending', None)            # 무효화됐거나(부적이 무효인 동안이라 사건을 못 받았을 때 포함) 처리가 끝남
+        link = ev['link']   # 부적 자신의 3번도 「이 카드의 주인이 다음에 발동하는 효과」에 포함된다
         q = src.controller
         def rep(g2, tl, src=src, q=q):
             src.flags.pop('replace_pending', None)
@@ -190,7 +192,7 @@ def _(c):
     c.on_event = on_ev
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda *a: VETO, threat=0),   # 자신 필드에 놓으면 자신이 손해 — AI는 쓰지 않는다
-        Effect(3, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'phase') and ev['phase'] == '종료' and any(DOLL(x) for x in g.field_cards(1 - p) + g.deck_cards(1 - p) + g.p[1 - p].hand),
+        Effect(3, 'trigger', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'phase') and ev['phase'] == '종료',
                res=lambda g, c, p, l: g.add_counter(c, EXO, 1), score=lambda *a: 40, threat=0, label='퇴마 카운터')]
 
 @card('저주 - 재앙')
@@ -207,7 +209,8 @@ def _(c):
         ts = [x for x in talismans(g) if not x.flags.get('perma_neg')]
         if not ts or not g.on_field(c): return
         c.flags['stay'] = True
-        for t in ts: t.flags['perma_neg'] = c.uid; g.L(f'{t}의 효과 무효 (「{c.name}」이 필드에 있는 동안)')
+        for t in ts:
+            if g.negate_card(t, c, perma=c.uid): g.L(f'{t}의 효과 무효 (「{c.name}」이 필드에 있는 동안)')
         def fl(g2, ev, me=c):
             if ev['kind'] == 'leave_field' and ev['card'] is me:
                 for x in talismans(g2) + [y for y in g2.all_field() if y.flags.get('perma_neg') == me.uid]:
@@ -324,7 +327,7 @@ def _(c):
     def uppers(g, p): return [x for x in g.p[p].upper if x.is_monster() and g.can_special(x, p)]
     def cond3(g, c, p, ev):
         if not (ev_is(ev, 'counter') and ev['card'] is c and ev['name'] == CURSE and ev['delta'] > 0): return False
-        n = c.counters.get(CURSE, 0)
+        n = ev.get('total', c.counters.get(CURSE, 0))   # 사건 당시 개수 — 한 체인에서 여러 개가 쌓여도 4개를 넘는 순간을 놓치지 않는다
         return n >= 4 > n - ev['delta'] and bool(uppers(g, p))
     def res4(g, c, p, l):
         n = c.counters.get(CURSE, 0)

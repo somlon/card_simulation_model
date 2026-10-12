@@ -25,16 +25,29 @@ def tax_cost(g, p, n, why, kind='mill'):
     if payer != p: g.L(f'델레가토르: 코스트를 {g.pname(payer)}가 대신 지불', 'sys')
     return g.mill(payer, n, 'main', why, fallback=True)   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
 
+def return_cost(g, p, k):
+    """세리식 「자신의 제외 존에서 카드를 k장 골라 자신의 덱으로 되돌리고 발동」 코스트의 (지불자, 매수).
+    두플리카토르면 2배, 델레가토르면 상대가 자신의 제외 존에서 대신 지불 (머리말 ASSUME)"""
+    if g.rule('cost_double', p): k *= 2
+    return (1 - p if g.rule('cost_transfer', p) else p), k
+
 def seri_lastwill():
+    def need(g, p): return return_cost(g, p, 1 if g.rule('seri_lw_one', p) else 3)   # 세 - 아이라리움 2번: 1장
+    def cond(g, c, p, ev):
+        if not (ev_is(ev, 'to_grave') and ev['card'] is c): return False
+        q, k = need(g, p)
+        return len(g.p[q].banish) >= k and any(SERI(x) and g.can_special(x, p) for x in g.p[p].main)
+    def cost(g, c, p, l):
+        q, k = need(g, p)
+        if q != p: g.L(f'델레가토르: 코스트를 {g.pname(q)}가 대신 지불', 'sys')
+        back = sorted(g.p[q].banish, key=lambda x: (not SERI(x), -g.p[q].ai.card_pri(g, q, x)))[:k]
+        for x in back: g.p[q].banish.remove(x); x.zone = None; g._to_deck_raw(x)
+        g.L(f'코스트: {g.pname(q)} 제외 존 {len(back)}장 덱으로'); g.shuffle(q)
     def res(g, c, p, l):
-        k = 1 if g.rule('seri_lw_one', p) else 3
-        back = sorted(g.p[p].banish, key=lambda x: (not SERI(x), -g.p[p].ai.card_pri(g, p, x)))[:k]
-        for x in back: g.p[p].banish.remove(x); x.zone = None; g._to_deck_raw(x)
-        g.L(f'제외 존 {len(back)}장 덱으로'); g.shuffle(p)
         cs = [x for x in g.p[p].main if SERI(x) and g.can_special(x, p)]
         if cs: g.special_summon(g.p[p].ai.pick_search(g, p, cs, '세리 유언'), p)
-    return Effect(2, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c, res=res,
-                  score=lambda *a: 80, threat=400, label='[유언] 제외 존 회수 + 세리 특수소환')
+    return Effect(2, 'lastwill', ('grave',), cond=cond, cost=cost, res=res,
+                  score=lambda *a: 80, threat=400, label='[유언] 제외 존 → 덱 (코스트) + 세리 특수소환')
 
 def spell_lastwill(num=2):
     """마법 공통 [유언]: 상대에 의해 묘지로 → 자신 덱 위 3장 제외(코스트)하고 이 카드를 패로"""

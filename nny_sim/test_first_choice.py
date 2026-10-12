@@ -6,7 +6,7 @@ import match as M
 from ai import HeuristicAI
 
 DECKS = SE.load_decks()
-A, B = '투기장의 규칙', '세제'
+A, B = '솔루나 아츠', '세제'   # 카드 풀 교체(2026-10-08): 투기장의 규칙 → 솔루나 아츠
 
 
 class EmptyTable:

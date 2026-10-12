@@ -41,7 +41,7 @@ def _(c):
 def _(c):
     def res(g, c, p, l):
         for x in g.spells(1 - p):
-            if x.d.get('subtype') == '지속' and not g.immune(x, p): x.negated = True
+            if x.d.get('subtype') == '지속': g.negate_card(x, c)
         g.no_damage[p] = g.turn; g.L(f'상대 지속 마법 전부 무효, 이 턴 {g.pname(p)}는 대미지를 줄 수 없음')
     def sc(g, c, p, ev):   # 일반 마법(2026-10-08): 자신 턴에만. 이 턴 대미지를 줄 수 없게 되므로 공격할 수 있는 턴에는 손해를 뺀다
         n = sum(1 for x in g.spells(1 - p) if x.d.get('subtype') == '지속' and x.faceup and not g.immune(x, p))
@@ -99,13 +99,13 @@ def _(c):
 def _(c):
     def res(g, c, p, l):
         t = l.ctx.get('t')
-        if t and g.on_field(t):
+        if t and g.on_field(t) and not g.blocked(t, ('effect', c)):
             t.mods.append(('atk', -1000, 'turn')); t.flags['no_release_until'] = g.turn; t.flags['immune_all_until'] = g.turn
             g.L(f'{t} 공격력 -1000, 턴 종료 시까지 릴리스 불가 · 다른 카드의 효과를 받지 않음')
     def cost(g, c, p, l):
-        l.ctx['t'] = max([x for x in g.field_cards(p) if x is not c], key=lambda x: value(g, x))
+        l.ctx['t'] = max(targets(g, p, [x for x in g.field_cards(p) if x is not c]), key=lambda x: value(g, x))
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cost=cost, res=res,
-        cond=lambda g, c, p, ev: any(x is not c for x in g.field_cards(p)),
+        cond=lambda g, c, p, ev: bool(targets(g, p, [x for x in g.field_cards(p) if x is not c])),
         score=lambda g, c, p, ev: 45 if last_opp_link(g, p) and threat(g, p) >= 900 else 0, threat=500)]
 
 

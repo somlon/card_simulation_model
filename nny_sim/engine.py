@@ -412,14 +412,14 @@ class Game:
         """카운터는 효과 내성과 무관하게 놓인다(퇴마의 부적 1번 괄호). 스킬 존의 스킬 카드에도 놓을 수 있다(희생제)"""
         if not (self.on_field(c) or c.zone == 'skill') or not c.faceup: return False
         c.counters[name] = c.counters.get(name, 0) + n
-        self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n)
+        self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n, total=c.counters[name])
         self.state_check(); return True
     def remove_counter(self, c, name, n=1):
         k = min(n, c.counters.get(name, 0))
         if k <= 0: return 0
         c.counters[name] -= k
         if c.counters[name] == 0: del c.counters[name]
-        self.L(f'{c}의 {name} 카운터 {k}개 제거'); self.emit('counter', card=c, name=name, delta=-k)
+        self.L(f'{c}의 {name} 카운터 {k}개 제거'); self.emit('counter', card=c, name=name, delta=-k, total=c.counters.get(name, 0))
         self.state_check(); return k
 
     # ── HP ──
@@ -679,6 +679,17 @@ class Game:
             if link.negated and e.spell_act and self.on_field(c) and c.type != '마법':
                 pass
         self.triggers()
+
+    def negate_card(self, c, src=None, perma=None):
+        """앞면 카드의 효과를 무효로 한다 (「그 카드를 턴 종료 시까지 무효로 한다」 등). 효과 내성에 막히면 False.
+        perma: 그 값이 남아 있는 동안 무효(장착 · 「의심」처럼 효과가 끝날 때까지). 무효화 사건(negated, card=c)을 낸다 — 저주 - 강령"""
+        src = src if src is not None else self.src
+        if not self.on_field(c): return False
+        if self.blocked(c, ('effect', src)): return False
+        if perma is None: c.negated = True
+        else: c.flags['perma_neg'] = perma
+        self.emit('negated', link=None, card=c, player=c.controller, by=src)
+        return True
 
     def negate(self, link, destroy=False, by=None):
         if getattr(link.eff, 'unnegatable', False) or link.card.flags.get('unnegatable'):

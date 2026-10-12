@@ -44,7 +44,7 @@ def learned(name, **kw):
 
 class OpeningSplitTest(unittest.TestCase):
     def test_every_legal_split_is_a_candidate_keyed_by_matchup_and_turn_order(self):
-        a, b = '투기장의 규칙', '세제'
+        a, b = '소원의 분수', '세제'   # 카드 풀 교체(2026-10-08): 투기장의 규칙 → 소원의 분수 (덱별 지침 없음 · 상급 덱 5장 이상이라 메인 0~5 모두 가능)
         with Capture() as cap:
             g = game(a, b, [learned(a), learned(b)], first=1); g.setup()
         splits = [(p, d, labs) for p, d, labs in cap.calls if d.startswith('시작 패 배분')]
@@ -52,7 +52,7 @@ class OpeningSplitTest(unittest.TestCase):
         self.assertEqual(splits[0][2], [f'메인 {k}' for k in range(0, 6)])
 
     def test_learned_values_decide_the_split(self):
-        a, b = '투기장의 규칙', '세제'
+        a, b = '소원의 분수', '세제'
         with EmptyTable() as t:
             me, op = DECKS[a]['스킬'], DECKS[b]['스킬']
             t.L1[f'{me} vs {op}|시작 패 배분(선공)|메인 2'] = [900, 1000]   # 메인 2 / 상급 3의 승률이 압도적
@@ -69,14 +69,14 @@ class OpeningSplitTest(unittest.TestCase):
         self.assertIn(f'메인 {k0} / 상급 {5 - k0}', line)
 
     def test_split_learning_can_be_switched_off(self):
-        a, b = '투기장의 규칙', '세제'
+        a, b = '소원의 분수', '세제'
         ai = learned(a); ai.LEARN_SPLIT = False
         with Capture() as cap:
             g = game(a, b, [ai, learned(b)]); g.setup()
         self.assertFalse(any(p == 0 and d.startswith('시작 패') for p, d, _ in cap.calls))
 
     def test_thompson_exploration_only_while_learning(self):
-        a, b = '투기장의 규칙', '세제'
+        a, b = '소원의 분수', '세제'
         def first_split(ai_kw, seed):
             with EmptyTable():
                 g = game(a, b, [learned(a, **ai_kw), learned(b)], seed=seed); g.setup()
