@@ -106,7 +106,7 @@ class SkillEndPhaseTest(unittest.TestCase):
         self.assertIsNotNone(n)                                  # 체인에 희생제 4번이 있을 때 처키를 발동할 수 있었다
         self.assertLess(idx('「희생제」 4번 효과 발동'), idx('「저주인형 - 처키」 1번 효과 발동'))
         self.assertLess(idx('「저주인형 - 처키」 1번 처리'), idx('「희생제」 4번 처리'))   # 체인 역순 처리
-        self.assertFalse(g.on_field(target))
+        self.assertTrue(any(m == f'{target} 파괴' for m in ms[idx('「저주인형 - 처키」 1번 처리'):]))   # 처키가 대상을 파괴 (상대가 이후 되살릴 수 있어 위치 대신 기록으로 확인)
         self.assertEqual(g.p[1].hp, hp1 - 300)
         self.assertFalse(sk.counters.get('저주'))
         self.assertEqual(g.p[0].hp, hp0 - 300 * (n - 2))          # 처키 코스트 2개를 뺀 나머지만 정산

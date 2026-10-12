@@ -149,6 +149,7 @@ class Game:
             ex = c.flags.get('immune_except')
             if ex is not None and src is not c and not (src is not None and src.name == ex): return True
             if c.flags.get('immune_others') and src is not c: return True
+            if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
@@ -204,6 +205,7 @@ class Game:
                     self.send_grave(e, cause=('rule', None))
             c.equips = []
             c.flags.pop('as_spell', None); c.flags.pop('perma_neg', None)
+            for k in ('immune_opp_perm', 'stay', 'negates_host', 'immune_all_until', 'immune_opp_until', 'no_release_until'): c.flags.pop(k, None)
         c.zone = None
         return was_field
 
@@ -850,6 +852,8 @@ class Game:
         self.set_phase('진행'); self.open_window()
         pl.ai.main_phase(self, tp, '진행')
         self.set_phase('전투'); self.open_window()
+        for m in self.monsters(tp):   # 「상대 몬스터 전부에 공격」: 공격 횟수 상한은 전투 단계 시작 시의 상대 몬스터 수
+            if m.flags.get('attack_all'): m.flags['attack_all_cap'] = (self.turn, len(self.monsters(1 - tp)))
         if self.turn > 1 and not pl.flags_no_attack(self):   # 선공 1턴째에는 공격 선언 불가 (§5-3) — 전투 단계 자체는 진행한다
             pl.ai.battle_phase(self, tp)
         self.set_phase('정비'); self.open_window()
