@@ -120,13 +120,14 @@ def _(c):
 @card('번성충-메뚜기여왕')
 def _(c):
     bsc_common(c)
+    rel = lambda g, p: [x for x in opp_cards(g, p) if g.releasable(x)]   # 「릴리스되지 않는다」 카드는 코스트로 쓸 수 없다
     def cost(g, c, p, l):
-        t = best(g, opp_cards(g, p), p); g.L(f'코스트: 상대 {t}를 제물로'); g.tribute(t, ('cost', c)); oath(g, p)
+        t = best(g, rel(g, p), p); g.L(f'코스트: 상대 {t}를 제물로'); g.tribute(t, ('cost', c)); oath(g, p)
     c.effects = [Effect(1, 'quick', ('hand',),
-        cond=lambda g, c, p, ev: bool(opp_cards(g, p)) and g.can_special(c, p),
+        cond=lambda g, c, p, ev: bool(rel(g, p)) and g.can_special(c, p),
         cost=cost, res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p),
-        score=lambda g, c, p, ev: (60 + 10 * max(value(g, x) for x in opp_cards(g, p))) if main_ok(g, p)
-              else (15 * threat(g, p) / 500 if last_opp_link(g, p) and last_opp_link(g, p).card in opp_cards(g, p) and threat(g, p) >= 900 else 0),
+        score=lambda g, c, p, ev: (60 + 10 * max(value(g, x) for x in rel(g, p))) if main_ok(g, p)
+              else (15 * threat(g, p) / 500 if last_opp_link(g, p) and last_opp_link(g, p).card in rel(g, p) and threat(g, p) >= 900 else 0),
         threat=1000, label='상대 카드 제물 + 자체 특수소환')]
 
 @card('번성충-노린재')
@@ -176,7 +177,7 @@ def _(c):
 @card('번성충-장수말벌여왕')
 def _(c):
     bsc_common(c)
-    tg = lambda g, p: [x for x in g.spells(1 - p)]
+    tg = lambda g, p: [x for x in g.spells(1 - p) if g.releasable(x)]
     def cost(g, c, p, l):
         t = best(g, tg(g, p), p); g.L(f'코스트: 상대 마법 {t} 릴리스'); g.tribute(t, ('cost', c)); oath(g, p)
     c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(tg(g, p)) and g.can_special(c, p),
@@ -212,9 +213,10 @@ def _(c):
 @card('번성충-군체이동')
 def _(c):
     def n_max(g, p): return min(6, sum(1 for x in g.p[p].grave if x.is_monster() and x.has('번성충')))
+    def pool(g, p): return [x for x in g.monsters(1 - p) if g.releasable(x) and not g.immune(x, p)]
     def cost(g, c, p, l):
-        k = min(n_max(g, p), len(g.monsters(1 - p)))
-        ts = sorted(g.monsters(1 - p), key=lambda x: -value(g, x))[:k]; l.ctx['ts'] = ts
+        k = min(n_max(g, p), len(pool(g, p)))
+        ts = sorted(pool(g, p), key=lambda x: -value(g, x))[:k]; l.ctx['ts'] = ts
         g.L(f'지정: {", ".join(map(str, ts))}')
     def res(g, c, p, l):
         ts = [t for t in l.ctx['ts'] if g.on_field(t) and t.controller == 1 - p]
@@ -223,8 +225,8 @@ def _(c):
         for x in mons[:len(ts)]:
             if not g.special_summon(x, p): break
     c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True,
-        cond=lambda g, c, p, ev: n_max(g, p) > 0 and bool(g.monsters(1 - p)), cost=cost, res=res,
-        score=lambda g, c, p, ev: 30 + 20 * min(n_max(g, p), len(g.monsters(1 - p))), threat=1200)]
+        cond=lambda g, c, p, ev: n_max(g, p) > 0 and bool(pool(g, p)), cost=cost, res=res,
+        score=lambda g, c, p, ev: 30 + 20 * min(n_max(g, p), len(pool(g, p))), threat=1200)]
 
 @card('번성충-사충보복')
 def _(c):
