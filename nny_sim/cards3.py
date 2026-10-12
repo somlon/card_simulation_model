@@ -27,14 +27,14 @@ def bounce_field(g, p, n=1):
 
 @card('시엘 아츠 - 월영잠행')
 def _(c):
-    def cost1(g, c, p, l):   # 1번: 상대 필드의 카드 1장을 대상으로 하고 발동
-        l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p, 'bounce'); g.L(f'대상: {l.ctx["t"]}')
-    def res1(g, c, p, l):
+    def cost1(g, c, p, l):   # 1번 코스트: 자신 시엘을 상대 몬스터 존으로 이동 + 상대 카드 1장을 대상으로
         ms = own_mon(g, p, CIEL)
         if ms and g.change_control(ms[0], 1 - p):
             m = ms[0]; m.flags['return_at_end'] = g.turn
             m.end_return = lambda g2, x: x.controller != x.owner and g2.change_control(x, x.owner) and g2.L(f'{x} 컨트롤 복귀', 'sys')
-            g.L(f'{m} 턴 종료 시까지 상대 몬스터 존으로')
+            g.L(f'코스트: {m} 상대 몬스터 존으로 (턴 종료 시 복귀)')
+        l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p, 'bounce'); g.L(f'대상: {l.ctx["t"]}')
+    def res1(g, c, p, l):
         t = l.ctx.get('t')
         if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 덱으로'); g.to_deck(t)
     def res2(g, c, p, l):

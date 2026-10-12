@@ -11,14 +11,16 @@ def targets(g, p, cands):
 # ═══════════════════════ 공용 ═══════════════════════
 @card('매수당한 킬러')
 def _(c):
+    def cost2(g, c, p, l):   # 「상대 필드의 카드 1장을 대상으로 하고 발동」
+        l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p); g.L(f'대상: {l.ctx["t"]}')
     def res2(g, c, p, l):
-        t = best(g, targets(g, p, opp_cards(g, p)), p)
-        if t: g.destroy(t)
+        t = l.ctx.get('t')
+        if t and g.on_field(t) and t.controller == 1 - p: g.destroy(t)
     c.effects = [
         Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: g.can_special(c, p),
                res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p),
                score=lambda g, c, p, ev: 45 if main_ok(g, p) else (35 if threat(g, p) >= 900 else 0), label='특수소환'),
-        Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))), res=res2,
+        Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))), cost=cost2, res=res2,
                score=lambda g, c, p, ev: 60 if main_ok(g, p) or threat(g, p) >= 800 else 0, threat=1000, label='파괴'),
         Effect(3, 'trigger', ('field',), mandatory=True, cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and ev['player'] == 1 - p,
                res=lambda g, c, p, l: g.on_field(c) and g.destroy(c), threat=0, label='자폭')]
@@ -42,7 +44,7 @@ def _(c):
     def res(g, c, p, l):
         for x in g.spells(1 - p):
             if x.d.get('subtype') == '지속': g.negate_card(x, c)
-        g.no_damage[p] = g.turn; g.L(f'상대 지속 마법 전부 무효, 이 턴 {g.pname(p)}는 대미지를 줄 수 없음')
+        g.no_damage[p] = max(g.no_damage.get(p, -1), g.turn); g.L(f'상대 지속 마법 전부 무효, 이 턴 {g.pname(p)}는 대미지를 줄 수 없음')
     def sc(g, c, p, ev):   # 일반 마법(2026-10-08): 자신 턴에만. 이 턴 대미지를 줄 수 없게 되므로 공격할 수 있는 턴에는 손해를 뺀다
         n = sum(1 for x in g.spells(1 - p) if x.d.get('subtype') == '지속' and x.faceup and not g.immune(x, p))
         return 25 * n - (25 if g.can_declare_attack(p) and any(m.faceup and m.pos == 'atk' for m in g.monsters(p)) else 0) if n else 0
@@ -85,7 +87,7 @@ def _(c):
     def res(g, c, p, l):
         idx = g.chain.index(l) if l in g.chain else len(g.chain)
         for x in g.chain[:idx]:
-            if x.player == 1 - p and x.ctx.get('from_zone') == 'grave' and not x.negated: g.negate(x)
+            if x.ctx.get('from_zone') == 'grave' and not x.negated: g.negate(x)   # 「전부」 — 자신 것 포함 (재정: 이 체인 안)
     c.effects = [Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=cond, res=res, score=lambda *a: 60, threat=800)]
 
 @card('사기 감지')
