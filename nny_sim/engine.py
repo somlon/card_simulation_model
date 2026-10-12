@@ -1003,7 +1003,11 @@ class Game:
         for x in self.p:
             for c in list(x.banish):
                 if c.flags.get('return_from_banish') == self.turn:
-                    c.flags.pop('return_from_banish'); self.L(f'{c} 제외에서 복귀', 'sys')
+                    c.flags.pop('return_from_banish')
+                    if not self.free_m(c.owner) and self.shared is not None:
+                        # 돌아갈 몬스터 존 · 공유 존이 없으면 묘지로 (ASSUME — 재정 질문). 예전에는 어느 존에도 없는 카드가 되어 사라졌다
+                        self.L(f'{c} 제외에서 복귀할 자리 없음 — 묘지로', 'sys'); self.send_grave(c, ('rule', None)); continue
+                    self.L(f'{c} 제외에서 복귀', 'sys')
                     x.banish.remove(c); c.zone = None; self.place_monster(c, c.owner)
         self.events = []   # b · c 처리 중 생긴 사건은 발동 기회 없이 소멸
         self.turn_player = 1 - tp

@@ -267,5 +267,25 @@ class SeriAndDeckTest(unittest.TestCase):
         self.assertNotIn('퇴마의 부적', M.swap_outs(act, '저주 - 재앙'))
 
 
+class BanishReturn(unittest.TestCase):
+    """월영침식 코스트로 「턴 종료 시까지 제외」된 시엘이 턴 종료 시 돌아올 자리 (F19)"""
+    def _banished_ciel(self, g):
+        c = card(g, '솔루나 시엘', 0, 'banish'); c.flags['return_from_banish'] = g.turn + 1   # play_turn이 턴을 1 올린다
+        return c
+
+    def test_returns_to_free_zone(self):
+        g = make('솔루나 아츠', '세제'); c = self._banished_ciel(g)
+        g.play_turn()
+        self.assertIn(c.zone, ('m', 'shared')); self.assertNotIn(c, g.p[0].banish)
+
+    def test_no_zone_left_goes_to_grave(self):
+        g = make('솔루나 아츠', '세제'); c = self._banished_ciel(g)
+        for _ in range(5): on_field(g, '솔루나 시아', 0)
+        s = card(g, '솔루나 시아', 1, None); g.place_monster(s, 1)   # 상대가 공유 존까지 채운 상태
+        if s.zone != 'shared': g._remove(s); g.shared = s; s.zone = 'shared'; s.controller = 1
+        g.play_turn()
+        self.assertEqual(c.zone, 'grave'); self.assertIn(c, g.p[0].grave); self.assertNotIn(c, g.p[0].banish)
+
+
 if __name__ == '__main__':
     unittest.main()
