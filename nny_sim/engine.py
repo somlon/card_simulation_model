@@ -224,8 +224,12 @@ class Game:
         """「공격할 수 없다」: flags['no_attack'](callable 가능) · flags['no_attack_until'](그 턴까지)"""
         return bool(self.flag(m, 'no_attack')) or m.flags.get('no_attack_until', -1) >= self.turn
 
-    def battle_damage(self, p, amt, src):
-        """p가 받는 전투 대미지. [지속] 규칙 'half_battle_damage'(p): 「자신이 받는 전투 대미지는 절반이 된다」 (호박옥 - 봉인의 계약 3번, 1의 자리 버림)"""
+    def battle_damage(self, p, amt, src, pair=None):
+        """p가 받는 전투 대미지. [지속] 규칙 'half_battle_damage'(p): 「자신이 받는 전투 대미지는 절반이 된다」 (호박옥 - 봉인의 계약 3번, 1의 자리 버림)
+        pair: 몬스터끼리의 전투면 (공격 몬스터, 공격 대상). [지속] 규칙 'no_battle_damage'(p, a, t): 그 전투로 p가 받는 대미지는 0
+        (「이 카드가 몬스터와 전투할 때, 상대 플레이어에게 가하는 대미지는 0」 — 던전마스터 데스 칠 드래곤, 2026-10-12 추가 — 규칙이 없으면 그대로)"""
+        if amt > 0 and pair is not None and self.rule('no_battle_damage', p, *pair):
+            self.L(f'{self.pname(p)}이(가) 받는 전투 대미지 0: {amt} → 0', 'sys'); return
         if amt > 0 and self.rule('half_battle_damage', p):
             self.L(f'{self.pname(p)}이(가) 받는 전투 대미지 절반: {amt} → {amt // 2}', 'sys'); amt //= 2
         self.damage(p, amt, src)
@@ -334,15 +338,16 @@ class Game:
         if self.blocked(c, cause): return
         if self.stays(c, cause, destroyed): return
         prev = c.zone; ctrl = c.controller
+        fu = c.faceup   # 사건 키 was_faceup: 묘지로 보내지기 직전 앞면이었는가 (「뒷면 표시의 이 카드가 묘지로 보내졌을 경우」 — 던전마스터 깜짝상자, 2026-10-12 추가)
         redirect = getattr(c, 'grave_redirect', None)
         was_field = self._remove(c)
         if redirect and redirect(self, c):
             self.L(f'{c} 묘지 대신 덱으로 (카드 효과)', 'sys'); self._to_deck_raw(c)
-            if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='deck')
+            if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='deck', was_faceup=fu)
             return
         c.controller = c.owner; c.zone = 'grave'; c.faceup = True; self.p[c.owner].grave.append(c)
-        self.emit('to_grave', card=c, prev=prev, ctrl=ctrl, cause=cause, destroyed=destroyed, battle=from_battle, released=released)
-        if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='grave', released=released)
+        self.emit('to_grave', card=c, prev=prev, ctrl=ctrl, cause=cause, destroyed=destroyed, battle=from_battle, released=released, was_faceup=fu)
+        if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='grave', released=released, was_faceup=fu)
 
     def destroy(self, c, cause=None, battle=False):
         cause = cause or ('effect', self.src)
@@ -538,6 +543,10 @@ class Game:
         if amt <= 0: return
         if getattr(self, 'no_damage', {}).get(1 - p, -1) >= self.turn and src != '공유 존 마커' and not src.startswith('자해'):
             self.L(f'{self.pname(1-p)}은(는) 이 턴 대미지를 줄 수 없음 — {amt} 무효', 'sys'); return
+        # [지속] 규칙 'no_effect_damage'(p, src): 「자신은 상대의 효과를 받지 않는다」 — 상대의 효과 대미지를 받지 않는다
+        # (데이터버그 버터플라이 2번, 2026-10-12 추가 — 출처 판정은 규칙 쪽. 규칙이 없으면 그대로)
+        if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src):
+            self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
         self.L(f'{self.pname(p)} {amt} 대미지 ({src}) → HP {self.p[p].hp}')
         self.emit('damage', player=p, amount=amt)
@@ -667,8 +676,11 @@ class Game:
         z = c.zone
         if z == 'hand' and 'hand' not in e.zones: return False
         if z in ('m', 's', 'shared', 'fieldz'):
-            if 'field' not in e.zones or c.controller != p: return False
-            if not c.faceup and not (c.is_spell_like() and e.spell_act): return False
+            # e.owner_only: 「이 효과의 발동은, 원래 주인인 플레이어만 선언할 수 있다」 — 컨트롤러 대신 원래 주인 (던전마스터 깜짝상자, 2026-10-12 추가 — 표시가 없는 효과는 그대로)
+            who = c.owner if getattr(e, 'owner_only', False) else c.controller
+            if 'field' not in e.zones or who != p: return False
+            # e.facedown_ok: 「뒷면 표시일 때만 발동할 수 있다」 뒷면 몬스터의 효과 (던전마스터 깜짝상자 — 표시가 없는 효과는 그대로)
+            if not c.faceup and not (c.is_spell_like() and e.spell_act) and not getattr(e, 'facedown_ok', False): return False
             if self.is_neg(c): return False
         if z == 'grave' and 'grave' not in e.zones: return False
         if z == 'skill' and c.controller != p: return False
@@ -712,7 +724,8 @@ class Game:
     def legal(self, p, c, e, ev=None):
         if c.type == '마법' and c.d.get('subtype') == '트리거' and e.spell_act and self.rule('no_trigger_spell', p): return False
         lim = self.act_limit.get(p)
-        if lim and lim[0] == self.turn and self.act_count.get((p, self.turn), 0) >= lim[1]: return False   # 비비안: 발동 횟수 제한
+        if lim and lim[0] == self.turn and self.act_count.get((p, self.turn), 0) >= lim[1] \
+           and not getattr(e, 'procedure', False): return False   # 비비안: 발동 횟수 제한 (소환 절차 e.procedure는 발동이 아님)
         # 발동 조건은 「그 카드가 효과의 주체」인 상태로 판정한다 — 처리 때와 같은 규칙(같은 이름 서치 · 특수소환 금지 등)으로
         # 후보가 있는지 보아, 규칙상 처리할 수 없는 발동을 미리 막는다
         prev = (self.src, getattr(self, 'src_eff', None)); self.src, self.src_eff = c, e
@@ -745,15 +758,20 @@ class Game:
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)
             return None
         for k in link.ctx['opt_keys']: self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
-        self.act_count[(p, self.turn)] = self.act_count.get((p, self.turn), 0) + 1
+        # e.procedure: 소환 절차(「…해야만 패에서 특수소환할 수 있다」 — 데이터버그 더 바이러스 · 더 딜리트, 2026-10-12 추가)는 효과의 발동이 아니다 —
+        # 발동 횟수 · 발동 사건을 남기지 않는다 (no_resp · unnegatable과 함께 쓴다). 표시가 없는 효과는 그대로
+        proc = getattr(e, 'procedure', False)
+        if not proc: self.act_count[(p, self.turn)] = self.act_count.get((p, self.turn), 0) + 1
         self.chain.append(link)
-        self.emit('activate', link=link, player=p)
+        if not proc: self.emit('activate', link=link, player=p)
         return link
 
     def options(self, p, kinds, ev=None):
         out = []
         pl = self.p[p]
         cards = list(pl.hand) + self.field_cards(p) + list(pl.grave) + ([pl.skill] if pl.skill else [])
+        # 상대 필드에 있는 자신 소유 카드의 「원래 주인만 선언할 수 있다」 효과 (e.owner_only — 던전마스터 깜짝상자, 2026-10-12 추가)
+        cards += [x for x in self.field_cards(1 - p) if x.owner == p and any(getattr(e, 'owner_only', False) for e in x.effects)]
         for c in cards:
             for e in c.effects:
                 if e.kind in kinds and self.legal(p, c, e, ev): out.append((c, e))
@@ -923,10 +941,10 @@ class Game:
             if target.pos == 'atk':
                 tv = self.atk(target)
                 if av > tv:
-                    dt = self.destroy(target, ('battle', a), battle=True); self.battle_damage(o, av - tv, '전투')
+                    dt = self.destroy(target, ('battle', a), battle=True); self.battle_damage(o, av - tv, '전투', pair=(a, target))
                     if dt: self.emit('battle_win', card=a, target=target, player=p)
                 elif av < tv:
-                    da = self.destroy(a, ('battle', target), battle=True); self.battle_damage(p, tv - av, '전투')   # [유희왕] 기준선
+                    da = self.destroy(a, ('battle', target), battle=True); self.battle_damage(p, tv - av, '전투', pair=(a, target))   # [유희왕] 기준선
                     if da: self.emit('battle_win', card=target, target=a, player=o)
                 else:
                     da = self.destroy(a, ('battle', target), battle=True); dt = self.destroy(target, ('battle', a), battle=True)
@@ -936,7 +954,7 @@ class Game:
                 tv = self.df(target)
                 if av > tv:   # 수비 표시를 넘어도 HP 피해 없음 (정본 3-3)
                     if self.destroy(target, ('battle', a), battle=True): self.emit('battle_win', card=a, target=target, player=p)
-                elif av < tv: self.battle_damage(p, tv - av, '전투(수비 반사)')   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
+                elif av < tv: self.battle_damage(p, tv - av, '전투(수비 반사)', pair=(a, target))   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
         self.triggers()
         if self.chain: self.resolve_chain()
 
