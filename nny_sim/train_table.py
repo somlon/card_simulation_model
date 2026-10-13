@@ -265,6 +265,13 @@ def save_last_logs(out, it, lastlog):
     os.replace(tmp, os.path.join(out, 'last_logs.json.gz'))
 
 
+def empty_table():
+    """빈 판단표 — LearnedAI가 휴리스틱 점수(사전값)만으로 고른다"""
+    import policy as P
+    t = P.Table.__new__(P.Table); t.path = None; t.source = 'empty'; t.L0 = {}; t.L1 = {}; t.L2 = {}; t.games = 0
+    return t
+
+
 def side_table(path):
     import policy as P
     t = P.Table.load(path)
@@ -286,6 +293,7 @@ def main(argv=None):
     ap.add_argument('--eval-every', type=int, default=5)
     ap.add_argument('--eval-matches', type=int, default=100)
     ap.add_argument('--h2h-matches', type=int, default=50)
+    ap.add_argument('--h2h-empty', type=int, default=10, help='평가마다 빈 표(휴리스틱 사전값 AI) 대비 맞대결 — 순서쌍당 시드 수(0이면 안 함). 기록용, 수렴 판정에는 쓰지 않음')
     ap.add_argument('--patience', type=int, default=2)
     ap.add_argument('--min-iters', type=int, default=15)
     ap.add_argument('--time-limit', type=float, default=1e18)
@@ -351,6 +359,9 @@ def main(argv=None):
         if prev is not None:
             _G['cur'] = (T, S); _G['prev'] = prev
             ev['h2h'] = h2h(names, a.h2h_matches, a.workers, a.seed + it)
+        if a.h2h_empty:   # 빈 표에서 시작한 재학습이 학습 전(휴리스틱 사전값)보다 나은지 기록 (2026-10-13)
+            _G['cur'] = (T, S); _G['prev'] = (empty_table(), empty_table())
+            ev['h2h_empty'] = h2h(names, a.h2h_empty, a.workers, a.seed + 7919 + it)
         prev = (clone(T), clone(S))
         calm_a = 'chi2' in ev and ev['chi2']['p'] is not None and ev['chi2']['p'] > 0.05
         calm_b = 'h2h' in ev and (ev['h2h']['rate'] - ev['h2h']['ci95']) < 50.0
@@ -362,6 +373,7 @@ def main(argv=None):
         msg = f'[평가 {it}] {rates}'
         if 'chi2' in ev: msg += f' | Δ χ²={ev["chi2"]["stat"]} p={ev["chi2"]["p"]:.3f} 최대Δ {ev["chi2"]["max_delta_pp"]}pp'
         if 'h2h' in ev: msg += f' | 직전 표 대비 {ev["h2h"]["rate"]}% ± {ev["h2h"]["ci95"]}'
+        if 'h2h_empty' in ev: msg += f' | 빈 표 대비 {ev["h2h_empty"]["rate"]}% ± {ev["h2h_empty"]["ci95"]}'
         msg += f' | 안정 {state["calm"]}/{a.patience} ({ev["sec"]}s)'
         print(msg, flush=True)
         if it >= a.min_iters and state['calm'] >= a.patience:
