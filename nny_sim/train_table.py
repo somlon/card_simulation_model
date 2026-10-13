@@ -272,6 +272,7 @@ def main(argv=None):
     ap.add_argument('--patience', type=int, default=2)
     ap.add_argument('--min-iters', type=int, default=15)
     ap.add_argument('--time-limit', type=float, default=1e18)
+    ap.add_argument('--ckpt-every', type=int, default=1, help='반복 N회마다 체크포인트 저장 (평가 반복은 항상 저장). 0이면 평가 · 시간 한도 때만')
     ap.add_argument('--seed', type=int, default=20261006)
     ap.add_argument('--no-recipe', action='store_true', help='시즌마다 레시피 학습을 하지 않는다')
     ap.add_argument('--recipe-n', default='2,8,40', help='레시피 학습 단계별 상대당 매치 쌍 수(짧게,길게,최종)')
@@ -409,6 +410,8 @@ def main(argv=None):
             evaluate(it); save_ckpt(a.out, T, S, state, prev)
             if not a.no_recipe and not state['converged']:
                 recipe_stage(it); save_ckpt(a.out, T, S, state, prev)
+        elif a.ckpt_every and it % a.ckpt_every == 0:
+            save_ckpt(a.out, T, S, state, prev)   # 컨테이너가 중간에 회수돼도 같은 --out으로 이어서 (2026-10-13)
         if time.time() - t_start > a.time_limit:
             save_ckpt(a.out, T, S, state, prev); print('시간 한도 — 저장하고 멈춤', flush=True); return
     save_ckpt(a.out, T, S, state, prev)
