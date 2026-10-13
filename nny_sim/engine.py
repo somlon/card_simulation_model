@@ -990,7 +990,8 @@ class Game:
         tp = self.turn_player; pl = self.p[tp]
         for x in self.p: x.opt = {}
         pl.normal_summons = 1
-        for c in self.monsters(0) + self.monsters(1): c.attacks_made = 0; c.extra_attacks = 0
+        for c in self.monsters(0) + self.monsters(1):   # 영구 부여된 추가 공격(격투가 세레모니 재정, flags['perm_extra_attacks'])은 매 턴 다시 붙는다
+            c.attacks_made = 0; c.extra_attacks = c.flags.get('perm_extra_attacks', 0)
         self.snaps.append(dict(turn=self.turn, tp=tp, hp=[x.hp for x in self.p],
             field=[len(self.field_cards(i)) for i in (0, 1)], mons=[len(self.monsters(i)) for i in (0, 1)],
             hand=[len(x.hand) for x in self.p], grave=[len(x.grave) for x in self.p],
