@@ -177,10 +177,30 @@ class SpellTest(unittest.TestCase):
         g.act(0, en, eff(en, 1))
         self.assertEqual(x.zone, 'm'); self.assertEqual(x.flags.get('immune_opp_until'), g.turn)
 
-    def test_entry_adds_to_hand_when_field_occupied(self):
-        g = make(); mon(g, RABBIT, 0); x = put(g, TIGER, 0, 'upper')
+    def test_entry_adds_to_hand_when_summon_useless(self):
+        g = make(); mon(g, RABBIT, 0); x = put(g, TIGER, 0, 'upper'); g.phase = '종료'   # 자신 턴 종료 단계 · 필드에 몬스터 있음
         en = put(g, ENTRY, 0, 'hand'); g.act(0, en, eff(en, 1))
         self.assertEqual(x.zone, 'hand')
+
+    def test_entry_summons_beside_existing_monster_before_battle(self):
+        g = make(); mon(g, RABBIT, 0); x = put(g, ELEPH, 0, 'upper')
+        en = put(g, ENTRY, 0, 'hand'); g.act(0, en, eff(en, 1))
+        self.assertEqual(x.zone, 'm')   # 「패에 넣거나 특수소환」 — 필드 조건 없음 (검토 F1)
+
+    def test_two_targeting_battle_effects_pick_different_cards(self):
+        g = make(ai=Yes)
+        r = mon(g, RHINO, 0); r.flags['ceremony'] = 1; r.effects.append(F.cer_effect(1))
+        o = mon(g, '솔루나 시아', 1); a = mon(g, '솔루나 시엘', 1); b = spell(g, '태양과 달의 마력', 1, False)
+        win(g, r, o); run(g)
+        self.assertEqual(sum(1 for x in (a, b) if x.zone == 'grave'), 2)   # 라이노 2번 · 부여 [전투]가 서로 다른 카드 (검토 F2)
+
+    def test_revive_not_activated_without_zone(self):
+        g = make(ai=Yes)
+        t = mon(g, TIGER, 0)
+        for _ in range(4): mon(g, RABBIT, 0)
+        g.shared = Card(Impl.pool[RABBIT], 1); Impl.attach(g.shared); g.shared.zone = 'shared'; g.shared.controller = 1
+        g.destroy(t); mon(g, RABBIT, 0); run(g)   # 빈 자리를 다시 채운 뒤
+        self.assertEqual(t.zone, 'grave'); self.assertFalse(g.p[0].opt.get((TIGER, 3)))
 
     def test_entry_2_banish_search_on_fighter_destroyed(self):
         g = make(ai=Yes)
@@ -232,13 +252,28 @@ class SkillTest(unittest.TestCase):
         g.act(0, sk, eff(sk, 2))
         self.assertEqual(len(g.p[0].hand), 1)
 
-    def test_rule_3_cycle(self):
+    def test_rule_3_cycles_only_extra_copies(self):
         g = make()
         sk = g.p[0].skill
-        dead = put(g, COUNTER, 0, 'hand')
-        if g.p[0].ai.card_pri(g, 0, dead) > 0: self.skipTest('AI가 버릴 카드로 보지 않음')
-        g.act(0, sk, eff(sk, 3))
-        self.assertEqual(len(g.p[0].hand), 1); self.assertEqual(dead.zone, 'main')
+        one = put(g, COUNTER, 0, 'hand')
+        self.assertFalse(g.legal(0, sk, eff(sk, 3)))   # 1장뿐이면 되돌리지 않는다 (검토 F3)
+        two = put(g, COUNTER, 0, 'hand'); three = put(g, COUNTER, 0, 'hand')
+        if not g.legal(0, sk, eff(sk, 3)): self.skipTest('AI가 여분을 버릴 카드로 보지 않음')
+        n0 = len(g.log); g.act(0, sk, eff(sk, 3))
+        self.assertTrue(any('2장 덱으로' in e['m'] for e in g.log[n0:]))   # 3장 중 여분 2장만 (1장은 남김) — 같은 수 드로우
+        self.assertEqual(len(g.p[0].hand), 3)
+
+    def test_rule_2_searches_a_different_name(self):
+        g = make()
+        sk = g.p[0].skill; a = put(g, COUNTER, 0, 'hand'); x = put(g, LION, 0, 'upper')
+        g.act(0, sk, eff(sk, 2))
+        self.assertEqual([c.name for c in g.p[0].hand], [LION])   # 되돌린 반격이 아닌 다른 카드 (검토 F4)
+
+    def test_destroyed_event_carries_previous_zone_and_controller(self):
+        g = make()
+        o = mon(g, '솔루나 시아', 1); g.events = []; g.destroy(o)
+        ev = next(e for e in g.events if e['kind'] == 'destroyed')
+        self.assertEqual((ev['prev'], ev['ctrl']), ('m', 1))
 
 
 if __name__ == '__main__':

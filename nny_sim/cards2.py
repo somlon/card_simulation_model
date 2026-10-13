@@ -1,6 +1,6 @@
 """카드 구현 2차: 공용 8종 · 격투가 11종 (격투가는 2026-10-08 카드 자료로 갱신 — 아래 격투가 절 머리말).
 번성충 기생 축 6종은 사용자 지시(2026-10-13)로 카드 풀에서 삭제되어 구현도 지움 (git 기록에 남아 있음)."""
-from engine import Effect
+from engine import Effect, link_targets
 from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO
 
 
@@ -126,7 +126,12 @@ def _(c):
 #    매 턴 공격 횟수 +1(부여한 턴 포함) · 부여 [전투](효과 번호 30+k, k번째 부여분마다 1턴 1번). 필드를 벗어나면 사라진다.
 #    부여 [전투] 「필드의 카드 1장을 대상으로」: 상대 카드 우선, 상대 카드가 없으면 1000 대미지로 결착할 때만 자신 카드를 대상으로 쓴다.
 #  - 격투가의 투기장 3번 「상대 필드의 몬스터가 파괴되었을 경우」: 파괴 직전 상대가 컨트롤하던 몬스터(to_grave 사건의 ctrl).
-#  - 투기장의 규칙 2번: 되돌리기 · 서치 모두 처리(코스트 아님). 되돌린 카드도 서치 후보. 3번(종류 표기 없음)은 기동 효과(1턴 1번, 기존 ASSUME).
+#  - 투기장의 규칙 2번: 되돌리기 · 서치 모두 처리(코스트 아님). AI는 되돌린 카드와 다른 이름을 서치(없으면 같은 이름도 가능).
+#    3번(종류 표기 없음)은 기동 효과(1턴 1번, 기존 ASSUME) — AI는 같은 이름이 2장 이상인 카드의 여분(1장은 남김) 중 버릴 만한 것만 되돌린다.
+#  - 격투가 반격 「필드에 「격투가」 카드가 존재할 때」 = 서로의 필드의 앞면 「격투가」 카드(세트된 카드는 세지 않음, 이 카드 자신 제외).
+#  - 격투가 입장 1번 「패에 넣거나 특수소환한다」: AI는 자신 필드가 비었거나 이 턴 공격할 수 있을 때(자신 턴) · 상대 턴이면 특수소환.
+#  - 한 번의 전투로 대상 지정 효과가 여럿 발동하면(라이노 혼 2번 · 세레모니 부여분) 체인 위 자신의 다른 발동이 고른 카드는 되도록 피한다.
+#  - 투기장 1번(수비 표시 금지)은 투기장 컨트롤러의 효과를 받지 않는 몬스터에는 적용하지 않는다.
 def no_own_mon(g, p): return not g.monsters(p)
 FGTR = lambda x: x.has('격투가')
 FGTR_MON = lambda x: x.has('격투가') and x.type == '몬스터'
@@ -144,11 +149,16 @@ def lastwill(res, score=70):
 
 def opp_t(g, p): return targets(g, p, opp_cards(g, p))
 
+def taken_on_chain(g, p):
+    """체인 위 p의 발동이 이미 대상으로 고른 카드 — 한 번의 전투로 대상 지정 효과가 여럿 발동할 때 같은 카드를 고르지 않게"""
+    return {id(x) for lk in g.chain if lk.player == p for x in link_targets(lk)}
+
 def pick_opp_target(g, c, p, l, why=''):
     """「상대 필드의 카드 1장을 대상으로 하고 발동」: 발동 시(코스트 단계) 고른다. 고를 카드가 없으면 발동 취소"""
     ts = opp_t(g, p)
     if not ts: return False
-    l.ctx['t'] = best(g, ts, p); g.L(f'{why}대상: {l.ctx["t"]}')
+    tk = taken_on_chain(g, p)
+    l.ctx['t'] = best(g, [x for x in ts if id(x) not in tk] or ts, p); g.L(f'{why}대상: {l.ctx["t"]}')
 
 def destroy_target(g, p, l):
     t = l.ctx.get('t')
@@ -210,7 +220,7 @@ def extra_attack(g, c):
     if g.on_field(c): c.extra_attacks += 1; g.L(f'{c} 1회 더 공격 가능')
 
 def self_revive():
-    e = lastwill(lambda g, c, p, l: c.zone == 'grave' and g.special_summon(c, p)); e.num = 3; return e
+    e = need(lastwill(lambda g, c, p, l: c.zone == 'grave' and g.special_summon(c, p)), lambda g, c, p, ev: g.can_special(c, p)); e.num = 3; return e
 
 @card('격투가 타이거팽')
 def _(c):
@@ -239,19 +249,25 @@ CER_BASE = 30   # 세레모니 부여 [전투]의 효과 번호: 31, 32, … (k�
 def cer_effect(k):
     """세레모니 k번째 부여 [전투]: 필드의 카드 1장을 대상으로 하고 발동 → 상대에게 1000 대미지, 그 카드를 파괴"""
     def pool(g, p): return targets(g, p, g.all_field())
+    def opp_pool(g, p):
+        """대상으로 고를 수 있는 상대 카드 — 「상대 효과의 대상이 되지 않는다」를 반영(발동 판정과 같은 엄격한 관점, Game.probing)"""
+        prev = getattr(g, 'probing', None); g.probing = p
+        try: return [x for x in pool(g, p) if x.controller != p]
+        finally: g.probing = prev
     def cond(g, c, p, ev): return c.flags.get('ceremony', 0) >= k and bool(pool(g, p))
     def cost(g, c, p, l):
         ts = pool(g, p)
         if not ts: return False
+        tk = taken_on_chain(g, p)
         opp = [x for x in ts if x.controller != p]
-        l.ctx['t'] = best(g, opp, p) if opp else field_pick(g, p, pool=ts); g.L(f'대상: {l.ctx["t"]}')
+        if not opp and g.p[1 - p].hp > 1000: return False   # 자신 카드를 파괴하게 되는데 결착도 아니면 쓰지 않는다 (점수가 이미 막음 — 안전장치)
+        l.ctx['t'] = best(g, [x for x in opp if id(x) not in tk] or opp, p) if opp else field_pick(g, p, pool=ts); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
         g.damage(1 - p, 1000, f'{c.name} (세레모니 부여 [전투])')
         t = l.ctx.get('t')
         if t is not None and g.on_field(t): g.destroy(t)
     def sc(g, c, p, ev):
-        ts = pool(g, p)
-        if any(x.controller != p for x in ts): return 90
+        if opp_pool(g, p): return 90
         return 1000 if g.p[1 - p].hp <= 1000 else VETO   # 자신 카드를 파괴하게 되면 결착일 때만
     return battle(res, sc, num=CER_BASE + k, cond=cond, cost=cost, label=f'[전투] (세레모니 부여 {k}) 1000 대미지 + 대상 파괴')
 
@@ -261,7 +277,7 @@ def _(c):
     def cost(g, c, p, l):
         ms = mons(g, c, p)
         if not ms: return False
-        bat = l.ctx['ev']['card'] if isinstance(l.ctx.get('ev'), dict) else None
+        bat = l.ctx['ev']['card'] if isinstance(l.ctx.get('ev'), dict) else None   # 전투한 몬스터를 먼저
         l.ctx['t'] = bat if bat in ms else max(ms, key=lambda m: (g.atk(m), value(g, m))); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
         m = l.ctx.get('t')
@@ -284,7 +300,8 @@ def _(c):
         cands = [x for x in g.deck_cards(p) if FGTR_MON(x)]
         if not cands: return
         x = g.p[p].ai.pick_search(g, p, cands, '입장')
-        if no_own_mon(g, p) and g.can_special(x, p) and main_ok(g, p) or (not own_turn(g, p) and no_own_mon(g, p) and g.can_special(x, p)):
+        useful = no_own_mon(g, p) or (own_turn(g, p) and g.can_declare_attack(p)) or not own_turn(g, p)   # 빈 필드 · 이 턴 공격 · 상대 턴 벽
+        if useful and g.can_special(x, p):
             if g.special_summon(x, p): x.flags['immune_opp_until'] = g.turn; g.L(f'{x} 이 턴 상대의 효과를 받지 않음')
         else: g.to_hand(x); g.L(f'{x} 패에 넣음')
         g.shuffle(p)
@@ -308,7 +325,8 @@ def _(c):
                'no_defense': lambda g, src, pl: pl == 1 - src.controller}
     def state(g, src):   # 이미 수비 표시인 상대 몬스터는 공격 표시가 된다 (ASSUME: 「존재할 수 없다」 = 공격 표시로 전환)
         for m in g.monsters(1 - src.controller):
-            if m.faceup and m.pos == 'def': m.pos = 'atk'; g.L(f'{m} 수비 표시로 존재할 수 없음 → 공격 표시 (격투가의 투기장)', 'sys')
+            if m.faceup and m.pos == 'def' and not g.immune(m, src.controller, src):
+                m.pos = 'atk'; g.L(f'{m} 수비 표시로 존재할 수 없음 → 공격 표시 (격투가의 투기장)', 'sys')
     c.state_check = state
     def res2(g, c, p, l):
         cands = [x for x in g.deck_cards(p) if FGTR_MON(x)]
@@ -317,8 +335,8 @@ def _(c):
         if g.can_special(x, p) and no_own_mon(g, p): g.special_summon(x, p)
         else: g.to_hand(x)
         g.shuffle(p)
-    def cond3(g, c, p, ev):   # 「상대 필드의 몬스터가 파괴되었을 경우」: 파괴 직전 상대가 컨트롤하던 몬스터 존(공유 존 포함)의 몬스터
-        return ev_is(ev, 'to_grave') and ev.get('destroyed') and ev.get('ctrl') == 1 - p and ev.get('prev') in ('m', 'shared') and g.can_search(p, FGTR)
+    def cond3(g, c, p, ev):   # 「상대 필드의 몬스터가 파괴되었을 경우」: 파괴 직전 상대가 컨트롤하던 몬스터 존(공유 존 포함)의 몬스터 (묘지 대신 덱으로 가도)
+        return ev_is(ev, 'destroyed') and ev.get('ctrl') == 1 - p and ev.get('prev') in ('m', 'shared') and g.can_search(p, FGTR)
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.name == c.name and g.fieldz.controller == p) else 60, threat=700),
         Effect(2, 'quick', ('field',), cond=lambda g, c, p, ev: no_own_mon(g, p) and any(FGTR_MON(x) for x in g.deck_cards(p)), res=res2,
@@ -328,13 +346,29 @@ def _(c):
 @card('투기장의 규칙')
 def _(c):
     def deck_n(g, p): return len(g.p[p].main) + len(g.p[p].upper)
-    def res2(g, c, p, l):
+    def pri(g, p, x): return g.p[p].ai.card_pri(g, p, x)
+    def ret2(g, p):
         hs = [x for x in g.p[p].hand if FGTR(x)]
-        if hs:
-            x = min(hs, key=lambda x: g.p[p].ai.card_pri(g, p, x)); g.L(f'{x} 덱으로'); g.to_deck(x); g.shuffle(p)
-        search(g, p, FGTR, '투기장의 규칙 2번')
+        return min(hs, key=lambda x: pri(g, p, x)) if hs else None
+    def res2(g, c, p, l):
+        x = ret2(g, p)
+        if x is not None: g.L(f'{x} 덱으로'); g.to_deck(x); g.shuffle(p)
+        other = lambda y: FGTR(y) and (x is None or y.name != x.name)   # 되돌린 카드와 다른 이름 우선 (없으면 같은 이름도)
+        search(g, p, other if g.can_search(p, other) else FGTR, '투기장의 규칙 2번')
+    def sc2(g, c, p, ev):
+        if not main_ok(g, p): return 0
+        x = ret2(g, p)
+        if x is None: return 0
+        better = [y for y in g.deck_cards(p) if FGTR(y) and y.name != x.name and pri(g, p, y) > pri(g, p, x)]
+        return 30 if better else 0
+    def extras(g, p):
+        """3번: 같은 이름이 2장 이상인 「격투가」 카드의 여분(1장은 남김) 중 버릴 만한(AI 우선도 ≤ 0) 카드"""
+        by = {}
+        for x in g.p[p].hand:
+            if FGTR(x): by.setdefault(x.name, []).append(x)
+        return [x for xs in by.values() if len(xs) >= 2 for x in xs[1:] if pri(g, p, x) <= 0]
     def res3(g, c, p, l):
-        xs = [x for x in g.p[p].hand if FGTR(x) and g.p[p].ai.card_pri(g, p, x) <= 0]
+        xs = extras(g, p)
         for x in xs: g.to_deck(x)
         g.shuffle(p)
         if xs: g.L(f'{len(xs)}장 덱으로 → 같은 수 드로우'); g.draw(p, len(xs))
@@ -342,6 +376,6 @@ def _(c):
         Effect(1, 'battle', ('skill',), cond=lambda g, c, p, ev: ev_is(ev, 'battle_win') and ev['player'] == p,
                res=lambda g, c, p, l: g.draw(p, 1), score=lambda g, c, p, ev: 60 if deck_n(g, p) >= 4 else VETO, threat=200, label='[전투] 1장 드로우'),
         Effect(2, 'quick', ('skill',), cond=lambda g, c, p, ev: any(FGTR(x) for x in g.p[p].hand) and g.can_search(p, FGTR),
-               res=res2, score=lambda g, c, p, ev: 30 if main_ok(g, p) else 0, threat=200, label='패의 「격투가」 1장 덱으로 → 「격투가」 서치'),
-        Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and any(FGTR(x) and g.p[p].ai.card_pri(g, p, x) <= 0 for x in g.p[p].hand),
+               res=res2, score=sc2, threat=200, label='패의 「격투가」 1장 덱으로 → 「격투가」 서치'),
+        Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and bool(extras(g, p)) and deck_n(g, p) >= len(extras(g, p)),
                res=res3, score=lambda *a: 20, threat=100, label='패 순환 (ASSUME: 기동 · 1턴 1번)')]

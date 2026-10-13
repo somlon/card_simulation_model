@@ -364,8 +364,9 @@ class Game:
         if battle and c.flags.get('battle_indestr_until', -1) >= self.turn and self.on_field(c):   # 「(그 턴까지) 전투로는 파괴되지 않는다」 (임시 봉인)
             self.L(f'{c} 전투로 파괴되지 않음', 'sys'); return False
         self.L(f'{c} 파괴' + (' (전투)' if battle else ''))
+        prev, ctrl = c.zone, c.controller   # destroyed 사건에 파괴 직전 위치 · 컨트롤러 (묘지 대신 덱으로 가는 카드도 — 격투가의 투기장 3번, 2026-10-13 추가)
         self.send_grave(c, cause, destroyed=True, from_battle=battle)
-        self.emit('destroyed', card=c, cause=cause, battle=battle)
+        self.emit('destroyed', card=c, cause=cause, battle=battle, prev=prev, ctrl=ctrl)
         return True
 
     def _to_deck_raw(self, c):
