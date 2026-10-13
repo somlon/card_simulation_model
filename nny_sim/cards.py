@@ -150,10 +150,12 @@ def _(c):
     bsc_common(c)
     def cands(g, p): return [m for m in g.monsters(1 - p) if not g.immune(m, p)]
     def cost(g, c, p, l):
-        l.ctx['t'] = best(g, cands(g, p), p, 'steal'); g.L(f'대상: {l.ctx["t"]}')
+        cs = cands(g, p)
+        if not cs: return False
+        l.ctx['t'] = best(g, cs, p, 'steal'); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
-        t = l.ctx['t']
-        if c.zone != 'hand' or not g.special_summon(c, p): return
+        t = l.ctx.get('t')
+        if t is None or c.zone != 'hand' or not g.special_summon(c, p): return
         if not (g.on_field(t) and t.controller == 1 - p and g.free_s(p)) or g.blocked(t, ('effect', c)): return
         g._remove(t); g.place_spell(t, p, True); t.flags['as_spell'] = True
         t.equip_to = c; c.equips.append(t); g.L(f'{t}을(를) {c}에 장착 카드로 장착')

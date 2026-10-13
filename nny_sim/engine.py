@@ -190,7 +190,7 @@ class Game:
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
         if self.on_field(c) and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
-            if self.flag(c, 'untargetable_opp') and self.targeting_now(by): return True        # 「상대 효과의 대상이 되지 않는다」
+            if self.flag(c, 'untargetable_opp') and (self.targeting_now(by) or getattr(self, 'probing', None) == by): return True   # 「상대 효과의 대상이 되지 않는다」
             if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
@@ -737,10 +737,16 @@ class Game:
         # 발동 조건은 「그 카드가 효과의 주체」인 상태로 판정한다 — 처리 때와 같은 규칙(같은 이름 서치 · 특수소환 금지 등)으로
         # 후보가 있는지 보아, 규칙상 처리할 수 없는 발동을 미리 막는다
         prev = (self.src, getattr(self, 'src_eff', None)); self.src, self.src_eff = c, e
+        # 코스트가 있는 효과의 발동 판정은 대상 지정 내성을 「가장 엄격하게」 본다(Game.probing): 「상대 효과의 대상이 되지 않는다」 카드는
+        # 대상으로 보지 않고(코스트에서 고르면 대상), 「대상을 지정하지 않는 효과를 받지 않는다」 카드는 대상 지정으로 보지 않는다(처리 시 고르면 비대상).
+        # → 발동 판정이 통과하면 코스트 단계 · 처리 · AI 점수의 후보는 늘 그 이상이라 빈 후보로 깨지지 않는다 (2026-10-13)
+        prev_probe = getattr(self, 'probing', None)
+        if e.cost: self.probing = p
         try:
             if not self.can_act(p, c, e, ev): return False
         finally:
             self.src, self.src_eff = prev
+            self.probing = prev_probe
         if not self.spell_speed_ok(c, p, e): return False
         if e.spell_act and c.zone == 'hand':
             if c.type == '필드': pass
