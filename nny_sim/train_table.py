@@ -254,6 +254,12 @@ def save_ckpt(out, T, S, state, prev=None):
     os.replace(tmp, os.path.join(out, 'state.json'))
 
 
+def save_state(out, state):
+    tmp = os.path.join(out, 'state.json.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(state, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, os.path.join(out, 'state.json'))
+
+
 def save_last_logs(out, it, lastlog):
     """이 반복에서 덱마다 마지막으로 끝난 학습 매치의 전체 로그를 <out>/last_logs.json.gz 에 덮어쓴다 — 수렴해 멈추면 마지막 반복의 로그가 남는다.
     줄 형식: 턴 \\t 단계 \\t 종류 \\t 메시지 (판단 기록 포함). winner_seat: decks[0]이 앉은 자리 0 · decks[1]이 1, 무승부/중단이면 None"""
@@ -380,10 +386,16 @@ def main(argv=None):
             state['converged'] = True
 
     def recipe_stage(it):
-        """시즌 하나: 표를 고정하고 덱마다 레시피 학습기 한 라운드. 채택된 레시피는 다음 단계부터 쓴다"""
+        """시즌 하나: 표를 고정하고 덱마다 레시피 학습기 한 라운드. 채택된 레시피는 다음 단계부터 쓴다.
+        덱 하나가 끝날 때마다 state.json에 진행(recipe_part)을 저장 — 컨테이너가 회수돼도 끝낸 덱은 건너뛰고 이어서 (2026-10-13)"""
         import deck_opt as DO
         t0 = time.time(); changes = {}; accepted = 0
+        part = state.get('recipe_part')
+        if part and part.get('iter') == it:
+            changes = part['changes']; accepted = part['accepted']; t0 -= part.get('sec', 0)
+            print(f'  [레시피] 시즌 {len(state["seasons"])} 이어서: 끝낸 덱 {len(changes)}개 건너뜀', flush=True)
         for n in names:
+            if n in changes: continue
             d = decks[n]; st = DO.state_from_deck(d); st['history'] = state['recipe_hist'].get(n, [])
             con, val = DO.log_guides(d['스킬'], st['counts'], st['strat'], {k: decks[k] for k in names})
             rec = DO.one_round(st, [decks[k] for k in names if k != n], ev=lambda jobs: parallel_ev(jobs, a.workers),
@@ -398,9 +410,12 @@ def main(argv=None):
             print(f'  [레시피 {n}] {"채택" if rec.get("accepted") else "유지"}: {rec.get("best")} '
                   f'({rec.get("base")}% → {rec.get("best_rate")}%, z={rec.get("z")}' + (f', 확인 z={cf["z"]}' if cf else '') +
                   f') 매수 {rec.get("sizes_after")}', flush=True)
+            state['recipe_part'] = {'iter': it, 'changes': changes, 'accepted': accepted, 'sec': round(time.time() - t0, 1)}
+            state['decks'] = {k: decks[k] for k in names}
+            save_state(a.out, state)   # 표는 레시피 학습 중 바뀌지 않으므로 상태만
         season = {'season': len(state['seasons']), 'iter': it, 'changes': changes, 'accepted': accepted,
                   'recipes': {n: deck_rows(decks[n]) for n in names}, 'sec': round(time.time() - t0, 1)}
-        state['seasons'].append(season); state['recipe_done'] = it
+        state['seasons'].append(season); state['recipe_done'] = it; state.pop('recipe_part', None)
         state['decks'] = {k: decks[k] for k in names}
         if accepted: state['calm'] = 0; state['converged'] = False
         print(f'[시즌 {season["season"]}] 레시피 변경 {accepted}개 덱 ({season["sec"]}s) · 안정 {state["calm"]}/{a.patience}', flush=True)
