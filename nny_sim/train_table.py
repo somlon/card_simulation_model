@@ -26,7 +26,7 @@
     수렴 조건 (a) · (b)에 더해 (c) 그 시즌에 채택된 레시피 변경이 없어야 한다.
   · --time-limit 초가 지나면 반복 경계에서 체크포인트를 저장하고 멈춘다(같은 명령으로 이어서 실행).
 """
-import argparse, copy, gc, itertools, json, math, multiprocessing as mp, os, random, sys, time, traceback
+import argparse, copy, gc, itertools, json, math, multiprocessing as mp, os, random, sys, time, traceback, zlib
 
 for _k in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
     os.environ.setdefault(_k, '1')
@@ -99,12 +99,18 @@ def _train_worker(batch):
     side0 = {k: (v[0], v[1]) for k, v in M.SIDE.L1.items()}
     eps, side_eps = _G['eps'], _G['side_eps']
     st = {'matches': 0, 'rounds': 0, 'stalled': 0, 'errors': 0, 'err': None}
+    last = {}   # 덱 → 이 묶음에서 그 덱이 마지막으로 끝낸 매치의 기록 (보고서 「학습이 수렴한 마지막 시뮬레이션 로그」, 사용자 지시 2026-10-13)
     for a, b, first, seed in batch:
         dA, dB = _deck_pair(a, b)
+        log = []
         try:
-            mw, rounds = M.play_match(dA, dB, first, random.Random(seed), [], lambda d: P.LearnedAI(d['스킬'], learn=True, eps=eps),
+            mw, rounds = M.play_match(dA, dB, first, random.Random(seed), log, lambda d: P.LearnedAI(d['스킬'], learn=True, eps=eps),
                                       side=True, side_eps=side_eps, learn_side=True)
             st['matches'] += 1; st['rounds'] += len(rounds)
+            rec = {'t_end': time.time(), 'pid': os.getpid(), 'decks': [a, b], 'first': first, 'seed': seed, 'eps': round(eps, 4),
+                   'side_eps': round(side_eps, 4), 'winner_seat': mw, 'rounds': len(rounds),
+                   'log_z': zlib.compress('\n'.join(f'{e.get("t", "")}\t{e.get("ph", "")}\t{e.get("k", "")}\t{e.get("m", "")}' for e in log).encode('utf-8'), 6)}
+            for d in {a, b}: last[d] = rec
         except StalledGame:
             st['stalled'] += 1
         except Exception:
@@ -113,7 +119,7 @@ def _train_worker(batch):
     for k, v in M.SIDE.L1.items():
         w0, n0 = side0.get(k, (0, 0))
         if v[1] != n0: ds[k] = [v[0] - w0, v[1] - n0]
-    return d1, d2, ds, st
+    return d1, d2, ds, st, last
 
 
 def _league_worker(batch):
@@ -246,6 +252,17 @@ def save_ckpt(out, T, S, state, prev=None):
     tmp = os.path.join(out, 'state.json.tmp')
     json.dump(state, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     os.replace(tmp, os.path.join(out, 'state.json'))
+
+
+def save_last_logs(out, it, lastlog):
+    """이 반복에서 덱마다 마지막으로 끝난 학습 매치의 전체 로그를 <out>/last_logs.json.gz 에 덮어쓴다 — 수렴해 멈추면 마지막 반복의 로그가 남는다.
+    줄 형식: 턴 \\t 단계 \\t 종류 \\t 메시지 (판단 기록 포함). winner_seat: decks[0]이 앉은 자리 0 · decks[1]이 1, 무승부/중단이면 None"""
+    import gzip
+    recs = {d: {k: v for k, v in r.items() if k != 'log_z'} | {'iter': it, 'log': zlib.decompress(r['log_z']).decode('utf-8').split('\n')}
+            for d, r in sorted(lastlog.items())}
+    tmp = os.path.join(out, 'last_logs.json.gz.tmp')
+    with gzip.open(tmp, 'wt', encoding='utf-8') as f: json.dump(recs, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(out, 'last_logs.json.gz'))
 
 
 def side_table(path):
@@ -395,10 +412,14 @@ def main(argv=None):
         # 망각 → 합치기
         pr = decay(T.L2, a.gamma, a.prune); decay(T.L1, a.gamma); decay(T.L0, a.gamma); decay(S.L1, a.gamma)
         tot = {'matches': 0, 'rounds': 0, 'stalled': 0, 'errors': 0}; err = None
-        for d1, d2, ds, st in res:
+        lastlog = {}
+        for d1, d2, ds, st, last in res:
             merge_policy(T, d1, d2); add_into(S.L1, ds)
             for k in tot: tot[k] += st[k]
             err = err or st['err']
+            for d, rec in last.items():
+                if d not in lastlog or rec['t_end'] > lastlog[d]['t_end']: lastlog[d] = rec
+        save_last_logs(a.out, it, lastlog)
         T.games += tot['rounds']
         h = dict(iter=it, eps=round(_G['eps'], 4), side_eps=round(_G['side_eps'], 4), pruned=pr, sec=round(time.time() - t0, 1), **tot)
         if err: h['err'] = err
