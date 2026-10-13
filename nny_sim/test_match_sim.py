@@ -37,7 +37,7 @@ class NoLearningTest(unittest.TestCase):
         import ai as A, copy
         before = copy.deepcopy(A.BREEDING.t)
         MS._init({'ai': 'heuristic'})
-        MS._job(MS.schedule(['번성충-기생', '번성충-대발생'], 2, seed=3))
+        MS._job(MS.schedule(['번성충-대발생', '세제'], 2, seed=3))
         self.assertEqual(A.BREEDING.t, before)
 
     def test_match_error_is_recorded_and_run_continues(self):

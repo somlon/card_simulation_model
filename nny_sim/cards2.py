@@ -1,4 +1,5 @@
-"""카드 구현 2차: 공용 8종 · 번성충 기생 축 6종 · 격투가 11종 (격투가는 2026-10-08 카드 자료로 갱신 — 아래 격투가 절 머리말)"""
+"""카드 구현 2차: 공용 8종 · 격투가 11종 (격투가는 2026-10-08 카드 자료로 갱신 — 아래 격투가 절 머리말).
+번성충 기생 축 6종은 사용자 지시(2026-10-13)로 카드 풀에서 삭제되어 구현도 지움 (git 기록에 남아 있음)."""
 from engine import Effect
 from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO
 
@@ -109,106 +110,6 @@ def _(c):
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cost=cost, res=res,
         cond=lambda g, c, p, ev: bool(targets(g, p, [x for x in g.field_cards(p) if x is not c])),
         score=lambda g, c, p, ev: 45 if last_opp_link(g, p) and threat(g, p) >= 900 else 0, threat=500)]
-
-
-# ═══════════════════════ 번성충 — 기생 축 ═══════════════════════
-PARA = '기생'
-
-@card('번성충-기생유생')
-def _(c):
-    c.flags['no_normal'] = True
-    c.effects = [
-        Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and ev['how'] == 'special',
-               res=lambda g, c, p, l: g.add_counter(c, PARA, 1), score=lambda *a: 80, threat=200, label='카운터 1'),
-        Effect(2, 'ignition', ('hand',),
-               cond=lambda g, c, p, ev: main_ok(g, p) and g.can_special(c, p) and not any(m.counters.get(PARA) for m in g.monsters(p)),
-               res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p), opt=None,   # 2026-10-08: 1턴 1번 문구 삭제
-               score=lambda *a: 60, threat=200, label='패에서 특수소환 (ASSUME: [지속] 허가 = 기동 처리)')]
-
-@card('번성충-기생포자')
-def _(c):
-    def res(g, c, p, l):
-        ts = [m for m in g.monsters(p) if m.faceup and m.has('번성충')]
-        if ts: g.add_counter(max(ts, key=lambda m: m.counters.get(PARA, 0)), PARA, 1)
-    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: any(m.faceup and m.has('번성충') for m in g.monsters(p)),
-        cost=lambda g, c, p, l: (g.send_grave(c, ('cost', c)), oath(g, p)) and None, res=res,
-        score=lambda g, c, p, ev: 40 if main_ok(g, p) else 0, threat=200)]
-
-@card('번성충-기생촉수')
-def _(c):
-    def hosts(g, p): return [m for m in g.monsters(p) if m.counters.get(PARA) and g.releasable(m)]   # 「릴리스되지 않는」 몬스터는 코스트로 쓸 수 없다
-    def cost(g, c, p, l):
-        m = min(hosts(g, p), key=lambda m: value(g, m)); g.tribute(m, ('cost', c)); oath(g, p)
-    def res(g, c, p, l):
-        if c.zone == 'hand': g.special_summon(c, p)
-        ts = targets(g, p, [m for m in g.monsters(1 - p) if m.faceup])
-        if ts: g.add_counter(best(g, ts, p, 'steal'), PARA, 1)
-    c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(hosts(g, p)) and any(m.faceup for m in g.monsters(1 - p)),
-        cost=cost, res=res, score=lambda g, c, p, ev: 55 if main_ok(g, p) else 0, threat=900, label='감염')]
-
-@card('번성충-기생완전체')
-def _(c):
-    c.flags['no_normal'] = True
-    GY = lambda g, p: [x for x in g.p[p].grave if x.name.startswith('번성충-기생') and x.is_monster()]
-    def cost2(g, c, p, l):
-        for x in GY(g, p)[:2]: g.banish(x, ('cost', c))
-    def res1(g, c, p, l):
-        ts = targets(g, p, [m for m in g.monsters(1 - p) if m.faceup])
-        if ts: g.add_counter(best(g, ts, p, 'steal'), PARA, 2)
-    c.atk_mod = lambda g, src, x: 1500 if x is src and not any(m.faceup for m in g.monsters(1 - src.controller)) else 0
-    c.effects = [
-        Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and ev['how'] == 'special'
-               and any(m.faceup for m in g.monsters(1 - p)), res=res1, score=lambda *a: 90, threat=1000),
-        Effect(3, 'ignition', ('hand',), cond=lambda g, c, p, ev: main_ok(g, p) and len(GY(g, p)) >= 2 and g.can_special(c, p),
-               cost=cost2, res=lambda g, c, p, l: c.zone == 'hand' and g.special_summon(c, p), score=lambda *a: 65, threat=600, label='특수소환')]
-    c.flags['atk_1500_if_empty'] = True
-
-@card('번성충-사충회귀')
-def _(c):
-    GY = lambda g, p: [x for x in g.p[p].grave if x.name.startswith('번성충-기생') and x.is_monster()]
-    def res(g, c, p, l):
-        cs = [x for x in GY(g, p) if g.can_special(x, p)]
-        if cs:
-            x = max(cs, key=lambda x: x.level)
-            if g.special_summon(x, p): g.add_counter(x, PARA, 1)
-        c.flags['banish_after'] = True
-    c.grave_redirect = None
-    c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(GY(g, p)) and g.free_m(p) != [],
-        res=res, score=lambda *a: 50, threat=300)]
-    c.flags['banish_on_resolve'] = True
-
-@card('번성충-기생')
-def _(c):
-    """스킬: 기생 카운터 = 컨트롤 (상태 점검), 직접공격 1턴 1장, 종료 단계 감소, 진행 단계 이동"""
-    def state(g, src):
-        p = src.controller
-        for m in list(g.monsters(0) + g.monsters(1)):
-            if m.counters.get(PARA) and m.controller != p:
-                if g.change_control(m, p): m.flags['para'] = True; g.L(f'{m} 기생 — 컨트롤 획득', 'sys')
-            elif not m.counters.get(PARA) and m.flags.get('para') and m.controller == p and m.owner != p:
-                m.flags.pop('para'); g.change_control(m, m.owner); g.L(f'{m} 기생 해제 — 컨트롤 반환', 'sys')
-    c.state_check = state
-    c.rules = {'direct_attack': lambda g, src, x: x.flags.get('para') and x.controller == src.controller and getattr(g, 'para_turn', -1) != g.turn}
-    def on_ev(g, src, ev):
-        if ev['kind'] == 'direct_hit' and ev['card'].flags.get('para') and ev['card'].controller == src.controller:
-            g.para_turn = g.turn; x = ev['card']
-            g.remove_counter(x, PARA, x.counters.get(PARA, 0))
-    c.on_event = on_ev
-    def end(g, src):
-        p = src.controller
-        if g.turn_player != p: return
-        for m in list(g.monsters(p)):
-            if m.owner != p and m.counters.get(PARA): g.remove_counter(m, PARA, 1)
-    c.end_process = end
-    def res3(g, c, p, l):
-        srcs = [m for m in g.monsters(p) if m.faceup and m.has('번성충') and m.counters.get(PARA)]
-        if not srcs: g.L('이동할 기생 카운터 없음 — 불발', 'sys'); return
-        src = max(srcs, key=lambda m: m.counters[PARA])
-        ts = targets(g, p, [m for m in g.monsters(1 - p) if m.faceup])
-        if ts: g.remove_counter(src, PARA, 1); g.add_counter(best(g, ts, p, 'steal'), PARA, 1)
-    c.effects = [Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and g.phase == '진행'
-                        and any(m.faceup and m.has('번성충') and m.counters.get(PARA) for m in g.monsters(p)) and any(m.faceup for m in g.monsters(1 - p)),
-                        res=res3, score=lambda *a: 70, threat=0, label='카운터 이동')]
 
 
 # ═══════════════════════ 격투가 ═══════════════════════

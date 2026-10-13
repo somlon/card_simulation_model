@@ -121,22 +121,7 @@ class AnabokeTest(unittest.TestCase):
         self.assertFalse(any(c.name == '아나보케' for c, e in g.options(0, ('quick',))))
 
 
-@unittest.skipUnless('번성충-기생' in cards.POOL, RETIRED_MSG)
-class ParasiteEndPhaseTest(unittest.TestCase):
-    def test_counters_decrease_at_own_end_phase_and_control_returns(self):
-        g = make('소원의 분수', '세제', skill_a='번성충-기생')
-        m = new_card('솔루나 시엘', 1); m.zone = None
-        g.place_monster(m, 1); g.add_counter(m, '기생', 2)        # 상태 점검으로 자리 0이 컨트롤을 얻는다
-        self.assertEqual(m.controller, 0)
-        g.turn_player = 0
-        g.play_turn()                                            # 기생(자리 0)의 종료 단계: 카운터 2 → 1
-        self.assertEqual(m.counters.get('기생'), 1)
-        self.assertEqual(m.controller, 0)
-        g.play_turn()                                            # 상대 턴의 종료 단계: 변화 없음
-        self.assertEqual(m.counters.get('기생'), 1)
-        g.play_turn()                                            # 다시 자신의 종료 단계: 1 → 0, 컨트롤 반환
-        self.assertFalse(m.counters.get('기생'))
-        self.assertEqual(m.controller, 1)
+# (번성충-기생 스킬의 종료 단계 테스트는 기생 축 삭제(사용자 지시 2026-10-13)와 함께 지움)
 
 
 if __name__ == '__main__':
