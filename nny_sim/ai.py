@@ -271,6 +271,7 @@ class HeuristicAI:
 
     # ── 진행/정비 단계 ──
     def main_phase(self, g, p, ph):
+        failed = set()   # 이 단계에서 코스트/대상 불가로 취소된 발동 (카드 uid, 효과 번호) — 다시 고르지 않는다
         for _ in range(40):
             acts = []
             if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
@@ -291,6 +292,7 @@ class HeuristicAI:
             for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
                 acts.append((s, lab.split(':')[0], pay[1], pay))
             for c, e in g.options(p, ('ignition', 'quick')):
+                if (c.uid, e.num) in failed: continue
                 s = e.score(g, c, p, None) if e.score else 0
                 acts.append((s, 'act', c, e))
             if g.free_s(p):
@@ -309,7 +311,7 @@ class HeuristicAI:
             if kind == 'summon':
                 g.normal_summon(c, p); g.after_action(p)
             elif kind == 'act':
-                g.act(p, c, e)
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
             elif kind == 'set':
                 g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
             else:

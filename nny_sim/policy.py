@@ -319,6 +319,7 @@ class LearnedAI(HeuristicAI):
 
     # ── 진행 / 정비 ──
     def main_phase(self, g, p, ph):
+        failed = set()   # 이 단계에서 코스트/대상 불가로 취소된 발동 (카드 uid, 효과 번호) — 다시 고르지 않는다
         for _ in range(40):
             acts = [('종료', 0, None)]; seen = set()
             if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
@@ -342,7 +343,7 @@ class LearnedAI(HeuristicAI):
                 seen.add(lab); acts.append((lab, s, ('extra', pay[1], pay)))
             for c, e in g.options(p, ('ignition', 'quick')):
                 lab = f'발동:{c.name}#{e.num}'
-                if lab in seen: continue
+                if lab in seen or (c.uid, e.num) in failed: continue
                 s = e.score(g, c, p, None) if e.score else 0
                 if s <= VETO: continue
                 seen.add(lab); acts.append((lab, s, ('act', c, e)))
@@ -363,7 +364,8 @@ class LearnedAI(HeuristicAI):
             if kind == 'summon': g.normal_summon(c, p); g.after_action(p)
             elif kind == 'alt':
                 c.alt_normal[1](g, p); g.L(f'{g.pname(p)} {c} 조건 충족 — 제물 없이 일반소환'); g.normal_summon(c, p); g.after_action(p)
-            elif kind == 'act': g.act(p, c, e)
+            elif kind == 'act':
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
             elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
 

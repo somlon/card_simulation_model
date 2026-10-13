@@ -220,7 +220,11 @@ def _(c):
         g.L(f'지정: {", ".join(map(str, ts))}')
     def res(g, c, p, l):
         ts = [t for t in l.ctx['ts'] if g.on_field(t) and t.controller == 1 - p]
+        for t in [t for t in ts if not g.releasable(t)]:   # 발동 뒤 릴리스할 수 없게 된 카드(봉인 카운터 등)는 건너뛴다 — 정당한 불발
+            g.L(f'{t}: 발동 뒤 릴리스할 수 없게 되어 제외', 'sys')
+        ts = [t for t in ts if g.releasable(t)]
         for t in ts: g.tribute(t)
+        ts = [t for t in ts if not g.on_field(t)]   # 실제로 릴리스된 수만큼
         mons = sorted([x for x in g.p[p].grave if x.is_monster() and x.has('번성충')], key=lambda x: -x.base_atk())
         for x in mons[:len(ts)]:
             if not g.special_summon(x, p): break

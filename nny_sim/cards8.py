@@ -134,7 +134,12 @@ def mat_cost(g, p, x, where, mode):
 def _mat_ok(g, p, x, where, release):
     if where in ('own_f', 'opp_f'):
         if not x.faceup or not leaves_ok(g, x): return False
-        if where == 'opp_f' and g.immune(x, p): return False
+        if where == 'opp_f':
+            # 재료 고르기는 대상 지정이 아니다 — 코스트 단계(Game.costing)에서도 발동 판정 때와 같은 내성으로 본다
+            prev = getattr(g, 'costing', None); g.costing = None
+            try: imm = g.immune(x, p)
+            finally: g.costing = prev
+            if imm: return False
     if release and not g.releasable(x): return False
     return True
 
@@ -636,7 +641,8 @@ def _(c):
     def opp_live(g, p): return [x for x in tg(g, p) if x.controller != p and not g.is_neg(x)]
     def cost(g, c, p, l):
         ts = opp_live(g, p) or tg(g, p)
-        t = best(g, ts, p, 'negate') if ts and ts[0].controller != p else min(ts, key=lambda x: value(g, x))
+        if not ts: return False   # 발동 판정 뒤 대상으로 할 수 없게 됨 (「상대 효과의 대상이 되지 않는다」 등)
+        t = best(g, ts, p, 'negate') if ts[0].controller != p else min(ts, key=lambda x: value(g, x))
         l.ctx['t'] = t; g.L(f'대상: {t}')
     def res(g, c, p, l):
         t = l.ctx.get('t')
@@ -839,7 +845,8 @@ def _(c):
     def res(g, c, p, l):
         x = l.ctx['ev']['card']
         if x in g.p[1 - p].hand or (g.on_field(x) and x.controller == 1 - p):
-            g.banish(x); g.L(f'{x} 제외')
+            g.banish(x)
+            if x.zone == 'banish': g.L(f'{x} 제외')
     c.effects = [Effect(1, 'trigger', ('hand', 'field'), spell_act=True, cond=cond, res=res,
                         score=lambda g, c, p, ev: 40 + 10 * value(g, ev['card']) if isinstance(ev, dict) and ev.get('card') is not None else 40,
                         threat=700)] + allin_effects()

@@ -156,18 +156,25 @@ class Game:
         pool = (self.monsters(0) + self.monsters(1)) if p is None else self.monsters(p)
         return any(c.faceup and pred(c) for c in pool)
 
+    # 효과 내성 플래그 — [지속] 공격력 · 수비력 증감도 받지 않는다 (2026-10-13: 예전에는 immune_others · immune_except만 보았다)
+    MOD_IMMUNE_KEYS = ('immune_except', 'immune_others', 'immune_except_group', 'immune_all_until', 'immune_opp_until', 'immune_opp_perm',
+                       'untargetable_opp', 'immune_opp_untargeted')
+    def mod_applies(self, c, src):
+        """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드는 그대로, 내성 플래그가 있으면 Game.immune으로 판정"""
+        if src is c or self.is_neg(c) or not any(k in c.flags for k in self.MOD_IMMUNE_KEYS): return True
+        return not self.immune(c, src.controller, src)
     def atk(self, c):
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
         for src in self.continuous_sources():
             f = getattr(src, 'atk_mod', None)
-            if f and (src is c or not (c.flags.get('immune_others') or c.flags.get('immune_except')) or self.is_neg(c)): v += f(self, src, c)
+            if f and self.mod_applies(c, src): v += f(self, src, c)
         if c.flags.get('atk_set') is not None: v = c.flags['atk_set']
         return max(0, v)
     def df(self, c):
         v = c.base_def() + sum(x for s, x, _ in c.mods if s == 'def')
         for src in self.continuous_sources():   # [지속] 수비력 증감 def_mod (포커짐승들 2026-10-12 추가 — def_mod가 없는 카드는 그대로)
             f = getattr(src, 'def_mod', None)
-            if f and (src is c or not (c.flags.get('immune_others') or c.flags.get('immune_except')) or self.is_neg(c)): v += f(self, src, c)
+            if f and self.mod_applies(c, src): v += f(self, src, c)
         return max(0, v)
     def immune(self, c, by, src=None):
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
@@ -509,10 +516,11 @@ class Game:
     def extra_normal_left(self, p, c=None):
         """[지속] 「(「X」 몬스터를) 추가로 일반소환할 수 있다」 권리 중 이번 턴 남은 횟수.
         각 [지속] 카드의 extra_normal(g, src, p, c) = 그 카드가 p에게 주는 횟수 (c: 소환하려는 카드 — 카드군 제한 판정, None이면 제한 없이 센다)"""
-        n = 0
+        per = {}   # 같은 이름 카드가 여러 장이어도 권리는 겹치지 않는다(1턴 N번은 카드명 단위, §6-4) — 이름별 최댓값의 합
         for src in self.continuous_sources():
             f = getattr(src, 'extra_normal', None)
-            if f: n += f(self, src, p, c)
+            if f: per[src.name] = max(per.get(src.name, 0), f(self, src, p, c))
+        n = sum(per.values())
         return max(0, n - self.extra_ns_used.get((p, self.turn), 0)) if n else 0
 
     def can_normal(self, p, c=None):
@@ -885,8 +893,11 @@ class Game:
             self.priority(1 - actor)
 
     def act(self, p, c, e):
-        if self.activate(p, c, e):
+        """발동하고 우선권을 넘긴다. 발동 링크를 돌려준다 — 코스트/대상 불가로 취소되면 None (AI가 같은 행동을 다시 고르지 않게)"""
+        link = self.activate(p, c, e)
+        if link:
             self.priority(1 - p)
+        return link
 
     # ═════════════════════════ 전투 ═════════════════════════
     def can_declare_attack(self, p):

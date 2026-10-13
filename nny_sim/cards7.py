@@ -47,6 +47,11 @@ ASSUME:
 - 실렉스 2번 「파괴 이외의 방법으로 필드를 벗어나지 않는다」: 효과 · 코스트로 묘지 · 덱 · 패 · 제외로 보내는 것을 막는다. 규칙 처리(공유 존 마커
   페널티 · 장착 대상 이탈 등)는 막지 않는다.
 
+- (검토 2026-10-13) 자신 턴 종료 시에는 스킬 2번 유지비(봉인 카운터 제거)가 녹스 솜니페르 4번 「턴 종료 시」 판정보다 먼저 처리된다 —
+  유지비는 녹스 이외의 몬스터에서 먼저 뗀다(keep_of: 녹스 3개). 녹스만 카운터를 가지고 있으면 3개 → 2개가 되어 4번이 발동하지 않는다.
+- (검토 2026-10-13) 「대상으로 하고」 판정의 시점 차이: 발동 판정은 대상 지정 여부를 모르는 상태로 보고, 코스트 단계에서 대상 지정으로 본다.
+  상대 필드에 봉인된 카르분쿨루스(대상이 되지 않음)만 있을 때는 발동 판정은 통과해도 코스트에서 취소될 수 있다(AI는 같은 단계에서 다시 고르지 않음).
+  임시 봉인은 이 카드를 주체로 내성을 판정한다 — 봉인된 아우렘 · 녹스(「호박옥」 카드의 효과는 받음)도 고를 수 있다.
 재정 질문:
 1. 「강제로 발동한다」 트리거 마법을 패에 들고 있을 때도 조건이 갖춰지면 반드시 발동해야 하는가 (지금: 세트한 카드만 강제).
 2. 「대상을 지정하는 효과」의 범위 — 이 시뮬레이터는 「대상으로 하고 발동」 문구가 있는 효과만 대상 지정으로 본다. 「고르고」 효과는 비대상으로 보아
@@ -59,6 +64,8 @@ ASSUME:
 8. 실렉스 2번이 막는 범위에 규칙 처리(공유 존 마커 페널티로 덱으로 되돌리기)도 들어가는가 (지금: 효과 · 코스트만).
 9. 월식 처리 시 봉인 카운터가 5개 미만으로 줄어 있으면 — 있는 만큼 제거하고 뒷면으로 하는가 (지금: 그렇다).
 
+10. 자신 턴 종료 시 스킬 2번 유지비와 녹스 솜니페르 4번(「봉인 카운터 3개 이상일 때 턴 종료 시」)의 처리 순서 — 지금: 유지비 먼저.
+11. 봉인된 카르분쿨루스(「상대 효과의 대상이 되지 않는다」)만 남은 필드에 「대상으로 하고」 효과를 발동할 수 있는가(지금: 발동은 되나 대상이 없어 취소).
 엔진 변경 (engine.py · ai.py · policy.py, 추가 · 플래그가 없는 카드의 동작은 그대로):
 - engine.link_targets(link): 발동 시 고른 카드(=대상) 목록.
 - Game.flag(c, key): callable 플래그 계산. immune(immune_except_group) · releasable(no_release) · can_change_pos(no_pos_change)가 이것으로 읽는다.
@@ -97,7 +104,7 @@ def sealed(c): return c.faceup and seals(c) > 0
 def side_seals(g, p): return sum(seals(m) for m in g.monsters(p))
 def amber_seals(g, p): return sum(seals(m) for m in g.monsters(p) if m.faceup and AMB_MON(m))
 def own_faceup(g, p): return [m for m in g.monsters(p) if m.faceup]
-def keep_of(m): return 1 if m.name in PROTECTED else 0
+def keep_of(m): return 3 if m.name == NOX else 1 if m.name in PROTECTED else 0   # 녹스 4번은 3개 이상일 때 — 다른 몬스터에서 먼저 뗀다
 
 
 def annotate(g, src, ev):
@@ -256,7 +263,9 @@ def guard_lastwill():
     """수호자 4번 [유언] 묘지의 「호박옥」 카드 1장을 제외하고 발동. 이 카드를 특수소환한다"""
     def others(g, c, p): return [x for x in g.p[p].grave if x is not c and AMB(x)]
     def cost(g, c, p, l):
-        x = min(others(g, c, p), key=lambda x: gy_value(g, p, x))
+        xs = others(g, c, p)
+        free = [x for x in xs if not any(lk.card is x for lk in g.chain)]   # 자신의 효과가 체인에 올라 있는 카드(함께 묘지로 간 수호자)는 되도록 남긴다
+        x = min(free or xs, key=lambda x: gy_value(g, p, x))
         g.L(f'코스트: 묘지의 {x} 제외'); g.banish(x, ('cost', c))
     return Effect(4, 'lastwill', ('grave',),
                   cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c and c.zone == 'grave' and bool(others(g, c, p)) and g.can_special(c, p),
@@ -633,9 +642,11 @@ def _(c):
 @card('호박옥 - 임시 봉인')
 def _(c):
     amber_common(c)
-    def cands(g, p): return targets(g, p, [m for m in g.monsters(0) + g.monsters(1) if m.faceup and AMB_MON(m)])
+    # 「호박옥」 카드의 효과는 받는 에이스(봉인 카운터가 있는 아우렘 · 녹스)도 고를 수 있게 이 카드를 주체로 내성 판정
+    def cands(g, p, c): return [m for m in g.monsters(0) + g.monsters(1) if m.faceup and AMB_MON(m) and not g.immune(m, p, c)]
     def cost(g, c, p, l):
-        cs = cands(g, p); th = threatened(g, p)
+        cs = cands(g, p, c); th = threatened(g, p)
+        if not cs: return False   # 발동 판정 뒤 대상으로 할 수 없게 됨 (카르분쿨루스 「상대 효과의 대상이 되지 않는다」)
         own = [m for m in cs if m.controller == p]
         l.ctx['t'] = max(own or cs, key=lambda m: (m in th, m.name in ACES, value(g, m))); g.L(f'대상: {l.ctx["t"]}')
     def res(g, c, p, l):
@@ -647,9 +658,9 @@ def _(c):
     def sc(g, c, p, ev):
         if any(m.controller == p and AMB_MON(m) and m.flags.get('immune_all_until', -1) < g.turn for m in threatened(g, p)): return 60
         l = last_opp_link(g, p)
-        if l is not None and threat(g, p) >= 900 and removes_field(l) and any(m.controller == p for m in cands(g, p)): return 35
+        if l is not None and threat(g, p) >= 900 and removes_field(l) and any(m.controller == p for m in cands(g, p, c)): return 35
         return 0
-    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(cands(g, p)),
+    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(cands(g, p, c)),
                         cost=cost, res=res, score=sc, threat=400, label='「호박옥」 몬스터 1장 다음 턴 종료 시까지 보호')]
 
 

@@ -48,6 +48,10 @@ ASSUME:
   한다」는 엔진 기본(지속 마법은 필드에 남음).
 - 더 딜리트 2번 「필드의 몬스터가 파괴되었을 때」 = 서로의 몬스터. 「필드의 카드를 1장 파괴」에서 더 딜리트 자신은 고르지 않는다.
 - 로딩 1번(「발동 선언을 필요로 하지 않는다」)은 마법 카드 발동의 처리에 딸린다 — 1턴에 1번(같은 턴 두 번째 로딩 발동은 서치 없음).
+  카드의 발동 자체(효과 0)는 1턴 1번 제약이 없다(opt=None, 2026-10-13 검토 반영).
+- 「효과로 덱에서 카드를 패에 넣을 수 없다」(더 딜리트 3번 · 던전마스터 데스 칠 드래곤 2번)는 드로우를 막지 않는다 — 드로우는 「패에 넣는다」가 아님(재정 질문).
+- 버터플라이 2번 「자신은 상대의 효과를 받지 않는다」: 효과 대미지와 플레이어 대상 [지속](규칙 player_immune — 더 딜리트 3번 · 데스 칠 드래곤 2번)만.
+  거짓 샘물의 전투 파괴 금지 · 강제 「상대는 1장 드로우」 등 다른 플레이어 대상 효과는 받는다.
 - 콜로니 1번은 카드의 발동과 별개인 기동 효과(앞면으로 놓인 뒤 1턴에 1번). 「이 효과로 특수소환한 몬스터는 이 턴에 효과를 발동할 수
   없다」 = 그 몬스터가 필드에 있는 동안 이 턴에는 그 카드의 효과([소환] 포함)를 발동할 수 없다. [지속]은 적용된다. 필드를 벗어나면 풀린다.
 - 백업: 대상이 처리 시 자신 필드에 없거나 묘지로 가지 않으면 이후 처리 없음. 같은 이름 카드가 덱에 없어도 특수소환은 한다.
@@ -532,7 +536,9 @@ def _(c):
             if v >= 1.8 and (main_ok(g, p) or threat(g, p) >= 700): return 25 + 15 * v
         if main_ok(g, p):
             own = [m for m in ts if m.controller == p]
-            if own and min(fod_val(g, p, m) for m in own) <= 1.4: return 28 + 6 * ready_hand(g, p, c)
+            if own:   # 덱에서의 특수소환도 「데이터버그」 소환 — 패의 트리거 몬스터가 연쇄로 나온다
+                v = 28 + 15 * ready_hand(g, p, c) - 12 * max(0.0, min(fod_val(g, p, m) for m in own) - 1.4)
+                return v if v > 0 else 0
         return 0
     db_mon(c, [
         Effect(1, 'quick', ('hand',), cond=cond1, cost=cost1, res=res1, score=sc1, threat=600,
@@ -571,7 +577,7 @@ def _(c):
         xs = cheapest(g, p, ps, 2)
         cand = [x for x in gy_mons(g, p)] + [x for x in xs if not x.flags.get('ss_self_only')]
         if not cand: return VETO
-        return rel2_score(g, c, p, ps, 0.7 * max(revive_prior(g, p, x) for x in cand))
+        return rel2_score(g, c, p, ps, 0.7 * max(revive_prior(g, p, x) for x in cand) + 15 * ready_hand(g, p))   # 소생도 「데이터버그」 소환 → 패 트리거
     db_mon(c, [
         Effect(1, 'ignition', ('field',), cond=lambda g, c, p, ev: len(pool(g, p)) >= 2,
                cost=lambda g, c, p, l: pay_release(g, c, p, 2, pool(g, p)) and None,
@@ -585,13 +591,18 @@ def _(c):
     def no_eff_dmg(g, src, p, s):
         """2번 [지속]: 자신 필드에 「데이터버그」 마법 카드가 있는 한 상대의 효과 대미지를 받지 않는다 (src: 대미지 출처 문자열)"""
         if p != src.controller or not has_db_spell(g, p): return False
-        q = 1 - p
-        opp_names = {x.name for x in g.field_cards(q)} | ({g.p[q].skill.name} if g.p[q].skill is not None else set())
+        q = 1 - p; pl = g.p[q]
+        # 상대의 카드 이름(필드 · 묘지 · 제외 · 스킬) — 대미지 출처는 「카드명」 또는 「카드명 + 설명」(예: 「던전마스터 헬 2번」 · 「트랩: 거짓 샘물 — X 제거」)
+        opp_names = {x.name for x in g.field_cards(q) + list(pl.grave) + list(pl.banish)} | ({pl.skill.name} if pl.skill is not None else set())
+        def named(n): return s == n or s.startswith(n + ' ')
         r = g.src   # 처리 중인 효과의 주체
         if r is not None and r.controller != p: return True
         # 처리 중인 효과가 없거나 자신의 효과 처리 중일 때: 출처가 상대 카드 이름이고 처리 중인 카드와 다르면 상대의 [지속] 처리 등
-        return s in opp_names and (r is None or s != r.name)
-    c.rules = {'no_effect_damage': no_eff_dmg}
+        s = str(s)
+        return any(named(n) for n in opp_names) and (r is None or not named(r.name))
+    c.rules = {'no_effect_damage': no_eff_dmg,
+               # 2번 「자신은 상대의 효과를 받지 않는다」를 플레이어 내성으로 — 다른 테마의 플레이어 대상 [지속](데스 칠 드래곤 2번 등)이 확인한다
+               'player_immune': lambda g, src, q: q == src.controller and has_db_spell(g, q)}
     db_mon(c, [negate_resp(1), hand_ss(3)])
 
 
@@ -700,7 +711,8 @@ def _(c):
         return 50 if can else 30
     def pool(g, p): return rel_pool(g, p, both=True)
     c.effects = [
-        Effect(0, 'ignition', ('hand', 'field'), spell_act=True, res=res0, score=sc0, threat=300, label='발동 + 상급 덱 「데이터버그」 몬스터 서치'),
+        Effect(0, 'ignition', ('hand', 'field'), spell_act=True, res=res0, score=sc0, threat=300, opt=None,   # 카드의 발동 자체는 1턴 1번이 아니다 (1번 서치만)
+               label='발동 + 상급 덱 「데이터버그」 몬스터 서치'),
         Effect(2, 'ignition', ('field',), cond=lambda g, c, p, ev: len(pool(g, p)) >= 2 and g.can_search(p, DBM),
                cost=lambda g, c, p, l: pay_release(g, c, p, 2, pool(g, p)) and None,
                res=lambda g, c, p, l: fetch(g, p, DBM, why=f'{c.name} 2번'),

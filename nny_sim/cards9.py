@@ -62,6 +62,7 @@ ASSUME:
 - 트랩 리페어 시스템: 「3장까지」는 AI가 최대한(덱으로 되돌릴 가치가 큰 순). 0장이어도 1장 드로우.
 - 셔플! 2번은 처리 시 고른다(대상 지정 없음). 셔플! 3번은 레벨 5 이상의 몬스터 1장.
 
+- (검토 2026-10-13) 인페르노 드래곤이 양쪽 필드에 있으면 두 장의 [지속]을 동시에 적용한다(파괴 대상을 모두 모은 뒤 한꺼번에 파괴).
 재정 질문:
 1. 셔플! 1번 「재배치」의 범위: (지금) 뒷면 카드가 차지한 자리끼리 섞기 — 양쪽 필드 사이 맞바꾸기 가능, 컨트롤도 바뀜, 각 필드의 뒷면 매수는
    그대로(빈 존으로 옮기기 · 일방적으로 가져오기 불가). 세트된 마법 카드도 섞을 수 있음. 깜짝상자 1번의 「원래 주인만」 · 트랩퍼 2번 · 깜짝상자
@@ -252,7 +253,7 @@ def _(c):
     e1 = Effect(1, 'quick', ('field',), cond=cond1, cost=cost1, res=res1, score=sc1, threat=900, label='뒷면 → 앞면 수비, 상대 카드 1장 파괴')
     e1.owner_only = True; e1.facedown_ok = True
     c.effects = [e1,
-                 lastwill(2, res2, lambda g, c, p, ev: 85 if not ev.get('was_faceup', True) and targets(g, p, opp_cards(g, p)) else 30,
+                 lastwill(2, res2, lambda g, c, p, ev: (85 if targets(g, p, opp_cards(g, p)) else VETO) if not ev.get('was_faceup', True) else 30,   # 뒷면이었고 상대 카드가 없으면 자신 카드를 파괴하게 됨
                           label='[유언] 덱으로 (뒷면이었으면 카드 1장 파괴)', threat=500)]
 
 
@@ -448,19 +449,22 @@ def _(c):
 @card(INFERNO)
 def _(c):
     def sc(g, src):
-        """1 · 2번 [지속]: 공격력 또는 수비력 2000 이상인 상대 필드의 (앞면) 몬스터는 파괴된다"""
-        if src.flags.get('_inferno_busy') or not g.on_field(src): return
-        p = src.controller
-        hits = [m for m in g.monsters(1 - p) if m.faceup and (g.atk(m) >= 2000 or g.df(m) >= 2000)
-                and not g.immune(m, p, src) and not g.rule('indestructible', m, False)]
+        """1 · 2번 [지속]: 공격력 또는 수비력 2000 이상인 상대 필드의 (앞면) 몬스터는 파괴된다.
+        양쪽에 인페르노가 있으면 동시에 적용한다 — 모든 앞면 인페르노의 파괴 대상을 먼저 모은 뒤 한꺼번에 파괴"""
+        if g.__dict__.get('_inferno_busy') or not g.on_field(src): return
+        hits = []
+        for s in [x for x in g.monsters(0) + g.monsters(1) if x.name == INFERNO and x.faceup and not g.is_neg(x)]:
+            p = s.controller
+            hits += [(s, m) for m in g.monsters(1 - p) if m.faceup and (g.atk(m) >= 2000 or g.df(m) >= 2000)
+                     and not g.immune(m, p, s) and not g.rule('indestructible', m, False) and all(m is not h for _, h in hits)]
         if not hits: return
-        src.flags['_inferno_busy'] = True
+        g._inferno_busy = True
         try:
-            for m in hits:
-                if g.on_field(m) and m.controller == 1 - p and m.faceup:
-                    g.L(f'{src.name} [지속]: {m}(공 {g.atk(m)} / 수 {g.df(m)}) 파괴'); g.destroy(m, ('effect', src))
+            for s, m in hits:
+                if g.on_field(m) and m.controller == 1 - s.controller and m.faceup:
+                    g.L(f'{s.name} [지속]: {m}(공 {g.atk(m)} / 수 {g.df(m)}) 파괴'); g.destroy(m, ('effect', s))
         finally:
-            src.flags.pop('_inferno_busy', None)
+            g._inferno_busy = False
     c.state_check = sc
     c.effects = [opp_draw_lastwill(3)]
 
@@ -513,7 +517,7 @@ def _(c):
         # 1번 [지속]: 이 카드가 몬스터와 전투할 때, 상대 플레이어에게 가하는 대미지는 0 (엔진 battle_damage의 pair)
         'no_battle_damage': lambda g, src, p, a, t: p == 1 - src.controller and (a is src or t is src),
         # 2번 [지속]: 상대는 효과로 덱에서 카드를 패에 넣을 수 없다
-        'no_deck_to_hand': lambda g, src, player: player == 1 - src.controller}
+        'no_deck_to_hand': lambda g, src, player: player == 1 - src.controller and not g.rule('player_immune', player)}   # 플레이어 내성(데이터버그 버터플라이 2번)이면 받지 않음
     c.effects = [opp_draw_lastwill(3)]
 
 

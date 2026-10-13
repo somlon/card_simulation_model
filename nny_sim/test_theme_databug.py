@@ -310,9 +310,13 @@ class SpellTest(unittest.TestCase):
         g.act(0, l1, eff(l1, 0))
         self.assertTrue(g.on_field(l1) and l1.faceup)
         self.assertEqual(names([x for x in g.p[0].hand if x.name != D.LOADING]), [D.ANT])
-        self.assertFalse(g.legal(0, l2, eff(l2, 0)))
-        g.turn += 2; g.p[0].opt = {}
+        self.assertTrue(g.legal(0, l2, eff(l2, 0)))   # 카드의 발동 자체는 1턴 1번이 아니다 (검토 2026-10-13)
         g.act(0, l2, eff(l2, 0))
+        self.assertTrue(g.on_field(l2))
+        self.assertEqual(names([x for x in g.p[0].hand]), [D.ANT])   # 같은 턴 두 번째 발동: 1번 서치 없음
+        g.turn += 2; g.p[0].opt = {}
+        l3 = put(g, D.LOADING, 0, 'hand')
+        g.act(0, l3, eff(l3, 0))
         self.assertEqual(names([x for x in g.p[0].hand]), sorted([D.ANT, D.HERC]))
         put(g, D.LITTLE, 0, 'main')
         o1 = mon(g, D.FLY, 1); o2 = mon(g, D.CATER, 1); own = mon(g, D.FLY, 0)
