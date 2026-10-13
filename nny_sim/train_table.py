@@ -244,13 +244,13 @@ def coverage(T, names, skills):
 
 # ─────────────── 저장 ───────────────
 def save_ckpt(out, T, S, state, prev=None):
+    """임시 파일에 모두 쓴 뒤 한꺼번에 바꿔 넣는다 — 저장 중 컨테이너가 회수돼도 표 · 상태가 서로 다른 반복의 것으로 섞이거나 잘리지 않게 (2026-10-13)"""
     import policy as P
-    T.save(os.path.join(out, 'policy.json.gz'))
-    P.Table.save(S, os.path.join(out, 'side.json.gz'))
-    if prev is not None:
-        prev[0].save(os.path.join(out, 'prev_policy.json.gz')); P.Table.save(prev[1], os.path.join(out, 'prev_side.json.gz'))
+    tabs = [('policy', T), ('side', S)] + ([('prev_policy', prev[0]), ('prev_side', prev[1])] if prev is not None else [])
+    for name, t in tabs: P.Table.save(t, os.path.join(out, f'{name}.tmp.json.gz'))
     tmp = os.path.join(out, 'state.json.tmp')
-    json.dump(state, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(state, f, ensure_ascii=False, indent=1)
+    for name, _ in tabs: os.replace(os.path.join(out, f'{name}.tmp.json.gz'), os.path.join(out, f'{name}.json.gz'))
     os.replace(tmp, os.path.join(out, 'state.json'))
 
 
