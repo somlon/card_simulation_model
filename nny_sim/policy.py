@@ -36,7 +36,7 @@ class Table:
     def __init__(self, name):
         self.path = os.path.join(LEARN_DIR, name + '.json')
         d = {}; self.source = None                    # source: 실제로 읽은 파일 (결과 메타의 해시용)
-        for path in (self.path, self.path + '.gz'):   # 큰 표는 압축본(.json.gz)으로 보관할 수 있다
+        for path in (self.path, self.path + '.gz', self.path + '.xz'):   # 큰 표는 압축본(.json.gz · .json.xz)으로 보관할 수 있다
             if os.path.exists(path):
                 try: d = self.read(path); self.source = path; break
                 except Exception: d = {}
@@ -44,8 +44,10 @@ class Table:
 
     @staticmethod
     def read(path):
-        import gzip
-        with (gzip.open(path, 'rt', encoding='utf-8') if path.endswith('.gz') else open(path, encoding='utf-8')) as f:
+        """.json · .json.gz · .json.xz — xz는 저장소에 올릴 때(GitHub 파일 한도 100MiB) 쓴다. gzip 115MB 표가 xz로 71MB (2026-10-14)"""
+        import gzip, lzma
+        opener = gzip.open if path.endswith('.gz') else lzma.open if path.endswith('.xz') else open
+        with opener(path, 'rt', encoding='utf-8') as f:
             return json.load(f)
 
     @classmethod
