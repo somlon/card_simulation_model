@@ -96,6 +96,17 @@ class SkillTest(unittest.TestCase):
 
 
 class AceTest(unittest.TestCase):
+    def test_sun_moon_cannot_pick_sealed_marmor(self):
+        # 태양과 달의 마력 「상대 필드의 카드 1장을 제외한다」는 비대상 — 봉인 카운터가 놓인 마르모르(상대의 대상을 지정하지 않는 효과를 받지 않음)는 고를 수 없다
+        g = make(); g.turn_player = 1
+        mm = mon(g, A.MARMOR, 0, 'def', seals=2)
+        sm = put(g, '태양과 달의 마력', 1, 'hand')
+        self.assertFalse(g.legal(1, sm, eff(sm, 1)))
+        other = mon(g, A.RESINA, 0, 'def')
+        self.assertTrue(g.legal(1, sm, eff(sm, 1)))
+        g.act(1, sm, eff(sm, 1))
+        self.assertTrue(g.on_field(mm)); self.assertEqual(other.zone, 'banish')
+
     def test_aurem_summon_puts_three_seals(self):
         g = make(ai=Yes); au = put(g, A.AUREM, 0, 'upper')
         g.special_summon(au, 0, 'def'); run(g)
