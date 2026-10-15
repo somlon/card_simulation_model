@@ -195,6 +195,18 @@ class UpperTest(unittest.TestCase):
         self.assertEqual(a[0].zone, 'grave'); self.assertEqual(k.zone, 'grave')
         self.assertEqual(len(g.p[1].hand), n + 1)           # 3번 [유언] (강제) 상대 드로우
 
+    def test_assassin_same_card_once_per_chain(self):
+        # 패의 어새신 1장은 같은 체인에 1번만 — 원문 재정 「동명의 카드를 여러 장 패에 잡고 각자 사용해 최대 3회」
+        g = make()
+        ts = [on_field(g, EX, 1) for _ in range(3)]
+        a, b = card(g, ASSASSIN, 0, 'hand'), card(g, ASSASSIN, 0, 'hand')
+        self.assertIsNotNone(g.activate(0, a, eff(a, 1)))
+        self.assertFalse(g.legal(0, a, eff(a, 1)))          # 같은 카드: 체인에 이미 있음
+        self.assertTrue(g.legal(0, b, eff(b, 1)))           # 다른 어새신: 발동 가능
+        g.resolve_chain()
+        self.assertEqual(a.zone, 'm')
+        self.assertEqual(sum(t.zone == 'grave' for t in ts), 1)   # 파괴 1회
+
     def test_magician_search_end_phase_salvage_and_destroy(self):
         g = make()
         mg = on_field(g, MAGICIAN, 0); hell = card(g, HELL, 0, 'grave')

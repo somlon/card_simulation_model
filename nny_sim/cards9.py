@@ -387,7 +387,9 @@ def _(c):
         if not ts: return VETO
         return 10 + 15 * (v - value(g, c)) - (0 if law_on(g, p) else 15)
     c.effects = [
-        Effect(1, 'quick', ('hand',), opt=3, cond=lambda g, c, p, ev: g.can_special(c, p),
+        # 같은 카드의 1번이 이미 체인에 있으면 다시 발동할 수 없다 — 원문 재정 「이 카드가 자체적으로 패로 돌아갈 수는 없다 …
+        # 동명의 카드를 여러 장 패에 잡고 각자 사용해 1턴에 최대 3회」 = 패에 있는 동안 1장당 1회 (2026-10-15 수정, 보고서 로그 점검)
+        Effect(1, 'quick', ('hand',), opt=3, cond=lambda g, c, p, ev: g.can_special(c, p) and not any(l.card is c and l.eff.num == 1 for l in g.chain),
                cost=lambda g, c, p, l: g.L(f'코스트: 패의 {c} 공개'), res=res1, score=sc1, threat=1000, label='패에서 특수소환 + 필드의 카드 1장 파괴'),
         Effect(2, 'ignition', ('field',), cond=lambda g, c, p, ev: g.releasable(c) and bool(targets(g, p, opp_cards(g, p))),
                cost=cost2, res=res2, score=sc2, threat=900, label='자신 릴리스 → 상대 카드 1장 파괴'),
