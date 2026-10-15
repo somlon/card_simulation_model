@@ -96,6 +96,17 @@ class SkillTest(unittest.TestCase):
 
 
 class AceTest(unittest.TestCase):
+    def test_amber_effect_can_pick_opponents_sealed_ace(self):
+        # 봉인된 에이스는 「「호박옥」 카드 이외의」 효과만 받지 않는다 — 호박옥 미러: 아우렘 4번이 상대의 봉인된 아우렘을 고를 수 있다
+        g = make(opp=SEALC)
+        me = mon(g, A.AUREM, 0, 'def', seals=3); them = mon(g, A.AUREM, 1, 'def', seals=3)
+        self.assertTrue(g.legal(0, me, eff(me, 4)))
+        g.act(0, me, eff(me, 4))
+        self.assertFalse(g.on_field(them))
+        # 호박옥이 아닌 카드의 효과는 여전히 받지 않는다
+        g2 = make(opp=SEALC); them2 = mon(g2, A.AUREM, 1, 'def', seals=3)
+        self.assertTrue(g2.immune(them2, 0, put(g2, '매수당한 킬러', 0, 'hand')))
+
     def test_aurem_summon_puts_three_seals(self):
         g = make(ai=Yes); au = put(g, A.AUREM, 0, 'upper')
         g.special_summon(au, 0, 'def'); run(g)
