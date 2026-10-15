@@ -423,7 +423,7 @@ def guard_summon3(res, label, purpose):
         return (60 + 15 * max(value(g, x) for x in ts)) if ts else VETO
     return Effect(3, 'summon', ('field',), opt=2,
                   cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(ups(g, p)) and bool(targets(g, p, pool(g, c), c)),
-                  cost=cost, res=lambda g, c, p, l: res(g, c, p, field_pick(g, p, purpose, targets(g, p, pool(g, c), c))),
+                  cost=cost, res=lambda g, c, p, l: res(g, c, p, field_pick(g, p, purpose, targets(g, p, pool(g, c), c), c)),
                   score=sc, threat=900, label=label)
 
 
@@ -626,7 +626,9 @@ def _(c):
         for _ in range(n):   # 「제거한 개수만큼 필드의 카드를 고르고」 — 상대 카드부터, 모자라면 자신 카드(ASSUME)
             pool = [x for x in targets(g, p, g.all_field(), c) if x is not c and x not in ch]
             if not pool: break
-            ch.append(field_pick(g, p, 'remove', pool))
+            t = field_pick(g, p, 'remove', pool, c)
+            if t is None: break
+            ch.append(t)
         for t in ch:
             if g.on_field(t): g.destroy(t)
     def sc(g, c, p, ev):

@@ -107,6 +107,15 @@ class AceTest(unittest.TestCase):
         g2 = make(opp=SEALC); them2 = mon(g2, A.AUREM, 1, 'def', seals=3)
         self.assertTrue(g2.immune(them2, 0, put(g2, '매수당한 킬러', 0, 'hand')))
 
+    def test_crack_can_destroy_opponents_sealed_ace(self):
+        # 균열 「제거한 개수만큼 필드의 카드를 고르고 파괴」 — 상대 필드에 봉인된 에이스만 있어도 고를 수 있다 (전에는 고를 후보가 비어 오류)
+        g = make(opp=SEALC)
+        mon(g, A.RESINA, 0, 'def', seals=1); them = mon(g, A.AUREM, 1, 'def', seals=3)
+        cr = put(g, '호박옥 - 균열', 0, 'hand')
+        self.assertTrue(g.legal(0, cr, eff(cr, 1)))
+        g.act(0, cr, eff(cr, 1))
+        self.assertFalse(g.on_field(them))
+
     def test_aurem_summon_puts_three_seals(self):
         g = make(ai=Yes); au = put(g, A.AUREM, 0, 'upper')
         g.special_summon(au, 0, 'def'); run(g)
