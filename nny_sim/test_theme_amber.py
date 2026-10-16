@@ -96,6 +96,26 @@ class SkillTest(unittest.TestCase):
 
 
 class AceTest(unittest.TestCase):
+    def test_amber_effect_can_pick_opponents_sealed_ace(self):
+        # 봉인된 에이스는 「「호박옥」 카드 이외의」 효과만 받지 않는다 — 호박옥 미러: 아우렘 4번이 상대의 봉인된 아우렘을 고를 수 있다
+        g = make(opp=SEALC)
+        me = mon(g, A.AUREM, 0, 'def', seals=3); them = mon(g, A.AUREM, 1, 'def', seals=3)
+        self.assertTrue(g.legal(0, me, eff(me, 4)))
+        g.act(0, me, eff(me, 4))
+        self.assertFalse(g.on_field(them))
+        # 호박옥이 아닌 카드의 효과는 여전히 받지 않는다
+        g2 = make(opp=SEALC); them2 = mon(g2, A.AUREM, 1, 'def', seals=3)
+        self.assertTrue(g2.immune(them2, 0, put(g2, '매수당한 킬러', 0, 'hand')))
+
+    def test_crack_can_destroy_opponents_sealed_ace(self):
+        # 균열 「제거한 개수만큼 필드의 카드를 고르고 파괴」 — 상대 필드에 봉인된 에이스만 있어도 고를 수 있다 (전에는 고를 후보가 비어 오류)
+        g = make(opp=SEALC)
+        mon(g, A.RESINA, 0, 'def', seals=1); them = mon(g, A.AUREM, 1, 'def', seals=3)
+        cr = put(g, '호박옥 - 균열', 0, 'hand')
+        self.assertTrue(g.legal(0, cr, eff(cr, 1)))
+        g.act(0, cr, eff(cr, 1))
+        self.assertFalse(g.on_field(them))
+
     def test_sun_moon_cannot_pick_sealed_marmor(self):
         # 태양과 달의 마력 「상대 필드의 카드 1장을 제외한다」는 비대상 — 봉인 카운터가 놓인 마르모르(상대의 대상을 지정하지 않는 효과를 받지 않음)는 고를 수 없다
         g = make(); g.turn_player = 1

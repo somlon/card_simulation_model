@@ -50,10 +50,11 @@ def value(g, c):
 def best(g, cands, p, purpose='remove'):
     return g.p[p].ai.pick_target(g, p, cands, purpose) if cands else None
 VETO = -10 ** 6   # AI 점수: 규칙상 발동할 수 있어도 AI는 고르지 않는다 (HeuristicAI는 0 이하, LearnedAI는 이 값 이하를 후보에서 뺀다)
-def field_pick(g, p, purpose='remove', pool=None):
+def field_pick(g, p, purpose='remove', pool=None, src=None):
     """「필드의 카드」 = 자신 · 상대 양쪽 필드 (§14, §15-1).
-    상대 카드가 있으면 그중에서 AI가 고르고, 없으면 손해가 가장 적은 자신의 카드를 고른다"""
-    cands = [x for x in (g.all_field() if pool is None else pool) if not g.immune(x, p)]   # 효과를 받지 않는 카드는 고르지 않는다
+    상대 카드가 있으면 그중에서 AI가 고르고, 없으면 손해가 가장 적은 자신의 카드를 고른다.
+    src = 효과의 주체 카드(주면 「「X」 카드 이외의 효과를 받지 않는다」를 그 카드로 판정 — cards2.targets와 같은 규칙, 2026-10-15)"""
+    cands = [x for x in (g.all_field() if pool is None else pool) if not g.immune(x, p, src)]   # 효과를 받지 않는 카드는 고르지 않는다
     opp = [x for x in cands if x.controller != p]
     if opp: return best(g, opp, p, purpose)
     return min(cands, key=lambda x: value(g, x)) if cands else None

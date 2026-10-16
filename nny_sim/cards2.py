@@ -4,9 +4,10 @@ from engine import Effect, link_targets
 from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO
 
 
-def targets(g, p, cands):
-    """p의 효과로 고를 수 있는 카드 (내성 제외)"""
-    return [x for x in cands if not g.immune(x, p)]
+def targets(g, p, cands, src=None):
+    """p의 효과로 고를 수 있는 카드 (내성 제외). src = 효과의 주체 카드 — 주면 「「X」 카드 이외의 효과를 받지 않는다」를 그 카드로 판정한다
+    (호박옥 효과가 상대의 봉인된 에이스를 고를 수 있게, 2026-10-15). 주지 않으면 전과 같다(주체를 모름 = 받지 않음)"""
+    return [x for x in cands if not g.immune(x, p, src)]
 
 
 # ═══════════════════════ 공용 ═══════════════════════
