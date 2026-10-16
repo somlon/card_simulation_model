@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-10-16 (새 카드 반영 · 재학습 · 리그 · 보고서 완료, 자동 재개 루틴 끔, 새 카드 브랜치 PR #29 ~ #38 생성 — 사용자 결정 대기 항목은 「진행 중」)
+마지막 갱신: 2026-10-16 (새 카드 반영 · 재학습 · 리그 · 보고서 완료, 자동 재개 루틴 끔, 새 카드 브랜치 PR #29 ~ #38 머지 완료 · main 미반영 — 사용자 결정 대기 항목은 「진행 중」)
 
 ## 목표 기준 (사용자 지정 — 바꾸라는 지시가 있기 전까지 유지)
 
@@ -48,24 +48,26 @@
     `model/fix-assassin-chain`(7f6155e — 어새신 1번 같은 카드 한 체인 중복, 어새신 처리의 57%) · `model/fix-amber-ace-targets`(1ea835c · 51bda21 —
     호박옥 효과가 상대의 봉인된 에이스를 고름) · `model/fix-sunmoon-untargeted`(40fa4b0 — 태양과 달의 마력 비대상) · `model/fix-talisman-own-doubt`
     (631822f — 부적 1번 「상대의」 의심). 4건을 합친 코드로 같은 시드 재생(12,100매치, 판단표 그대로): 덱 승률 변화 ±2.6%p 이내(몽식 −2.6 · 봉인 +1.8 · 던전 −1.0), 몽식 vs 봉인 80 → 53. 리그 수치는 수정 전 코드 기준 — 수정 반영은 재학습과 함께(사용자 결정).
+    (2026-10-16) 수정 4건은 PR #32 ~ #35로 `model/main` 에 머지됨 — 보고서 리그를 그대로 재현하려면 수정 전 코드 `b6b829f` 로 돌린다.
 - **보고서**: `analysis/new-cards-report`(기준 `analysis/main`) 의 `nny_sim/sim_results/2026-10-14_newcards_n700/재학습_결과_보고서.md`
   (+ PDF 2개 — 본문 · 대표 로그 부록, 대화창 전달). 덱마다 대표 로그 2개(최빈 구도 + 수렴 직전 학습 매치, 사용자 지시 10-13) · 해설 · 규칙 점검,
   **최종 덱 레시피 전체(메인 · 상급 · 전략, 사용자 지시 10-15)**, 시즌별 레시피 표, 빈 표 AI 비교 · 교체 끔 · 수정 코드 재생 비교.
 - **재정 질문 91건**(기존 71 + 로그 점검 20): `docs/new-cards-rulings` 의 `재정_질문_2026-10-08_카드.md` — 사용자 답변 대기. 답이 오면 model 새 브랜치로 수정 → 재학습.
-- **브랜치 — PR #29 ~ #38 생성(2026-10-16, 사용자 지시), 머지는 사용자 지시 대기:**
+- **브랜치 — PR #29 ~ #38 머지 완료(2026-10-16, 사용자 지시, merge commit). `main` 미반영(R1). 아래는 머지 전 작업 브랜치 기록:**
   - `data/new-cards-1008` (기준 `data/main`, 7978a25): 카드 풀 200장 · 덱 등록기 · 카드자료 md · 덱 11개.
   - `model/new-cards-1008` (기준 `model/main`, b6b829f): 카드 구현 · 엔진 확장 · 테스트 · 학습기 원자적 저장(0fdda71) · 레시피 시즌 덱별 저장(fbaa774) · 대표 로그 저장(665378d) · xz 읽기.
   - `data/retrain-new-cards` (기준 `data/main`, 06a7352): `learned/` 판단표(xz) · 교체표 · 레시피 · 덱 · train_new · train_v2 기록. 옛 표는 `learned/보관/2026-10-08_이전/`.
   - `analysis/new-cards-report` (기준 `analysis/main`, bc19cf7): 리그 원자료 · 보고서 · 대표 로그 · 빈 표 리그 · 스크립트.
   - `analysis/report-guide-logs` (기준 `analysis/main`, 99eef20): 보고서 지침 — 대표 로그 덱마다 2개.
   - `docs/new-cards-rulings` (기준 `docs/main`, 692f5c9): 재정 질문 91건 + 고친 구현 오류 4건 기록.
-  - 수정 브랜치 4개(위, 기준 `model/new-cards-1008` — PR은 new-cards-1008 뒤에).
-  - 쌓임 관계: `data/retrain-new-cards` 는 `data/new-cards-1008` 위에 쌓였다 — PR은 new-cards-1008 먼저.
+  - 수정 브랜치 4개(위, 기준 `model/new-cards-1008`).
+  - 머지 결과: `data/main` #29 `36d1eed` → #30 `307a7ed`(트리 = `data/retrain-new-cards`) · `model/main` #31 `e4c09ac` → #32 `f6ca82a` → #33 `d586d5b` → #34 `11b629a` → #35 `6d74492`
+    · `analysis/main` #36 `8e5b73e` → #37 `cfc3821` · `docs/main` #38 `658188e`.
 - **다시 돌리기 (새 컨테이너):**
   ```bash
-  cd /home/user/card_simulation_model && git fetch origin model/new-cards-1008 data/retrain-new-cards
-  git worktree add ../run origin/model/new-cards-1008 -B model/new-cards-1008
-  git archive origin/data/retrain-new-cards nny_sim | tar -x -C ../run       # 풀 · 덱 · 판단표(xz) · 레시피
+  cd /home/user/card_simulation_model && git fetch origin model/main data/main
+  git worktree add --detach ../run origin/model/main     # 수정 4건 포함. 보고서 리그를 그대로 재현하려면 origin/model/main 대신 b6b829f(수정 전)
+  git archive origin/data/main nny_sim | tar -x -C ../run       # 풀 · 덱 · 판단표(xz) · 레시피
   printf 'nny_sim/card_pool.json\nnny_sim/decks/\nnny_sim/learned/\nnny_sim/덱_등록기.html\nnny_sim/sim_results/\n' >> .git/info/exclude
   cd ../run/nny_sim && python3 match_sim.py run --matches 700 --workers 2 --out sim_results/<이름>   # 리그 약 83분
   ```
@@ -80,6 +82,9 @@
     재생 스크립트는 오류 매치와 안전장치 중단을 구분해 기록한다(처음 수정본의 오류가 「중단」으로 보였음).
   - **작업자 재시작 뒤:** 남은 일이 있으면 「응답 없음」으로 끝내지 말고 바로 이어서 한다(2026-10-15 이 실수로 보고가 몇 시간 늦음). 루틴 끄기 · 생성은 사용자 승인이 필요하다 — 자리에 없으면 승인 요청이 닫혀 실행되지 않는다.
   - **수렴 ≠ 학습 전보다 강함:** 직전 표 대비 수렴 판정만으로는 휴리스틱보다 나은지 보장되지 않는다 — 평가마다 빈 표 대비(`--h2h-empty`)도 기록한다.
+  - **쌓인 PR 머지 (2026-10-16):** 머지 전에 로컬에서 같은 순서로 모의 머지 · 전체 테스트를 먼저 돌린다(#34 충돌을 미리 찾음). 같은 기준에서 갈라진 수정 브랜치들이
+    같은 테스트 파일 같은 자리에 테스트를 추가하면 충돌한다 → 기준 브랜치를 작업 브랜치에 머지(merge commit, 양쪽 유지)해 푸시. 푸시 직후 GitHub의 PR 머리 커밋 · 머지 가능 여부는
+    1분쯤 늦게 반영된다 → PR의 head sha가 바뀐 것을 확인하고 `expectedHeadSha` 를 붙여 머지.
 
 ## 다음 세션에서 이어서 하기 (2026-10-08 세션 시점)
 
@@ -199,6 +204,7 @@
 | 2026-10-13 ~ 14 | 재학습 v2 반복 45 · 시즌 8 수렴(빈 표 대비 49.5%), 판단표 xz · 원자적 체크포인트 · 레시피 시즌 덱별 저장 | `data/retrain-new-cards` (06a7352) · `model/new-cards-1008` |
 | 2026-10-14 ~ 15 | 84,700매치 리그 + 빈 표 AI 리그 + 보고서(대표 로그 덱마다 2개 · 해설 · 규칙 점검 · 최종 덱 레시피 · 상성 역전 분석 · 교체 끔 / 수정 코드 재생 비교), PDF 2개 대화창 전달 | `analysis/new-cards-report` (bc19cf7) |
 | 2026-10-15 | 대표 로그 점검 → 구현 오류 4건 수정 브랜치(어새신 중복 발동 · 호박옥 에이스 대상 · 태양과 달의 마력 비대상 · 부적 「상대의」 의심), 재정 질문 20건 추가(91건) | `model/fix-*` 4개 · `docs/new-cards-rulings` (692f5c9) |
+| 2026-10-16 | PR #29 ~ #38 생성 · 순서대로 머지 (main 반영 없음 — 사용자 지시, merge commit). 쌓인 PR은 기준을 계열 기준 브랜치로 바꾼 뒤 머지. #34는 #33과 같은 테스트 파일 같은 자리 추가로 충돌 → `model/main` 을 작업 브랜치에 머지해 양쪽 테스트 유지(9be15a5). 머지 전 로컬 모의 머지 · 전체 테스트(274건 중 1건 실패 — 기존 `test_match_structure`, 「다음 할 일」 0). 머지 뒤 기준 브랜치 트리 = 모의 머지 트리 확인 | `data/main`: #29 `36d1eed` → #30 `307a7ed` / `model/main`: #31 `e4c09ac` → #32 `f6ca82a` → #33 `d586d5b` → #34 `11b629a` → #35 `6d74492` / `analysis/main`: #36 `8e5b73e` → #37 `cfc3821` / `docs/main`: #38 `658188e` |
 
 ## 실행 환경 메모
 
@@ -217,11 +223,10 @@
 - **사용자 결정 대기 (새 카드 보고서, 2026-10-15):**
   - 덱 밸런스 기준 AI → 사용자 결정(2026-10-16): AI 플레이 수준이 사람 수준에 오른 뒤 판단, 추후 지시. (두 AI의 실력은 같지만(49.5%) 덱 승률이 크게 다르다.)
   - 재정 질문 91건(`docs/new-cards-rulings`) — 특히 격투가 6(투기장 84%의 근거).
-  - 구현 오류 수정 브랜치 4개 + 전략 덱 교체 개선(card_value · 스킬 지정 카드 고정)을 반영해 재학습 · 리그를 다시 할지.
+  - 구현 오류 수정 4개(PR #32 ~ #35로 `model/main` 머지됨, 2026-10-16) + 전략 덱 교체 개선(card_value · 스킬 지정 카드 고정)을 반영해 재학습 · 리그를 다시 할지.
   - 세션 자동 압축 시 자동 인계(작업 브랜치 푸시 · workflow.md 기록 · 새 세션 생성 · 매시 루틴 옮기기) 규정(R5) 추가 여부 — 제안함(가벼운 판 / 원래 안 / 안 함), 사용자가 추후 답변.
   - 재정 질문 91건 답변 — 답변란을 붙인 PDF 정리본(Q1~Q91, 영향 큰 8건 앞에 모음)을 대화창으로 전달(2026-10-16). 재학습 여부(수정 4건 · 교체 개선)도 사용자가 추후 답변.
-  - PR #29 ~ #38 (2026-10-16 생성, 사용자 지시) — 머지 지시 대기. 쌓인 PR 순서: #29 → #30, #31 → #32 ~ #35
-    (#30 은 `data/new-cards-1008`, #32 ~ #35 는 `model/new-cards-1008` 을 기준으로 열림 — 앞 PR 머지 뒤 기준을 `data/main` · `model/main` 으로 바꾼다).
+  - PR #29 ~ #38 머지 완료(2026-10-16, 사용자 지시) — 열린 PR 없음. `test_match_structure` 수정 여부 사용자 확인 대기(「다음 할 일」 0).
 - 카드 해석 재정 대기(솔루나 아츠 7건, 세제 4건) — 답을 받으면 model 새 브랜치(`model/main` 기준)로 수정.
 - 계열 기준 브랜치(`model/main` · `data/main` · `analysis/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
@@ -231,7 +236,10 @@
 ## 다음 할 일 (우선순위 순)
 
 0. (2026-10-15, 가장 우선) 새 카드 후속 — 사용자 결정 뒤:
-   - 재정 답변 반영(model 새 브랜치) + 구현 오류 수정 4개 + 전략 덱 교체 개선 → 같은 판단표에서 이어 학습(또는 새로) → 리그 · 보고서 갱신.
+   - 재정 답변 반영(model 새 브랜치) + 구현 오류 수정 4개(`model/main` 반영됨) + 전략 덱 교체 개선 → 같은 판단표에서 이어 학습(또는 새로) → 리그 · 보고서 갱신.
+   - `test_match_sim.MatchSimTest.test_match_structure` 실패(기존 — #31 머리 커밋부터, 머지와 무관): 2 · 3라운드 「직전 패자는 항상 선공」 가정이 선후공 학습(`policy.LEARN_FIRST`)과 어긋난다.
+     판단표가 미러전에서 후공을 고른다(새 표: 번성충-대발생 선공 42% / 후공 56%, 표본 약 1,500). 판단표가 없으면 통과 — 테스트가 `learned/` 내용에 따라 갈린다.
+     판단표와 무관하게(빈 표로 돌리거나 기록된 선후공 선택과 비교) 고치는 `model` 새 브랜치 — 사용자 확인 대기.
    - 학습표 AI의 남은 함정: 솔루나 미러전 이기는 공격 회피(1000턴 중단), 빈 표의 표시 형식 동률(희생제 인형 공격 표시).
    - (완료 2026-10-15) 새 카드 반영: 카드 풀 · 등록기 → 구현 · 재정 → 덱 → 재학습 → 리그 · 보고서.
 0. (2026-10-06 추가)
@@ -282,11 +290,11 @@
 | `data/clear-card-pool` | 카드 DB 비움(새 카드 업로드 준비) | PR #27 머지 완료, 삭제 가능 |
 | `config/workflow-2026-10-08` | workflow.md 진척 기록 | PR #28 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
-| `data/new-cards-1008` | 새 카드 풀 200장 · 등록기 · 카드자료 md · 덱 11개 | PR #29 (→ `data/main`) 열림 |
-| `model/new-cards-1008` | 새 카드 구현 · 엔진 확장 · 학습기 개선 | PR #31 (→ `model/main`) 열림 |
-| `data/retrain-new-cards` | 재학습 v2 판단표(xz) · 교체표 · 레시피 · 기록 (data/new-cards-1008 위) | PR #30 (→ `data/new-cards-1008`, #29 뒤) 열림 |
-| `analysis/new-cards-report` | 리그 · 빈 표 리그 · 보고서 · 재생 비교 (bc19cf7) | PR #37 (→ `analysis/main`) 열림 |
-| `analysis/report-guide-logs` | 보고서 지침 — 대표 로그 덱마다 2개 | PR #36 (→ `analysis/main`) 열림 |
-| `docs/new-cards-rulings` | 재정 질문 91건 | PR #38 (→ `docs/main`) 열림 |
-| `model/fix-assassin-chain` · `model/fix-amber-ace-targets` · `model/fix-sunmoon-untargeted` · `model/fix-talisman-own-doubt` | 로그 점검 구현 오류 수정(기준 model/new-cards-1008) | PR #32 · #33 · #34 · #35 (→ `model/new-cards-1008`, #31 뒤) 열림 |
+| `data/new-cards-1008` | 새 카드 풀 200장 · 등록기 · 카드자료 md · 덱 11개 | PR #29 머지 완료, 삭제 가능 |
+| `model/new-cards-1008` | 새 카드 구현 · 엔진 확장 · 학습기 개선 | PR #31 머지 완료, 삭제 가능 (보고서 리그의 코드 = 이 브랜치 b6b829f) |
+| `data/retrain-new-cards` | 재학습 v2 판단표(xz) · 교체표 · 레시피 · 기록 (data/new-cards-1008 위) | PR #30 머지 완료, 삭제 가능 |
+| `analysis/new-cards-report` | 리그 · 빈 표 리그 · 보고서 · 재생 비교 (bc19cf7) | PR #37 머지 완료, 삭제 가능 |
+| `analysis/report-guide-logs` | 보고서 지침 — 대표 로그 덱마다 2개 | PR #36 머지 완료, 삭제 가능 |
+| `docs/new-cards-rulings` | 재정 질문 91건 | PR #38 머지 완료, 삭제 가능 |
+| `model/fix-assassin-chain` · `model/fix-amber-ace-targets` · `model/fix-sunmoon-untargeted` · `model/fix-talisman-own-doubt` | 로그 점검 구현 오류 수정(기준 model/new-cards-1008) | PR #32 · #33 · #34 · #35 머지 완료, 삭제 가능 |
 | `config/workflow-2026-10-12` | 이 세션의 default 작업 사본 | default에 직접 푸시 |
