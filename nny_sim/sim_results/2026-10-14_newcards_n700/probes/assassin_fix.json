@@ -1,0 +1,135 @@
+{
+ "variant": "fix",
+ "n": 150,
+ "pairs": {
+  "던전마스터 셔플! vs 데이터버그 패키지 프로그램": {
+   "dungeon_seat": 0,
+   "wins": 104,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 번성충-대발생": {
+   "dungeon_seat": 0,
+   "wins": 31,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 세제": {
+   "dungeon_seat": 0,
+   "wins": 150,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 소원의 분수": {
+   "dungeon_seat": 0,
+   "wins": 147,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 솔루나 아츠": {
+   "dungeon_seat": 0,
+   "wins": 150,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 올인": {
+   "dungeon_seat": 0,
+   "wins": 22,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 투기장의 규칙": {
+   "dungeon_seat": 0,
+   "wins": 5,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 호박옥 - 몽식의 계약": {
+   "dungeon_seat": 0,
+   "wins": 149,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 호박옥 - 봉인의 계약": {
+   "dungeon_seat": 0,
+   "wins": 140,
+   "games": 150,
+   "stalled": 0
+  },
+  "던전마스터 셔플! vs 희생제": {
+   "dungeon_seat": 0,
+   "wins": 91,
+   "games": 150,
+   "stalled": 0
+  },
+  "데이터버그 패키지 프로그램 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 108,
+   "games": 150,
+   "stalled": 0
+  },
+  "번성충-대발생 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 24,
+   "games": 150,
+   "stalled": 0
+  },
+  "세제 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 149,
+   "games": 150,
+   "stalled": 0
+  },
+  "소원의 분수 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 148,
+   "games": 150,
+   "stalled": 0
+  },
+  "솔루나 아츠 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 150,
+   "games": 150,
+   "stalled": 0
+  },
+  "올인 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 33,
+   "games": 150,
+   "stalled": 0
+  },
+  "투기장의 규칙 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 7,
+   "games": 150,
+   "stalled": 0
+  },
+  "호박옥 - 몽식의 계약 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 146,
+   "games": 150,
+   "stalled": 0
+  },
+  "호박옥 - 봉인의 계약 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 143,
+   "games": 150,
+   "stalled": 0
+  },
+  "희생제 vs 던전마스터 셔플!": {
+   "dungeon_seat": 1,
+   "wins": 91,
+   "games": 150,
+   "stalled": 0
+  }
+ },
+ "dungeon_win": 1988,
+ "games": 3000,
+ "same_winner_as_league": [
+  2767,
+  3000
+ ],
+ "counts": {
+  "res1": 5020
+ }
+}

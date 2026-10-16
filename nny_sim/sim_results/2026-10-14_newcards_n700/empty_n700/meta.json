@@ -1,0 +1,43 @@
+{
+ "ai": {
+  "ai": "table",
+  "policy": "learned/empty_policy.json",
+  "side": "learned/empty_side.json"
+ },
+ "matches_per_pair": 700,
+ "seed": 1,
+ "workers": 3,
+ "decks_list": [
+  "던전마스터 셔플!",
+  "데이터버그 패키지 프로그램",
+  "번성충-대발생",
+  "세제",
+  "소원의 분수",
+  "솔루나 아츠",
+  "올인",
+  "투기장의 규칙",
+  "호박옥 - 몽식의 계약",
+  "호박옥 - 봉인의 계약",
+  "희생제"
+ ],
+ "planned_matches": 84700,
+ "started": "2026-10-14 02:40:31",
+ "inputs": {
+  "policy": {
+   "path": "learned/empty_policy.json",
+   "bytes": 33,
+   "sha1": "cd4cccd8eb9128b9a5eaa92843b965c94f13606f"
+  },
+  "side": {
+   "path": "learned/empty_side.json",
+   "bytes": 33,
+   "sha1": "cd4cccd8eb9128b9a5eaa92843b965c94f13606f"
+  }
+ },
+ "code": {
+  "commit": null,
+  "dirty": false
+ },
+ "complete": true,
+ "sec": 3623.3
+}
