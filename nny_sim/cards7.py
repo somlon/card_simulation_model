@@ -302,14 +302,14 @@ def _(c):
     lock = lambda g, x: sealed(x) and not g.is_neg(x)   # 3번 [지속]: 표시 형식 변경 · 공격 불가
     c.flags['no_pos_change'] = lock; c.flags['no_attack'] = lock
     def plan_k(g, c, p):
-        ts = targets(g, p, opp_cards(g, p)); s = seals(c)
+        ts = targets(g, p, opp_cards(g, p), c); s = seals(c)
         if not ts or s <= 0: return 0
         return max(1, min(len(ts), s - 1 if s >= 2 else s))   # 내성용 1개는 되도록 남긴다
     def cost4(g, c, p, l):
         k = plan_k(g, c, p); l.ctx['k'] = g.remove_counter(c, SEAL, k)
         g.L(f'코스트: {c}의 봉인 카운터 {l.ctx["k"]}개 제거')
     def res4(g, c, p, l):
-        pool = targets(g, p, opp_cards(g, p)); ch = []
+        pool = targets(g, p, opp_cards(g, p), c); ch = []
         for _ in range(l.ctx.get('k', 0)):   # 「제거한 개수까지 상대 필드의 카드를 고르고」 — 처리 시 고른다(대상 지정 없음)
             t = best(g, [x for x in pool if x not in ch], p)
             if t is None: break
@@ -317,13 +317,13 @@ def _(c):
         for t in ch:
             if g.on_field(t): g.destroy(t)
     def sc4(g, c, p, ev):
-        ts = targets(g, p, opp_cards(g, p))
+        ts = targets(g, p, opp_cards(g, p), c)
         if not ts: return VETO
         k = plan_k(g, c, p)
         vals = sorted((value(g, x) for x in ts), reverse=True)[:k]
         return 15 + 15 * sum(vals) - (25 if seals(c) - k <= 0 else 0) - 10 * upkeep_short(g, p)
     c.effects = [summon_seals(3),
-                 Effect(4, 'ignition', ('field',), cond=lambda g, c, p, ev: seals(c) > 0 and bool(targets(g, p, opp_cards(g, p))),
+                 Effect(4, 'ignition', ('field',), cond=lambda g, c, p, ev: seals(c) > 0 and bool(targets(g, p, opp_cards(g, p), c)),
                         cost=cost4, res=res4, score=sc4, threat=1200, label='봉인 카운터 제거 → 그 개수까지 상대 카드 파괴')]
 
 
@@ -332,13 +332,13 @@ def _(c):
     ace_guard(c)
     # 3번 [지속]: 자신 필드에 이 카드 이외의 몬스터가 없으면 상대는 자신에게 직접공격할 수 있다 (x = 공격하는 몬스터)
     c.rules['direct_attack'] = lambda g, src, x: x.controller != src.controller and not any(m is not src for m in g.monsters(src.controller))
-    def cands4(g, p): return targets(g, p, [m for m in g.monsters(1 - p) if m.faceup])
+    def cands4(g, p, c): return targets(g, p, [m for m in g.monsters(1 - p) if m.faceup], c)
     def res4(g, c, p, l):
-        t = best(g, cands4(g, p), p)
+        t = best(g, cands4(g, p, c), p)
         if t: face_down_def(g, t)
     c.effects = [summon_seals(1, special_only=True),
                  Effect(4, 'trigger', ('field',), mandatory=True,
-                        cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and seals(c) >= 3 and bool(cands4(g, p)),
+                        cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and seals(c) >= 3 and bool(cands4(g, p, c)),
                         res=res4, score=lambda *a: 80, threat=700, label='턴 종료 시 상대 몬스터 1장 뒷면 수비 (강제)')]
 
 
@@ -419,11 +419,11 @@ def guard_summon3(res, label, purpose):
     def cost(g, c, p, l):
         x = dump_pick(g, p, ups(g, p)); g.deck_to_grave(p, x, f'{c.name} 3번 코스트')
     def sc(g, c, p, ev):
-        ts = targets(g, p, [x for x in pool(g, c) if x.controller != p])
+        ts = targets(g, p, [x for x in pool(g, c) if x.controller != p], c)
         return (60 + 15 * max(value(g, x) for x in ts)) if ts else VETO
     return Effect(3, 'summon', ('field',), opt=2,
-                  cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(ups(g, p)) and bool(targets(g, p, pool(g, c))),
-                  cost=cost, res=lambda g, c, p, l: res(g, c, p, field_pick(g, p, purpose, targets(g, p, pool(g, c)))),
+                  cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(ups(g, p)) and bool(targets(g, p, pool(g, c), c)),
+                  cost=cost, res=lambda g, c, p, l: res(g, c, p, field_pick(g, p, purpose, targets(g, p, pool(g, c), c), c)),
                   score=sc, threat=900, label=label)
 
 
@@ -617,21 +617,23 @@ def _(c):
     def pick(g, c, p):
         cs = [m for m in g.monsters(p) if seals(m) > 0]
         if not cs: return None
-        n = len(targets(g, p, [x for x in opp_cards(g, p) if x is not c]))
+        n = len(targets(g, p, [x for x in opp_cards(g, p) if x is not c], c))
         return max(cs, key=lambda m: (min(seals(m), n) - max(0, seals(m) - n) - (0.8 if m.name in ACES else 0.4 if m.name in GUARDS else 0), -value(g, m)))
     def cost(g, c, p, l):
         m = pick(g, c, p); l.ctx['n'] = g.remove_counter(m, SEAL, seals(m)); g.L(f'코스트: {m}의 봉인 카운터 {l.ctx["n"]}개 전부 제거')
     def res(g, c, p, l):
         n = l.ctx.get('n', 0); ch = []
         for _ in range(n):   # 「제거한 개수만큼 필드의 카드를 고르고」 — 상대 카드부터, 모자라면 자신 카드(ASSUME)
-            pool = [x for x in targets(g, p, g.all_field()) if x is not c and x not in ch]
+            pool = [x for x in targets(g, p, g.all_field(), c) if x is not c and x not in ch]
             if not pool: break
-            ch.append(field_pick(g, p, 'remove', pool))
+            t = field_pick(g, p, 'remove', pool, c)
+            if t is None: break
+            ch.append(t)
         for t in ch:
             if g.on_field(t): g.destroy(t)
     def sc(g, c, p, ev):
         m = pick(g, c, p)
-        opp = sorted((value(g, x) for x in targets(g, p, opp_cards(g, p))), reverse=True)
+        opp = sorted((value(g, x) for x in targets(g, p, opp_cards(g, p), c)), reverse=True)
         if m is None or not opp: return VETO
         s = seals(m); k = min(s, len(opp))
         base = 15 + 15 * sum(opp[:k]) - 25 * max(0, s - len(opp)) - (20 if m.name in ACES else 0)
