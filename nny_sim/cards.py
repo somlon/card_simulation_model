@@ -292,12 +292,14 @@ def _(c):
 def _(c):
     def tg(g, p): return [x for x in opp_cards(g, p) if not g.immune(x, p)]
     def res(g, c, p, l):
-        t = l.ctx['t']
-        if g.on_field(t):
-            g.banish(t)
-            if t.zone == 'banish': g.L(f'{t} 제외')
-    e = Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(tg(g, p)),
-        cost=lambda g, c, p, l: l.ctx.update(t=best(g, tg(g, p), p)) or g.L(f'고름: {l.ctx["t"]}'), res=res,
+        # 「상대 필드의 카드 1장을 제외한다」 — 「대상으로 하고」가 없는 비대상 효과라 처리 시 고른다 (재정 질문 호박옥 2의 해석:
+        # 봉인 카운터가 놓인 마르모르처럼 「대상을 지정하지 않는 효과를 받지 않는」 카드는 고를 수 없다 — 2026-10-15, 전에는 발동 시 골라 대상 취급)
+        t = best(g, tg(g, p), p)
+        if t is None: return
+        g.L(f'고름: {t}')
+        g.banish(t)
+        if t.zone == 'banish': g.L(f'{t} 제외')
+    e = Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(tg(g, p)), res=res,
         score=lambda g, c, p, ev: 20 + 15 * max(value(g, x) for x in tg(g, p)), threat=900)
     e.unnegatable = True; e.no_resp = True
     c.effects = [e]
