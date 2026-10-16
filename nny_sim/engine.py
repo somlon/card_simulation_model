@@ -180,10 +180,12 @@ class Game:
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
         카드 자신의 [지속]이 정한 내성(무효화되면 사라짐):
           flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
+          flags['immune_except_opp'] — immune_except의 예외 카드도 상대(by ≠ 컨트롤러)의 것만 받는다
           flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다"""
         if self.on_field(c) and not self.is_neg(c):
             ex = c.flags.get('immune_except')
-            if ex is not None and src is not c and not (src is not None and src.name == ex): return True
+            # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
+            if ex is not None and src is not c and not (src is not None and src.name == ex and (not c.flags.get('immune_except_opp') or by != c.controller)): return True
             if c.flags.get('immune_others') and src is not c: return True
             eg = self.flag(c, 'immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 callable 플래그(Game.flag)
             if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True

@@ -169,6 +169,16 @@ class DollTest(unittest.TestCase):
         self.assertFalse(g.on_field(ace))
         self.assertEqual(tal.counters.get('퇴마', 0), 0)
 
+    def test_talisman_only_opponents_doubt_negates(self):
+        # 부적 1번 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」 — 미러전: 자기 의심은 자기가 컨트롤하는 부적에 듣지 않는다
+        g = make('희생제', '희생제')
+        mine = next(x for x in g.spells(0) if x.name == '퇴마의 부적')
+        theirs = next(x for x in g.spells(1) if x.name == '퇴마의 부적')
+        d = card(g, '저주 - 의심', 0, 'hand')
+        g.activate(0, d, eff(d, 1)); g.resolve_chain()
+        self.assertTrue(theirs.flags.get('perma_neg'))
+        self.assertFalse(mine.flags.get('perma_neg'))
+
     def test_third_ace_banished_wins(self):
         g = make('희생제', '세제')
         for _ in range(2): card(g, '저주인형 - 저주인형', 0, 'banish')

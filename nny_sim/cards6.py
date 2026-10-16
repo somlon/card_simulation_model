@@ -168,7 +168,7 @@ def _(c):
 # ═══════════════════════ 마법 · 필드 ═══════════════════════
 @card(TALISMAN)
 def _(c):
-    c.flags.update(immune_except='저주 - 의심', no_release=True)
+    c.flags.update(immune_except='저주 - 의심', immune_except_opp=True, no_release=True)   # 1번: 「상대의」 의심만 받는다 (미러전에서 자기 의심은 자기 부적에 듣지 않음)
     def on_ev(g, src, ev):
         """2번 [지속]: 퇴마 카운터 4개 이상이면 컨트롤러가 다음에 발동하는 효과를 「부적 카운터 4개 제거 · 상대 필드의 저주인형 카드 1장 파괴」로 바꾼다"""
         if ev['kind'] == 'negated' and src.flags.get('replace_pending') is ev['link']:
