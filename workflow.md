@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-10-16 (새 카드 반영 · 재학습 · 리그 · 보고서 완료, 자동 재개 루틴 끔 — 사용자 결정 대기 항목은 「진행 중」)
+마지막 갱신: 2026-10-16 (새 카드 반영 · 재학습 · 리그 · 보고서 완료, 자동 재개 루틴 끔, 새 카드 브랜치 PR #29 ~ #38 생성 — 사용자 결정 대기 항목은 「진행 중」)
 
 ## 목표 기준 (사용자 지정 — 바꾸라는 지시가 있기 전까지 유지)
 
@@ -52,7 +52,7 @@
   (+ PDF 2개 — 본문 · 대표 로그 부록, 대화창 전달). 덱마다 대표 로그 2개(최빈 구도 + 수렴 직전 학습 매치, 사용자 지시 10-13) · 해설 · 규칙 점검,
   **최종 덱 레시피 전체(메인 · 상급 · 전략, 사용자 지시 10-15)**, 시즌별 레시피 표, 빈 표 AI 비교 · 교체 끔 · 수정 코드 재생 비교.
 - **재정 질문 91건**(기존 71 + 로그 점검 20): `docs/new-cards-rulings` 의 `재정_질문_2026-10-08_카드.md` — 사용자 답변 대기. 답이 오면 model 새 브랜치로 수정 → 재학습.
-- **브랜치 (원격 푸시, PR 아직 없음 — 사용자 지시 대기):**
+- **브랜치 — PR #29 ~ #38 생성(2026-10-16, 사용자 지시), 머지는 사용자 지시 대기:**
   - `data/new-cards-1008` (기준 `data/main`, 7978a25): 카드 풀 200장 · 덱 등록기 · 카드자료 md · 덱 11개.
   - `model/new-cards-1008` (기준 `model/main`, b6b829f): 카드 구현 · 엔진 확장 · 테스트 · 학습기 원자적 저장(0fdda71) · 레시피 시즌 덱별 저장(fbaa774) · 대표 로그 저장(665378d) · xz 읽기.
   - `data/retrain-new-cards` (기준 `data/main`, 06a7352): `learned/` 판단표(xz) · 교체표 · 레시피 · 덱 · train_new · train_v2 기록. 옛 표는 `learned/보관/2026-10-08_이전/`.
@@ -220,7 +220,8 @@
   - 구현 오류 수정 브랜치 4개 + 전략 덱 교체 개선(card_value · 스킬 지정 카드 고정)을 반영해 재학습 · 리그를 다시 할지.
   - 세션 자동 압축 시 자동 인계(작업 브랜치 푸시 · workflow.md 기록 · 새 세션 생성 · 매시 루틴 옮기기) 규정(R5) 추가 여부 — 제안함(가벼운 판 / 원래 안 / 안 함), 사용자가 추후 답변.
   - 재정 질문 91건 답변 — 답변란을 붙인 PDF 정리본(Q1~Q91, 영향 큰 8건 앞에 모음)을 대화창으로 전달(2026-10-16). 재학습 여부(수정 4건 · 교체 개선)도 사용자가 추후 답변.
-  - PR: 새 카드 브랜치들(data · model · analysis · docs · 수정 4개)은 원격에 푸시만 됨.
+  - PR #29 ~ #38 (2026-10-16 생성, 사용자 지시) — 머지 지시 대기. 쌓인 PR 순서: #29 → #30, #31 → #32 ~ #35
+    (#30 은 `data/new-cards-1008`, #32 ~ #35 는 `model/new-cards-1008` 을 기준으로 열림 — 앞 PR 머지 뒤 기준을 `data/main` · `model/main` 으로 바꾼다).
 - 카드 해석 재정 대기(솔루나 아츠 7건, 세제 4건) — 답을 받으면 model 새 브랜치(`model/main` 기준)로 수정.
 - 계열 기준 브랜치(`model/main` · `data/main` · `analysis/main`) → `main` 반영: R1에 따라 사용자 지시 대기.
 - PR #5 남은 확인 사항 (사용자 확인 대기): 투기장 「수비 표시로 존재할 수 없다」 → 공격 표시 전환(ASSUME), 표시 형식 변경 시점(자신 턴 · 체인 없음 — 투기장과는 별개 항목).
@@ -281,11 +282,11 @@
 | `data/clear-card-pool` | 카드 DB 비움(새 카드 업로드 준비) | PR #27 머지 완료, 삭제 가능 |
 | `config/workflow-2026-10-08` | workflow.md 진척 기록 | PR #28 머지 완료, 삭제 가능 |
 | `claude/lucid-goodall-6570m1` | 첫 세션 자동 생성 브랜치 (내용은 default와 같음) | 삭제 권장 (원격 삭제 권한 없음) |
-| `data/new-cards-1008` | 새 카드 풀 200장 · 등록기 · 카드자료 md · 덱 11개 | 푸시됨, PR 없음 |
-| `model/new-cards-1008` | 새 카드 구현 · 엔진 확장 · 학습기 개선 | 푸시됨, PR 없음 |
-| `data/retrain-new-cards` | 재학습 v2 판단표(xz) · 교체표 · 레시피 · 기록 (data/new-cards-1008 위) | 푸시됨, PR 없음 |
-| `analysis/new-cards-report` | 리그 · 빈 표 리그 · 보고서 · 재생 비교 (bc19cf7) | 푸시됨, PR 없음 |
-| `analysis/report-guide-logs` | 보고서 지침 — 대표 로그 덱마다 2개 | 푸시됨, PR 없음 |
-| `docs/new-cards-rulings` | 재정 질문 91건 | 푸시됨, PR 없음 |
-| `model/fix-assassin-chain` · `model/fix-amber-ace-targets` · `model/fix-sunmoon-untargeted` · `model/fix-talisman-own-doubt` | 로그 점검 구현 오류 수정(기준 model/new-cards-1008) | 푸시됨, PR 없음 |
+| `data/new-cards-1008` | 새 카드 풀 200장 · 등록기 · 카드자료 md · 덱 11개 | PR #29 (→ `data/main`) 열림 |
+| `model/new-cards-1008` | 새 카드 구현 · 엔진 확장 · 학습기 개선 | PR #31 (→ `model/main`) 열림 |
+| `data/retrain-new-cards` | 재학습 v2 판단표(xz) · 교체표 · 레시피 · 기록 (data/new-cards-1008 위) | PR #30 (→ `data/new-cards-1008`, #29 뒤) 열림 |
+| `analysis/new-cards-report` | 리그 · 빈 표 리그 · 보고서 · 재생 비교 (bc19cf7) | PR #37 (→ `analysis/main`) 열림 |
+| `analysis/report-guide-logs` | 보고서 지침 — 대표 로그 덱마다 2개 | PR #36 (→ `analysis/main`) 열림 |
+| `docs/new-cards-rulings` | 재정 질문 91건 | PR #38 (→ `docs/main`) 열림 |
+| `model/fix-assassin-chain` · `model/fix-amber-ace-targets` · `model/fix-sunmoon-untargeted` · `model/fix-talisman-own-doubt` | 로그 점검 구현 오류 수정(기준 model/new-cards-1008) | PR #32 · #33 · #34 · #35 (→ `model/new-cards-1008`, #31 뒤) 열림 |
 | `config/workflow-2026-10-12` | 이 세션의 default 작업 사본 | default에 직접 푸시 |
