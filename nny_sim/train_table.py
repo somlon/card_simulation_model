@@ -26,7 +26,7 @@
     수렴 조건 (a) · (b)에 더해 (c) 그 시즌에 채택된 레시피 변경이 없어야 한다.
   · --time-limit 초가 지나면 반복 경계에서 체크포인트를 저장하고 멈춘다(같은 명령으로 이어서 실행).
 """
-import argparse, copy, gc, itertools, json, math, multiprocessing as mp, os, random, sys, time, traceback
+import argparse, copy, gc, itertools, json, math, multiprocessing as mp, os, random, sys, time, traceback, zlib
 
 for _k in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
     os.environ.setdefault(_k, '1')
@@ -99,12 +99,18 @@ def _train_worker(batch):
     side0 = {k: (v[0], v[1]) for k, v in M.SIDE.L1.items()}
     eps, side_eps = _G['eps'], _G['side_eps']
     st = {'matches': 0, 'rounds': 0, 'stalled': 0, 'errors': 0, 'err': None}
+    last = {}   # 덱 → 이 묶음에서 그 덱이 마지막으로 끝낸 매치의 기록 (보고서 「학습이 수렴한 마지막 시뮬레이션 로그」, 사용자 지시 2026-10-13)
     for a, b, first, seed in batch:
         dA, dB = _deck_pair(a, b)
+        log = []
         try:
-            mw, rounds = M.play_match(dA, dB, first, random.Random(seed), [], lambda d: P.LearnedAI(d['스킬'], learn=True, eps=eps),
+            mw, rounds = M.play_match(dA, dB, first, random.Random(seed), log, lambda d: P.LearnedAI(d['스킬'], learn=True, eps=eps),
                                       side=True, side_eps=side_eps, learn_side=True)
             st['matches'] += 1; st['rounds'] += len(rounds)
+            rec = {'t_end': time.time(), 'pid': os.getpid(), 'decks': [a, b], 'first': first, 'seed': seed, 'eps': round(eps, 4),
+                   'side_eps': round(side_eps, 4), 'winner_seat': mw, 'rounds': len(rounds),
+                   'log_z': zlib.compress('\n'.join(f'{e.get("t", "")}\t{e.get("ph", "")}\t{e.get("k", "")}\t{e.get("m", "")}' for e in log).encode('utf-8'), 6)}
+            for d in {a, b}: last[d] = rec
         except StalledGame:
             st['stalled'] += 1
         except Exception:
@@ -113,7 +119,7 @@ def _train_worker(batch):
     for k, v in M.SIDE.L1.items():
         w0, n0 = side0.get(k, (0, 0))
         if v[1] != n0: ds[k] = [v[0] - w0, v[1] - n0]
-    return d1, d2, ds, st
+    return d1, d2, ds, st, last
 
 
 def _league_worker(batch):
@@ -238,14 +244,38 @@ def coverage(T, names, skills):
 
 # ─────────────── 저장 ───────────────
 def save_ckpt(out, T, S, state, prev=None):
+    """임시 파일에 모두 쓴 뒤 한꺼번에 바꿔 넣는다 — 저장 중 컨테이너가 회수돼도 표 · 상태가 서로 다른 반복의 것으로 섞이거나 잘리지 않게 (2026-10-13)"""
     import policy as P
-    T.save(os.path.join(out, 'policy.json.gz'))
-    P.Table.save(S, os.path.join(out, 'side.json.gz'))
-    if prev is not None:
-        prev[0].save(os.path.join(out, 'prev_policy.json.gz')); P.Table.save(prev[1], os.path.join(out, 'prev_side.json.gz'))
+    tabs = [('policy', T), ('side', S)] + ([('prev_policy', prev[0]), ('prev_side', prev[1])] if prev is not None else [])
+    for name, t in tabs: P.Table.save(t, os.path.join(out, f'{name}.tmp.json.gz'))
     tmp = os.path.join(out, 'state.json.tmp')
-    json.dump(state, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(state, f, ensure_ascii=False, indent=1)
+    for name, _ in tabs: os.replace(os.path.join(out, f'{name}.tmp.json.gz'), os.path.join(out, f'{name}.json.gz'))
     os.replace(tmp, os.path.join(out, 'state.json'))
+
+
+def save_state(out, state):
+    tmp = os.path.join(out, 'state.json.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(state, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, os.path.join(out, 'state.json'))
+
+
+def save_last_logs(out, it, lastlog):
+    """이 반복에서 덱마다 마지막으로 끝난 학습 매치의 전체 로그를 <out>/last_logs.json.gz 에 덮어쓴다 — 수렴해 멈추면 마지막 반복의 로그가 남는다.
+    줄 형식: 턴 \\t 단계 \\t 종류 \\t 메시지 (판단 기록 포함). winner_seat: decks[0]이 앉은 자리 0 · decks[1]이 1, 무승부/중단이면 None"""
+    import gzip
+    recs = {d: {k: v for k, v in r.items() if k != 'log_z'} | {'iter': it, 'log': zlib.decompress(r['log_z']).decode('utf-8').split('\n')}
+            for d, r in sorted(lastlog.items())}
+    tmp = os.path.join(out, 'last_logs.json.gz.tmp')
+    with gzip.open(tmp, 'wt', encoding='utf-8') as f: json.dump(recs, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(out, 'last_logs.json.gz'))
+
+
+def empty_table():
+    """빈 판단표 — LearnedAI가 휴리스틱 점수(사전값)만으로 고른다"""
+    import policy as P
+    t = P.Table.__new__(P.Table); t.path = None; t.source = 'empty'; t.L0 = {}; t.L1 = {}; t.L2 = {}; t.games = 0
+    return t
 
 
 def side_table(path):
@@ -269,9 +299,11 @@ def main(argv=None):
     ap.add_argument('--eval-every', type=int, default=5)
     ap.add_argument('--eval-matches', type=int, default=100)
     ap.add_argument('--h2h-matches', type=int, default=50)
+    ap.add_argument('--h2h-empty', type=int, default=10, help='평가마다 빈 표(휴리스틱 사전값 AI) 대비 맞대결 — 순서쌍당 시드 수(0이면 안 함). 기록용, 수렴 판정에는 쓰지 않음')
     ap.add_argument('--patience', type=int, default=2)
     ap.add_argument('--min-iters', type=int, default=15)
     ap.add_argument('--time-limit', type=float, default=1e18)
+    ap.add_argument('--ckpt-every', type=int, default=1, help='반복 N회마다 체크포인트 저장 (평가 반복은 항상 저장). 0이면 평가 · 시간 한도 때만')
     ap.add_argument('--seed', type=int, default=20261006)
     ap.add_argument('--no-recipe', action='store_true', help='시즌마다 레시피 학습을 하지 않는다')
     ap.add_argument('--recipe-n', default='2,8,40', help='레시피 학습 단계별 상대당 매치 쌍 수(짧게,길게,최종)')
@@ -333,6 +365,9 @@ def main(argv=None):
         if prev is not None:
             _G['cur'] = (T, S); _G['prev'] = prev
             ev['h2h'] = h2h(names, a.h2h_matches, a.workers, a.seed + it)
+        if a.h2h_empty:   # 빈 표에서 시작한 재학습이 학습 전(휴리스틱 사전값)보다 나은지 기록 (2026-10-13)
+            _G['cur'] = (T, S); _G['prev'] = (empty_table(), empty_table())
+            ev['h2h_empty'] = h2h(names, a.h2h_empty, a.workers, a.seed + 7919 + it)
         prev = (clone(T), clone(S))
         calm_a = 'chi2' in ev and ev['chi2']['p'] is not None and ev['chi2']['p'] > 0.05
         calm_b = 'h2h' in ev and (ev['h2h']['rate'] - ev['h2h']['ci95']) < 50.0
@@ -344,16 +379,23 @@ def main(argv=None):
         msg = f'[평가 {it}] {rates}'
         if 'chi2' in ev: msg += f' | Δ χ²={ev["chi2"]["stat"]} p={ev["chi2"]["p"]:.3f} 최대Δ {ev["chi2"]["max_delta_pp"]}pp'
         if 'h2h' in ev: msg += f' | 직전 표 대비 {ev["h2h"]["rate"]}% ± {ev["h2h"]["ci95"]}'
+        if 'h2h_empty' in ev: msg += f' | 빈 표 대비 {ev["h2h_empty"]["rate"]}% ± {ev["h2h_empty"]["ci95"]}'
         msg += f' | 안정 {state["calm"]}/{a.patience} ({ev["sec"]}s)'
         print(msg, flush=True)
         if it >= a.min_iters and state['calm'] >= a.patience:
             state['converged'] = True
 
     def recipe_stage(it):
-        """시즌 하나: 표를 고정하고 덱마다 레시피 학습기 한 라운드. 채택된 레시피는 다음 단계부터 쓴다"""
+        """시즌 하나: 표를 고정하고 덱마다 레시피 학습기 한 라운드. 채택된 레시피는 다음 단계부터 쓴다.
+        덱 하나가 끝날 때마다 state.json에 진행(recipe_part)을 저장 — 컨테이너가 회수돼도 끝낸 덱은 건너뛰고 이어서 (2026-10-13)"""
         import deck_opt as DO
         t0 = time.time(); changes = {}; accepted = 0
+        part = state.get('recipe_part')
+        if part and part.get('iter') == it:
+            changes = part['changes']; accepted = part['accepted']; t0 -= part.get('sec', 0)
+            print(f'  [레시피] 시즌 {len(state["seasons"])} 이어서: 끝낸 덱 {len(changes)}개 건너뜀', flush=True)
         for n in names:
+            if n in changes: continue
             d = decks[n]; st = DO.state_from_deck(d); st['history'] = state['recipe_hist'].get(n, [])
             con, val = DO.log_guides(d['스킬'], st['counts'], st['strat'], {k: decks[k] for k in names})
             rec = DO.one_round(st, [decks[k] for k in names if k != n], ev=lambda jobs: parallel_ev(jobs, a.workers),
@@ -368,9 +410,12 @@ def main(argv=None):
             print(f'  [레시피 {n}] {"채택" if rec.get("accepted") else "유지"}: {rec.get("best")} '
                   f'({rec.get("base")}% → {rec.get("best_rate")}%, z={rec.get("z")}' + (f', 확인 z={cf["z"]}' if cf else '') +
                   f') 매수 {rec.get("sizes_after")}', flush=True)
+            state['recipe_part'] = {'iter': it, 'changes': changes, 'accepted': accepted, 'sec': round(time.time() - t0, 1)}
+            state['decks'] = {k: decks[k] for k in names}
+            save_state(a.out, state)   # 표는 레시피 학습 중 바뀌지 않으므로 상태만
         season = {'season': len(state['seasons']), 'iter': it, 'changes': changes, 'accepted': accepted,
                   'recipes': {n: deck_rows(decks[n]) for n in names}, 'sec': round(time.time() - t0, 1)}
-        state['seasons'].append(season); state['recipe_done'] = it
+        state['seasons'].append(season); state['recipe_done'] = it; state.pop('recipe_part', None)
         state['decks'] = {k: decks[k] for k in names}
         if accepted: state['calm'] = 0; state['converged'] = False
         print(f'[시즌 {season["season"]}] 레시피 변경 {accepted}개 덱 ({season["sec"]}s) · 안정 {state["calm"]}/{a.patience}', flush=True)
@@ -394,10 +439,14 @@ def main(argv=None):
         # 망각 → 합치기
         pr = decay(T.L2, a.gamma, a.prune); decay(T.L1, a.gamma); decay(T.L0, a.gamma); decay(S.L1, a.gamma)
         tot = {'matches': 0, 'rounds': 0, 'stalled': 0, 'errors': 0}; err = None
-        for d1, d2, ds, st in res:
+        lastlog = {}
+        for d1, d2, ds, st, last in res:
             merge_policy(T, d1, d2); add_into(S.L1, ds)
             for k in tot: tot[k] += st[k]
             err = err or st['err']
+            for d, rec in last.items():
+                if d not in lastlog or rec['t_end'] > lastlog[d]['t_end']: lastlog[d] = rec
+        save_last_logs(a.out, it, lastlog)
         T.games += tot['rounds']
         h = dict(iter=it, eps=round(_G['eps'], 4), side_eps=round(_G['side_eps'], 4), pruned=pr, sec=round(time.time() - t0, 1), **tot)
         if err: h['err'] = err
@@ -409,6 +458,8 @@ def main(argv=None):
             evaluate(it); save_ckpt(a.out, T, S, state, prev)
             if not a.no_recipe and not state['converged']:
                 recipe_stage(it); save_ckpt(a.out, T, S, state, prev)
+        elif a.ckpt_every and it % a.ckpt_every == 0:
+            save_ckpt(a.out, T, S, state, prev)   # 컨테이너가 중간에 회수돼도 같은 --out으로 이어서 (2026-10-13)
         if time.time() - t_start > a.time_limit:
             save_ckpt(a.out, T, S, state, prev); print('시간 한도 — 저장하고 멈춤', flush=True); return
     save_ckpt(a.out, T, S, state, prev)

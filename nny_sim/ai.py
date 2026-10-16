@@ -51,6 +51,71 @@ DECK_POLICY = {
                 '솔루나 아츠 - 여명과 황혼의 궤적', '시아 아츠 - 여명신광', '시아 아츠 - 성광소각', '시아 아츠 - 일광지로',
                 '솔루나 아츠 - 천체정렬'],
         mull_dead=['솔루나 시아 - 코로나 이그니스', '솔루나 시엘 - 블러드문 리퍼']),
+    # 2026-10-11 새 덱 (시제품 지침 — 학습의 사전값. 학습표 데이터가 쌓이면 학습값이 대신한다)
+    '소원의 분수': dict(
+        split=5, split_table={}, upper_in_hand=(0, 1),
+        search=['행운의 도박사', '꿈이 가득한 아이', '코인 - 행운의 네잎클로버', '희생의 의사', '용기의 모험가',
+                '영웅의 조건 - 행운', '영웅의 조건 - 희생', '영웅의 조건 - 용기', '영웅의 조건 - 지혜', '행운의 카드 - 조커',
+                '간절한 마음', '기적의 전조', '코인 - 희생의 펜던트', '코인 - 용기의 검', '코인 - 지혜의 서', '지혜의 사서',
+                '희생의 상징 - 펜던트', '용기의 무기 - 검', '지혜의 원천 - 마도서', '행운의 도적', '희생의 성녀', '용기의 전사',
+                '지혜의 마법사', '기적의 영웅'],
+        mull_dead=['기적의 영웅']),                       # 스킬 효과로만 특수소환 — 패에서는 쓸 수 없다
+    '희생제': dict(
+        split=5, split_table={}, upper_in_hand=(0, 1),
+        search=['저주인형 - 애나벨', '저주인형 마들렌', '저주 - 위저보드', '저주 - 재앙', '저주인형 - 쿠로하', '저주 - 강령',
+                '저주 - 불문율', '저주 - 빙의', '저주 - 타락', '저주인형 - 비비안', '저주 - 의심', '저주 - 탐욕', '저주 - 원한의 굴레',
+                '저주인형 - 저주인형', '저주인형 - 처키', '저주인형 - 조리아드'],
+        mull_dead=['퇴마의 부적']),                       # 희생제 1번이 상대에게 놓는 카드 — 자신이 쓰면 손해
+    # 호박옥 (2026-10-12 시제품 지침): 에이스는 스킬이 라운드 시작 시 필드에 낸다 — 패에 온 에이스는 제물 2장이 드는 최상급
+    '호박옥 - 봉인의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['호박옥 - 침전', '호박옥 - 결정충', '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '호박옥 - 각성의 태동',
+                '호박옥 - 수액정', '호박옥 - 잔편', '호박옥 - 태고의 수해', '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 균열',
+                '호박옥의 수호자 - 레시나', '호박옥의 수호자 - 실렉스', '호박옥 - 임시 봉인', '봉인을 푸는 자',
+                '호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스'],
+        mull_dead=['호박옥 - 아우렘 티라누스']),
+    '호박옥 - 몽식의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['봉인을 푸는 자', '호박옥 - 침전', '호박옥 - 결정충', '호박옥 - 각성의 태동', '월식', '호박옥 - 수액정', '호박옥 - 잔편',
+                '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '깨어남의 종', '몽마의 도래', '호박옥 - 태고의 수해',
+                '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 임시 봉인', '호박옥 - 균열', '호박옥의 수호자 - 레시나',
+                '호박옥의 수호자 - 실렉스', '꿈의 파열', '호박옥 - 아우렘 티라누스', '호박옥 - 녹스 솜니페르'],
+        mull_dead=['호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스']),
+    # 던전마스터 (2026-10-12 시제품 지침): 스킬 3번이 패의 레벨 5 이상을 특수소환 — 패에 상급 몬스터를 1~3장 유지 (시작 패 메인 3 / 상급 2).
+    # 서치 우선순위: 컨트롤러(덱 · 묘지에서 보스 특수소환 + 서치) > 보스 > 율법(강제 [유언] 상쇄) > 상대 턴 견제 카드 순
+    '던전마스터 셔플!': dict(
+        split=3, split_table={}, upper_in_hand=(1, 3),
+        search=['던전마스터 컨트롤러', '던전마스터 데스 칠 드래곤', '던전마스터 인페르노 드래곤', '암흑의 율법', '던전마스터 헬',
+                '트랩: 깜짝상자', '던전마스터 다크엘프 어새신', '던전마스터 다크 엠퍼러', '던전마스터 트랩퍼', '트랩: 가시바늘',
+                '던전마스터 다크 매지션', '던전마스터 새크리파이스', '던전마스터 망령', '트랩: 거짓 샘물', '던전마스터 다크나이트',
+                '트랩 리페어 시스템', '던전마스터 깜짝상자'],
+        mull_dead=[]),                                   # 패에서 쓸 수 없는 카드 없음 (레벨 10도 스킬 3번 · 엠퍼러 1번으로 특수소환)
+    # 데이터버그 (2026-10-12 시제품 지침): 패의 상급 「데이터버그」는 「데이터버그」 소환 트리거로 패에서 특수소환 — 1~2장 유지 (시작 패 메인 4 / 상급 1).
+    # 서치 우선순위: 패에 넣으면 바로 나오는 플라이 > 시동 리틀버그 · 앤트 > 덱 특수소환 콜로니 > 강한 상급 > 나머지 (상황별 선택은 cards10.pick)
+    '데이터버그 패키지 프로그램': dict(
+        split=4, split_table={}, upper_in_hand=(1, 2),
+        search=['데이터버그 플라이', '데이터버그 리틀버그', '데이터버그 앤트', '데이터버그 콜로니', '데이터버그 디지털 웜', '데이터버그 습격',
+                '데이터버그 퀸 비', '데이터버그 버터플라이', '데이터버그 헤라클레스', '데이터버그 캐터필러', '데이터버그 로딩',
+                '데이터버그 쌍살벌', '데이터버그 웜', '데이터버그 백업', '데이터버그 유니온 마스터', '데이터버그 다운로드',
+                '데이터버그 아로마', '데이터버그 더 바이러스', '데이터버그 더 딜리트', '데이터버그 리벤지', '데이터버그 코쿤',
+                '데이터버그 에볼루션 마스터'],
+        mull_dead=[]),                                   # 더 바이러스 · 더 딜리트도 소환 절차로 패에서 특수소환
+    # 포커짐승들 (2026-10-12 시제품 지침): 시작 패 7장(올인 1번) — 메인 5 / 상급 2. 패의 상급 늑대 · 강아지 · 고양이는 「보여주고 덱으로 → 같은 동물 서치」.
+    # 서치 우선순위: 족보 시동 몬스터(부르는 토끼 · 노리는 늑대 · 찾는 강아지 · 보는 고양이) > 실패 몬스터([유언] 서치) > 마법
+    '올인': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['♥ 풀 하우스를 찾는 강아지', '♠ 스트레이트를 부르는 토끼', '◆ 플러쉬를 노리는 늑대', '♣ 포카드를 보는 고양이',
+                '♣ 메이드에 실패한 고양이', '♥ 메이드에 실패한 강아지', '◆ 메이드에 실패한 늑대', '♠ 메이드에 실패한 토끼',
+                '짐승조커', '포커짐승들의 도박장', '표시목', '밑장빼기', '포커짐승들의 쇠망치',
+                '◆ 플러쉬 늑대', '♥ 풀 하우스 강아지', '♣ 포카드 고양이', '♠ 스트레이트 토끼', '스트플을 원하는 도시쥐', '스트플을 원하는 시골쥐'],
+        mull_dead=[]),                                   # 상급 몬스터도 제물 소환 · 공개 서치로 패에서 쓸 수 있다
+    # 격투가 (2026-10-13 시제품 지침): 테마 몬스터가 모두 상급 덱 — 자신 필드가 비었을 때 패에서 특수소환하므로 시작 패 메인 3 / 상급 2, 패의 상급 1~3장 유지.
+    # 서치 우선순위: 대상 파괴가 붙은 특수소환(엘리펀트 노즈 · 라이노 혼) > 자기 소생 몬스터 > 필드 카드(투기장 — 반격 조건 · 덱에서 소환) > 나머지
+    '투기장의 규칙': dict(
+        split=3, split_table={}, upper_in_hand=(1, 3),
+        search=['격투가 엘리펀트 노즈', '격투가 라이노 혼', '격투가 타이거팽', '격투가 라이온하트', '격투가의 투기장', '격투가 래빗 풋',
+                '격투가 스네이크 스케일', '격투가 입장', '격투가 반격', '격투가 세레모니'],
+        mull_dead=[]),                                   # 상급 몬스터도 필드가 비면 패에서 특수소환할 수 있다
 }
 
 
@@ -213,12 +278,13 @@ class HeuristicAI:
 
     # ── 진행/정비 단계 ──
     def main_phase(self, g, p, ph):
+        failed = set()   # 이 단계에서 코스트/대상 불가로 취소된 발동 (카드 uid, 효과 번호) — 다시 고르지 않는다
         for _ in range(40):
             acts = []
-            if ph == '진행' and g.p[p].normal_summons > 0:
+            if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
-                    if g.rule('no_special', c, p) or not g.can_place(c, p): continue
+                    if g.rule('no_special', c, p) or not g.can_place(c, p) or not g.can_normal(p, c): continue
                     s = 20 + g.atk(c) / 100 + (40 if c.has('솔루나') else 0) + (10 if 'direct_attack' in getattr(c, 'rules', {}) else 0)
                     if c.has('번성충'):
                         # 지침: 번성충 몬스터는 이번 턴 결착(상대 HP 0)이 되는 경우에만 효과 대신 일반소환
@@ -233,6 +299,7 @@ class HeuristicAI:
             for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
                 acts.append((s, lab.split(':')[0], pay[1], pay))
             for c, e in g.options(p, ('ignition', 'quick')):
+                if (c.uid, e.num) in failed: continue
                 s = e.score(g, c, p, None) if e.score else 0
                 acts.append((s, 'act', c, e))
             if g.free_s(p):
@@ -251,7 +318,7 @@ class HeuristicAI:
             if kind == 'summon':
                 g.normal_summon(c, p); g.after_action(p)
             elif kind == 'act':
-                g.act(p, c, e)
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
             elif kind == 'set':
                 g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
             else:
@@ -283,10 +350,14 @@ class HeuristicAI:
     def use_shared(self, g, p, c, full=True):
         """빈 공유 존에 놓을지. 규칙상 언제든 고를 수 있으나(§10-2) 지침상 몬스터 존이 가득 찼을 때만 검토하고, 필요할 때만 사용:
         ① 비어 있는 공유 존의 마커가 상대 것 → 놓는 순간 마커가 뒤집혀 상대에게 페널티 (마커는 비어도 남는다, 사용자 재정 2026-09-30)
-        ② 이 몬스터를 더해야 이번 턴 결착이 된다"""
+        ② 이 몬스터를 더해야 이번 턴 결착이 된다
+        ③ 스킬이 공유 존을 필요로 하는 조건 — 스킬 카드의 훅 wants_shared(g, p, c)가 이유를 돌려줄 때
+           (데이터버그 패키지 프로그램 「「데이터버그」 몬스터 6장」, 2026-10-12 추가 — 훅이 없는 스킬은 그대로)"""
         if not full: return False
+        sk = g.p[p].skill; hook = getattr(sk, 'wants_shared', None) if sk is not None else None
         if g.shared_owner is not None and g.shared_owner != p: why = '마커가 상대 소유(상대 페널티)'
         elif self.lethal_damage(g, p, c) >= g.p[1 - p].hp: why = '이번 턴 결착에 필요'
+        elif hook is not None and hook(g, p, c): why = hook(g, p, c)
         else: return False
         g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — {why}', 'decision'); return True
 
@@ -301,7 +372,7 @@ class HeuristicAI:
         a, d = g.atk(c), g.df(c)
         o = 1 - p
         opp = [m for m in g.monsters(o) if m.faceup]
-        if g.can_declare_attack(p) and a > 0 and not c.flags.get('no_attack'):
+        if g.can_declare_attack(p) and a > 0 and not g.attack_banned(c):
             direct = not g.blockers(o) or 'direct_attack' in getattr(c, 'rules', {})
             wins = any(a > (g.atk(t) if t.pos == 'atk' else g.df(t)) for t in opp)
             if direct or wins: return 'atk', '이번 턴 공격 가능'
@@ -331,14 +402,18 @@ class HeuristicAI:
         표시 형식(공격 · 수비)은 소환할 때 choose_summon_pos가 정한다 — 예전의 별도 「수비 소환」 후보는 여기에 합쳤다.
         기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지"""
         out = []
-        if g.phase != '진행' or g.p[p].normal_summons <= 0: return out
+        if g.phase != '진행' or not g.can_normal(p): return out
         for c in g.p[p].hand:
             if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
             if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
+            if not g.can_normal(p, c): continue   # 추가 일반소환 권리는 카드군 제한이 있을 수 있다 (포커짐승들)
             ts = self.pick_tributes(g, p, c)
             if not ts: continue   # 무제물 소환은 main_phase의 「소환:」 후보
             cost = sum(value(g, t) for t in ts)
             if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
+            nv = getattr(c, 'ns_value', None)   # 카드가 정한 제물 소환 가치 ([소환] 효과가 본체인 상급 몬스터 — 포커짐승들). 없으면 공격력 기준
+            if nv is not None:
+                out.append((f'소환:{c.name}', nv(g, p, ts, cost), ('summon', c, ts, None))); continue
             gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
             out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, None)))
         return out
@@ -370,7 +445,7 @@ class HeuristicAI:
         bonus = 100 if (extra is not None and extra.has('번성충') and p_skill(g, p) == '번성충-대발생') else 0
         tot = 0
         for m in g.monsters(p):
-            if m.faceup and m.pos == 'atk' and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
+            if m.faceup and m.pos == 'atk' and not g.attack_banned(m) and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
                 tot += (g.atk(m) + (bonus if m.has('번성충') else 0)) * (self.max_attacks(g, m) - m.attacks_made)
         if extra is not None:
             direct_ok = 'direct_attack' in getattr(extra, 'rules', {}) or not g.blockers(1 - p)
@@ -401,7 +476,7 @@ class HeuristicAI:
     def battle_phase(self, g, p):
         for _ in range(20):
             if p in g.no_attack and g.no_attack[p] == g.turn: g.L('공격 봉인 상태', 'sys'); return
-            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not m.flags.get('no_attack')
+            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not g.attack_banned(m)
                          and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue
@@ -414,8 +489,15 @@ class HeuristicAI:
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
                     if av > tv: plan.append((200 + value(g, t) * 400 + (av - tv if t.pos == 'atk' else 0), a, t))
                     elif av == tv and t.pos == 'atk' and value(g, t) > value(g, a): plan.append((50, a, t))
-            if not plan and g.rule('must_attack', p):
-                plan = [(-1, a, t) for a in attackers for t in g.attack_targets(a)][:1]
+            if not plan and g.rule('must_attack', p):   # 반드시 공격해야 하는데 지는 공격만 남음(격투가의 투기장 1번): 잃는 것이 가장 적은 짝
+                for a in attackers:
+                    av = g.atk(a)
+                    for t in g.attack_targets(a):
+                        tv = g.atk(t) if t.pos == 'atk' else g.df(t)
+                        if t.pos != 'atk': loss = tv - av                                   # 수비 표시: 반사 대미지만
+                        elif av == tv: loss = 1000 * (value(g, a) - value(g, t))             # 서로 파괴
+                        else: loss = (tv - av) + 1000 * value(g, a)                          # 자신 몬스터 파괴 + 대미지
+                        plan.append((-1 - loss / 1e4, a, t))
             if not plan: return
             plan.sort(key=lambda x: -x[0])
             self.note(g, p, '공격', [(f'{a.name}→{t.name if t else "직접"}', s) for s, a, t in plan], f'{plan[0][1].name}→{plan[0][2].name if plan[0][2] else "직접"}')
@@ -424,5 +506,8 @@ class HeuristicAI:
 
     def max_attacks(self, g, m):
         n = 1 + m.extra_attacks
-        if m.flags.get('attack_all'): n = max(n, len(g.monsters(1 - m.controller)))
+        if g.rule('double_attack', m): n += 1   # 용기의 전사 2번: 「2회 공격할 수 있다」
+        if m.flags.get('attack_all'):
+            t, k = m.flags.get('attack_all_cap', (None, 0))
+            n = max(n, k if t == g.turn else len(g.monsters(1 - m.controller)))
         return n

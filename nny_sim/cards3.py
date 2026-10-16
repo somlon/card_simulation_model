@@ -27,20 +27,23 @@ def bounce_field(g, p, n=1):
 
 @card('시엘 아츠 - 월영잠행')
 def _(c):
-    def res1(g, c, p, l):
+    def cost1(g, c, p, l):   # 1번 코스트: 자신 시엘을 상대 몬스터 존으로 이동 + 상대 카드 1장을 대상으로
         ms = own_mon(g, p, CIEL)
         if ms and g.change_control(ms[0], 1 - p):
             m = ms[0]; m.flags['return_at_end'] = g.turn
             m.end_return = lambda g2, x: x.controller != x.owner and g2.change_control(x, x.owner) and g2.L(f'{x} 컨트롤 복귀', 'sys')
-            g.L(f'{m} 턴 종료 시까지 상대 필드로')
-        bounce_opp(g, p)
+            g.L(f'코스트: {m} 상대 몬스터 존으로 (턴 종료 시 복귀)')
+        l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p, 'bounce'); g.L(f'대상: {l.ctx["t"]}')
+    def res1(g, c, p, l):
+        t = l.ctx.get('t')
+        if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 덱으로'); g.to_deck(t)
     def res2(g, c, p, l):
         cs = [m for m in g.monsters(1 - p) if CIEL(m) and m.owner == p]
         if cs: g.change_control(cs[0], p); g.L(f'{cs[0]} 되찾음')
-        t = field_pick(g, p, pool=targets(g, p, g.all_field()))   # 「필드의 카드를 1장 대상으로」: 자신 카드 포함
+        t = field_pick(g, p, pool=targets(g, p, g.monsters(0) + g.monsters(1)))   # 「필드의 몬스터 1장」: 자신 몬스터 포함
         if t: g.destroy(t)
-    arts(c, lambda g, c, p, ev: bool(own_mon(g, p, CIEL)) and bool(opp_cards(g, p)), None, res1,
-         lambda g, c, p: mon(g, SIA, p), res2, sc1=35, sc2=lambda g, c, p: 40 if targets(g, p, opp_cards(g, p)) else VETO)
+    arts(c, lambda g, c, p, ev: bool(own_mon(g, p, CIEL)) and bool(targets(g, p, opp_cards(g, p))) and bool(g.free_m(1 - p)), cost1, res1,
+         lambda g, c, p: mon(g, SIA, p), res2, sc1=35, sc2=lambda g, c, p: 40 if targets(g, p, g.monsters(1 - p)) else VETO)
 
 @card('시엘 아츠 - 월영암수')
 def _(c):
@@ -55,7 +58,7 @@ def _(c):
     def res2(g, c, p, l):
         if g.p[1 - p].grave: t = best(g, g.p[1 - p].grave, p, 'banish_grave'); g.banish(t); g.L(f'상대 묘지 {t} 제외')
     arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or free(g, p, c)) and len(g.p[1 - p].hand) >= 2, cost1, res1,
-         lambda g, c, p: mon(g, SIA) and bool(g.p[1 - p].grave), res2, sc1=30, sc2=10)
+         lambda g, c, p: mon(g, SIA, p) and bool(g.p[1 - p].grave), res2, sc1=30, sc2=10)
 
 
 # ─────────── 흑월침식 (텍스트: 솔루나_통합본_v1 — v3 문서 미수록, 2026-09-23 복원) ───────────

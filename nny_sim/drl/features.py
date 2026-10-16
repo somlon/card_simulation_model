@@ -38,7 +38,7 @@ def _mon_slots(g, side_p, viewer, reveal):
     for k, c in enumerate(mons[:S.N_SLOT]):
         hide = _hidden(c, viewer) and not reveal
         ids[k] = S.UNK if hide else S.cid(c.name)
-        can_atk = c.faceup and c.pos == 'atk' and c.summon_turn <= g.turn and c.attacks_made < 1 + c.extra_attacks
+        can_atk = c.faceup and c.pos == 'atk' and c.summon_turn <= g.turn and c.attacks_made < 1 + c.extra_attacks + (1 if g.rule('double_attack', c) else 0)
         f[k] = (0.0 if hide else g.atk(c) / 3000.0, 0.0 if hide else g.df(c) / 3000.0, c.pos == 'atk', c.faceup,
                 0.0 if hide else (c.level or 0) / 10.0, c.attacks_made > 0, can_atk and g.turn_player == side_p, c.summon_turn == g.turn,
                 bool(c.negated), sum(c.counters.values()) / 5.0, len(c.equips) / 3.0, c.zone == 'shared')

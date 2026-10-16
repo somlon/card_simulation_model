@@ -5,7 +5,8 @@
 - 「덱의 위에서부터」(메인/상급 미지정)는 메인 · 상급 중 한쪽을 골라 그 덱에서 제외한다.
   고르는 쪽은 문장의 주어: 「상대의 덱의 위에서부터 … 제외한다」는 효과를 쓴 플레이어, 「그 플레이어는 자신의 덱」 · 「서로 자신의 덱」은 덱 주인.
 ASSUME (재정 목록 G):
-- 델레가토르(코스트 대납) · 두플리카토르(코스트 2배)는 「덱 위에서 제외」 · 「제외 존에서 덱으로」 형태의 코스트에만 적용.
+- 델레가토르(코스트 대납) · 두플리카토르(코스트 2배)는 「덱 위에서 제외」 · 「제외 존에서 덱으로」 형태의 코스트에만 적용
+  (세제 2 · 3번, 마법 [유언], 세리 몬스터 [유언]). 프로쿠라토르 2번 「제외 존의 카드를 전부」는 매수가 정해지지 않아 적용하지 않는다.
 - 세제 2 · 3번은 스킬 주인만 사용(「서로가」 문구의 상대 사용 여부 미확정).
 - 이탈세 2번의 「필드에서 벗어나게 하는 효과」는 상대가 자신 필드 카드를 대상으로 한 제거 · 바운스 · 제외 계열(위협도 900 이상)로 근사.
 """
@@ -18,23 +19,36 @@ SERI = lambda x: x.has('세리') and x.type == '몬스터'
 SERI3 = lambda x: SERI(x) and x.level == 3
 DECUMA = lambda x: x.has('데쿠마')
 
-def tax_cost(g, p, n, why, kind='mill'):
-    """세리식 코스트: 덱 위 n장 제외. 두플리카토르면 2배, 델레가토르면 상대가 대신 지불"""
+def tax_cost(g, p, n, why, kind='mill', deck='main'):
+    """세리식 코스트: 덱 위 n장 제외(deck: 'main' 메인 덱 · 부족분 상급 덱 / 'upper' 그 반대). 두플리카토르면 2배, 델레가토르면 상대가 대신 지불"""
     if g.rule('cost_double', p): n *= 2; g.L(f'두플리카토르: 코스트 {n}장으로', 'sys')
     payer = 1 - p if g.rule('cost_transfer', p) else p
     if payer != p: g.L(f'델레가토르: 코스트를 {g.pname(payer)}가 대신 지불', 'sys')
-    return g.mill(payer, n, 'main', why, fallback=True)   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
+    return g.mill(payer, n, deck, why, fallback=True)   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
+
+def return_cost(g, p, k):
+    """세리식 「자신의 제외 존에서 카드를 k장 골라 자신의 덱으로 되돌리고 발동」 코스트의 (지불자, 매수).
+    두플리카토르면 2배, 델레가토르면 상대가 자신의 제외 존에서 대신 지불 (머리말 ASSUME)"""
+    if g.rule('cost_double', p): k *= 2
+    return (1 - p if g.rule('cost_transfer', p) else p), k
 
 def seri_lastwill():
+    def need(g, p): return return_cost(g, p, 1 if g.rule('seri_lw_one', p) else 3)   # 세 - 아이라리움 2번: 1장
+    def cond(g, c, p, ev):
+        if not (ev_is(ev, 'to_grave') and ev['card'] is c): return False
+        q, k = need(g, p)
+        return len(g.p[q].banish) >= k and any(SERI(x) and g.can_special(x, p) for x in g.p[p].main)
+    def cost(g, c, p, l):
+        q, k = need(g, p)
+        if q != p: g.L(f'델레가토르: 코스트를 {g.pname(q)}가 대신 지불', 'sys')
+        back = sorted(g.p[q].banish, key=lambda x: (not SERI(x), -g.p[q].ai.card_pri(g, q, x)))[:k]
+        for x in back: g.p[q].banish.remove(x); x.zone = None; g._to_deck_raw(x)
+        g.L(f'코스트: {g.pname(q)} 제외 존 {len(back)}장 덱으로'); g.shuffle(q)
     def res(g, c, p, l):
-        k = 1 if g.rule('seri_lw_one', p) else 3
-        back = sorted(g.p[p].banish, key=lambda x: (not SERI(x), -g.p[p].ai.card_pri(g, p, x)))[:k]
-        for x in back: g.p[p].banish.remove(x); x.zone = None; g._to_deck_raw(x)
-        g.L(f'제외 존 {len(back)}장 덱으로'); g.shuffle(p)
         cs = [x for x in g.p[p].main if SERI(x) and g.can_special(x, p)]
         if cs: g.special_summon(g.p[p].ai.pick_search(g, p, cs, '세리 유언'), p)
-    return Effect(2, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c, res=res,
-                  score=lambda *a: 80, threat=400, label='[유언] 제외 존 회수 + 세리 특수소환')
+    return Effect(2, 'lastwill', ('grave',), cond=cond, cost=cost, res=res,
+                  score=lambda *a: 80, threat=400, label='[유언] 제외 존 → 덱 (코스트) + 세리 특수소환')
 
 def spell_lastwill(num=2):
     """마법 공통 [유언]: 상대에 의해 묘지로 → 자신 덱 위 3장 제외(코스트)하고 이 카드를 패로"""
@@ -116,8 +130,15 @@ def _(c):
 @card('인지세')
 def _(c):
     def res(g, c, p, l):
-        t = l.ctx['t']; k = g.mill(1 - p, 5, 'main', '인지세', fallback=True)
-        if k < 5: g.L('제외할 카드 부족 — 발동 무효'); g.negate(t)
+        """2026-10-08 텍스트: 상대가 「메인 덱 위 5장 제외(부족분은 상급 덱에서)」와 「그 카드 무효」 중 고른다.
+        상대 판단(휴리스틱): 덱이 넉넉하고(제외 후 10장 이상 남음) 무효화될 효과의 위협도가 600 이상이면 제외, 아니면 무효"""
+        t = l.ctx['t']; q = 1 - p
+        left = len(g.p[q].main) + len(g.p[q].upper)
+        if t in g.chain and not t.negated and left - 5 >= 10 and t.eff.threat >= 600:
+            g.L(f'판단[{g.pname(q)}] 인지세: 덱 {left}장, 위협도 {t.eff.threat} → 5장 제외 선택', 'decision')
+            g.mill(q, 5, 'main', '인지세', fallback=True)
+        else:
+            g.L(f'판단[{g.pname(q)}] 인지세: 덱 {left}장 → 무효 선택', 'decision'); g.negate(t)
     e = Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=res,
                score=lambda g, c, p, ev: 55 if threat(g, p) >= 500 or len(g.p[1 - p].main) + len(g.p[1 - p].upper) <= 12 else 25, threat=700)
@@ -169,10 +190,11 @@ def _(c):
         cond=lambda g, c, p, ev: any(l.card.name == '데쿠마' and l.eff.num == 1 for l in g.chain),   # 「데쿠마」 1번 발동에 대응해서만
         res=res, score=lambda g, c, p, ev: 30 if own_turn(g, p) and len(g.p[p].main) <= 12 else 0, threat=100), spell_lastwill()]
 
-@card('아이라리움')
+@card('세 - 아이라리움')
 def _(c):
-    def on_ev(g, src, ev):
-        if ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper'): g.mill(ev['player'], 2, None, '아이라리움')
+    def on_ev(g, src, ev):   # 2026-10-08: 드로우 · 덱에서 패에 넣기 모두 — 그 플레이어가 자신의 덱 위 2장 (덱 미지정 → 덱 주인이 고름)
+        if (ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper')) or ev['kind'] == 'draw':
+            g.mill(ev['player'], 2, None, '아이라리움')
     c.on_event = on_ev
     c.rules = {'seri_lw_one': lambda g, src, p: p == src.controller}
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 55, threat=600)]
@@ -192,10 +214,10 @@ def _(c):
     def res3(g, c, p, l): g.draw(p, 1, 'upper')
     c.effects = [
         Effect(2, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].main) >= 11,
-               cost=lambda g, c, p, l: g.mill(p, 9, 'main', '세제 2번 코스트', fallback=True) and None, res=res2,
+               cost=lambda g, c, p, l: tax_cost(g, p, 9, '세제 2번 코스트') and None, res=res2,   # 두플리카토르 · 델레가토르 적용 (머리말 ASSUME)
                score=lambda g, c, p, ev: 30 if len(g.p[p].main) > len(g.p[1 - p].main) + 9 else 0, threat=200, label='9장 제외 → 2장 드로우'),
         Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].upper) >= 5,
-               cost=lambda g, c, p, l: g.mill(p, 4, 'upper', '세제 3번 코스트', fallback=True) and None, res=res3,
+               cost=lambda g, c, p, l: tax_cost(g, p, 4, '세제 3번 코스트', deck='upper') and None, res=res3,
                score=lambda g, c, p, ev: 25 if len(g.p[p].upper) >= 8 else 0, threat=200, label='상급 4장 제외 → 1장 드로우')]
 
 @card('데쿠마')

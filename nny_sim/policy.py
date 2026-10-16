@@ -36,7 +36,7 @@ class Table:
     def __init__(self, name):
         self.path = os.path.join(LEARN_DIR, name + '.json')
         d = {}; self.source = None                    # source: 실제로 읽은 파일 (결과 메타의 해시용)
-        for path in (self.path, self.path + '.gz'):   # 큰 표는 압축본(.json.gz)으로 보관할 수 있다
+        for path in (self.path, self.path + '.gz', self.path + '.xz'):   # 큰 표는 압축본(.json.gz · .json.xz)으로 보관할 수 있다
             if os.path.exists(path):
                 try: d = self.read(path); self.source = path; break
                 except Exception: d = {}
@@ -44,8 +44,10 @@ class Table:
 
     @staticmethod
     def read(path):
-        import gzip
-        with (gzip.open(path, 'rt', encoding='utf-8') if path.endswith('.gz') else open(path, encoding='utf-8')) as f:
+        """.json · .json.gz · .json.xz — xz는 저장소에 올릴 때(GitHub 파일 한도 100MiB) 쓴다. gzip 115MB 표가 xz로 71MB (2026-10-14)"""
+        import gzip, lzma
+        opener = gzip.open if path.endswith('.gz') else lzma.open if path.endswith('.xz') else open
+        with opener(path, 'rt', encoding='utf-8') as f:
             return json.load(f)
 
     @classmethod
@@ -319,12 +321,13 @@ class LearnedAI(HeuristicAI):
 
     # ── 진행 / 정비 ──
     def main_phase(self, g, p, ph):
+        failed = set()   # 이 단계에서 코스트/대상 불가로 취소된 발동 (카드 uid, 효과 번호) — 다시 고르지 않는다
         for _ in range(40):
             acts = [('종료', 0, None)]; seen = set()
-            if ph == '진행' and g.p[p].normal_summons > 0:
+            if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
-                    if g.rule('no_special', c, p) or not g.can_place(c, p): continue
+                    if g.rule('no_special', c, p) or not g.can_place(c, p) or not g.can_normal(p, c): continue
                     if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
                     s = 20 + g.atk(c) / 100 + (40 if c.has('솔루나') else 0)
                     if c.has('번성충'):
@@ -334,7 +337,7 @@ class LearnedAI(HeuristicAI):
                     if lab not in seen: seen.add(lab); acts.append((lab, s, ('summon', c, None)))
                 for c in g.p[p].hand:   # 대체 일반소환 (치프 세리 등 「…하는 것으로 일반소환할 수 있다」)
                     alt = getattr(c, 'alt_normal', None)
-                    if alt and alt[0](g, p) and g.can_place(c, p):
+                    if alt and alt[0](g, p) and g.can_place(c, p) and g.can_normal(p, c):
                         lab = f'특수 일반소환:{c.name}'
                         if lab not in seen: seen.add(lab); acts.append((lab, 70, ('alt', c, None)))
             for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
@@ -342,7 +345,7 @@ class LearnedAI(HeuristicAI):
                 seen.add(lab); acts.append((lab, s, ('extra', pay[1], pay)))
             for c, e in g.options(p, ('ignition', 'quick')):
                 lab = f'발동:{c.name}#{e.num}'
-                if lab in seen: continue
+                if lab in seen or (c.uid, e.num) in failed: continue
                 s = e.score(g, c, p, None) if e.score else 0
                 if s <= VETO: continue
                 seen.add(lab); acts.append((lab, s, ('act', c, e)))
@@ -363,7 +366,8 @@ class LearnedAI(HeuristicAI):
             if kind == 'summon': g.normal_summon(c, p); g.after_action(p)
             elif kind == 'alt':
                 c.alt_normal[1](g, p); g.L(f'{g.pname(p)} {c} 조건 충족 — 제물 없이 일반소환'); g.normal_summon(c, p); g.after_action(p)
-            elif kind == 'act': g.act(p, c, e)
+            elif kind == 'act':
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
             elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
 
@@ -372,7 +376,7 @@ class LearnedAI(HeuristicAI):
         for _ in range(20):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
-                         and m.attacks_made < self.max_attacks(g, m)]
+                         and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]   # 「공격할 수 없다」 (호박옥)
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue   # 결착 우선 지침 — 학습 대상 아님
             opts = [('공격 종료', 0, None)]; seen = set()

@@ -50,9 +50,13 @@ class RecordTest(unittest.TestCase):
 
 class MetaTest(unittest.TestCase):
     def test_table_inputs_are_hashed(self):
-        ins = MS.input_files({'ai': 'table', 'policy': None, 'side': None})
-        self.assertEqual(len(ins['policy']['sha1']), 40)
-        self.assertIn('side', ins)
+        # 학습표 파일은 재학습 전에는 없을 수 있다(2026-10-08 카드 교체) — 임시 표 파일을 넘겨 해시를 확인한다
+        with tempfile.TemporaryDirectory() as d:
+            pol, side = os.path.join(d, 'policy.json'), os.path.join(d, 'side.json')
+            for f in (pol, side): json.dump({'L1': {}, 'L2': {}}, open(f, 'w'))
+            ins = MS.input_files({'ai': 'table', 'policy': pol, 'side': side})
+            self.assertEqual(len(ins['policy']['sha1']), 40)
+            self.assertIn('side', ins)
 
     def test_missing_file_is_marked(self):
         self.assertTrue(MS.file_info('/없는/파일.json')['missing'])

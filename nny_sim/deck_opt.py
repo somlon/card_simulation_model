@@ -38,6 +38,7 @@ def to_deck(name, skill, counts, strat=None):
 def valid(skill, counts, strat):
     """덱 구축 규칙을 지키고 전략 덱이 방침 매수(STRATEGY_FILL) 이하인가 — 채우는 중인 덱도 후보로 다룬다"""
     e, _ = D.validate(to_deck('x', skill, counts, strat), policy=False)
+    if any(counts.get(n, 0) != k or strat.get(n, 0) for n, k in D.LOCKED.get(skill, {}).items()): return False   # 고정 카드
     return not e and sum(strat.values()) <= D.STRATEGY_FILL
 
 def neighbors(skill, counts, strat, rng, n_swap=140, n_strat=60, contrib=None, value_of=None, n_out=5, n_in=8):
@@ -45,12 +46,13 @@ def neighbors(skill, counts, strat, rng, n_swap=140, n_strat=60, contrib=None, v
     contrib(활성 카드 → 기여도) · value_of(카드 → 가치)가 있으면 기여도 하위 n_out장 × 같은 종류 가치 상위 n_in장 교체를
     먼저 넣는다(로그 기반 우선 후보). 나머지 교체류는 무작위 표본."""
     names = legal_names(skill); out = []
+    locked = D.LOCKED.get(skill, {})   # 고정 카드: 빼거나 교체하는 후보를 만들지 않는다
     for a in names:
         if counts.get(a, 0) < 3:
             c = dict(counts); c[a] = c.get(a, 0) + 1
             if valid(skill, c, strat): out.append((f'+{a}', c, strat))
     swaps = []
-    for r in [n for n, k in counts.items() if k > 0]:
+    for r in [n for n, k in counts.items() if k > 0 and n not in locked]:
         c = dict(counts); c[r] -= 1
         if valid(skill, c, strat): out.append((f'-{r}', c, strat))
         for a in names:
@@ -59,7 +61,7 @@ def neighbors(skill, counts, strat, rng, n_swap=140, n_strat=60, contrib=None, v
     pri = []
     if contrib:
         val = value_of or (lambda n: 0.5)
-        outs = sorted([n for n, k in counts.items() if k > 0], key=lambda n: (contrib.get(n, 0.5), n))[:n_out]
+        outs = sorted([n for n, k in counts.items() if k > 0 and n not in locked], key=lambda n: (contrib.get(n, 0.5), n))[:n_out]
         for r in outs:
             ins = sorted([a for a in names if a != r and counts.get(a, 0) < 3 and POOL[a]['deck'] == POOL[r]['deck']],
                          key=lambda a: (-val(a), a))[:n_in]
@@ -84,7 +86,8 @@ def fill_candidates(skill, counts, strat, opps):
     out = []
     for a in legal_names(skill):
         if counts.get(a, 0) + strat.get(a, 0) >= 3: continue
-        outs = sorted([n for n, k in counts.items() if k > 0 and n != a and POOL[n]['deck'] == POOL[a]['deck']], key=lambda n: (con[n], n))
+        outs = sorted([n for n, k in counts.items() if k > 0 and n != a and POOL[n]['deck'] == POOL[a]['deck'] and n not in D.LOCKED.get(skill, {})],
+                      key=lambda n: (con[n], n))
         if not outs: continue
         c2 = dict(counts); c2[outs[0]] -= 1; c2[a] = c2.get(a, 0) + 1
         s2 = dict(strat); s2[a] = s2.get(a, 0) + 1

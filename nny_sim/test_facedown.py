@@ -1,6 +1,7 @@
 """뒷면 공격 표시 테스트 (nny_sim 폴더에서):  python -m unittest test_facedown -v
 사용자 재정 2026-10-06: 뒷면으로 하는 효과를 받은 공격 표시 몬스터는 뒷면 공격 표시가 된다.
-뒷면 공격 표시 몬스터는 공격할 수 없고, 상대는 그 몬스터를 무시하고 직접공격할 수 있다."""
+뒷면 공격 표시 몬스터는 공격할 수 없고, 상대는 그 몬스터를 무시하고 직접공격할 수 있다.
+2026-10-08 카드 풀 교체: 덱 「투기장의 규칙」 → 「솔루나 아츠」, 공격 몬스터 「격투가 라이노 혼」(3000) → 「솔루나 시엘」(2500)"""
 import random, unittest
 import season as SE
 import policy as P
@@ -12,7 +13,7 @@ DECKS = SE.load_decks()
 
 
 def make(ai=HeuristicAI):
-    da, db = DECKS['투기장의 규칙'], DECKS['세제']
+    da, db = DECKS['솔루나 아츠'], DECKS['세제']
     mk = (lambda d: P.LearnedAI(d['스킬'], learn=False)) if ai is P.LearnedAI else (lambda d: ai(d['스킬']))
     g = Game([dict(da, 이름='A'), dict(db, 이름='B')], [mk(da), mk(db)], 0, random.Random(11), [], Impl)
     g.setup(); g.turn = 3; g.turn_player = 0; g.phase = '진행'
@@ -40,7 +41,7 @@ class FaceDownTest(unittest.TestCase):
 
     def test_face_down_attack_monster_cannot_attack(self):
         g = make()
-        m = put(g, '격투가 라이노 혼', 0, 'atk'); g.set_face_down(m)
+        m = put(g, '솔루나 시엘', 0, 'atk'); g.set_face_down(m)
         self.assertFalse(g.can_attack_with(m))
         hp = g.p[1].hp
         g.attack(m, None)                                   # 엔진도 막는다
@@ -49,23 +50,23 @@ class FaceDownTest(unittest.TestCase):
     def test_opponent_can_attack_directly_past_face_down_attack_monster(self):
         g = make()
         blocker = put(g, '세리 - 릭토르', 1, 'atk'); g.set_face_down(blocker)
-        a = put(g, '격투가 라이노 혼', 0, 'atk')
+        a = put(g, '솔루나 시엘', 0, 'atk')
         self.assertTrue(g.can_direct(a))
         self.assertNotIn(blocker, g.attack_targets(a))       # 뒷면은 공격 대상 아님
         hp = g.p[1].hp
         g.attack(a, None)
-        self.assertEqual(g.p[1].hp, hp - 3000)
+        self.assertEqual(g.p[1].hp, hp - 2500)
 
     def test_face_down_defense_still_blocks_direct_attack(self):
         g = make()
         blocker = put(g, '세리 - 릭토르', 1, 'def'); g.set_face_down(blocker)
-        a = put(g, '격투가 라이노 혼', 0, 'atk')
+        a = put(g, '솔루나 시엘', 0, 'atk')
         self.assertFalse(g.can_direct(a))
 
     def test_learned_ai_takes_the_direct_attack(self):
         g = make(P.LearnedAI)
         blocker = put(g, '세리 - 릭토르', 1, 'atk'); g.set_face_down(blocker)
-        put(g, '격투가 라이노 혼', 0, 'atk')
+        put(g, '솔루나 시엘', 0, 'atk')
         g.phase = '전투'
         hp = g.p[1].hp
         g.p[0].ai.battle_phase(g, 0)
