@@ -916,13 +916,21 @@ class Game:
             out = []
             for c in cards:
                 for e in c.effects:
-                    if e.kind not in ('trigger', 'summon', 'lastwill', 'battle'): continue
+                    if e.kind not in ('trigger', 'summon', 'lastwill', 'battle') or getattr(e, 'summon_negate', False): continue   # 소환 무효는 위에서만 묻는다
                     for ev in evs:
+                        if e.kind == 'summon' and ev.get('negated'): continue   # 무효가 된 소환의 [소환] 효과는 묻지 않는다
                         if self.legal(p, c, e, ev):
                             out.append((c, e, ev)); break
             return out
         # [유언]은 우선적으로 발동 선언한다(정본 3-6 b): 사건 때 발동할 수 있던 [유언]은, 같은 선언 차례에 먼저 선언한 쪽의 코스트로
         # 그 카드가 묘지를 떠나도 발동한다 (재정 로그 2 — 헬 3번). lw_grace = 그런 카드의 uid (Game.zone_ok · [유언] 조건이 본다)
+        # 소환 무효(Effect.summon_negate — 더 바이러스 2번)는 그 소환의 [소환] 효과보다 먼저 묻는다. 무효로 했으면 소환 사건에 negated가 달리고
+        # [소환] 효과는 묻지 않는다 (설계도 확정 2026-10-10)
+        for q in (tp, 1 - tp):
+            pre = [(c, e, ev) for c in self.field_cards(q) for e in c.effects if getattr(e, 'summon_negate', False)
+                   for ev in evs if ev.get('kind') == 'summon' and not ev.get('negated') and self.legal(q, c, e, ev)]
+            for c, e, ev in self.p[q].ai.choose_triggers(self, q, pre) if pre else ():
+                if not ev.get('negated') and self.legal(q, c, e, ev) and self.activate(q, c, e, ev): self.priority(1 - q)
         prev_grace = getattr(self, 'lw_grace', frozenset())
         self.lw_grace = prev_grace | frozenset(c.uid for q in (tp, 1 - tp) for c, e, _ in collect(q) if e.kind == 'lastwill')
         for p in (tp, 1 - tp):

@@ -88,8 +88,10 @@ def _(c):
         return l is not None and l.ctx.get('from_zone') == 'grave'
     def res(g, c, p, l):
         idx = g.chain.index(l) if l in g.chain else len(g.chain)
+        # 설계도 확정(2026-10-10) 문장: 「상대가 묘지의 카드의 효과를 발동했을 때 발동. 그 효과와, 그보다 먼저 발동되어 아직 처리되지 않은 효과를
+        # 전부 무효로 한다.」 — 묘지에서 발동한 것만이 아니라 앞선 처리 대기 효과 전부(자신 것 포함)
         for x in g.chain[:idx]:
-            if x.ctx.get('from_zone') == 'grave' and not x.negated: g.negate(x)   # 「전부」 — 자신 것 포함 (재정: 이 체인 안)
+            if not x.negated: g.negate(x)
     c.effects = [Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=cond, res=res, score=lambda *a: 60, threat=800)]
 
 @card('사기 감지')

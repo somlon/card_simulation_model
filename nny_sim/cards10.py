@@ -41,9 +41,8 @@ ASSUME:
   「데이터버그」가 아니어도 된다 · 뒷면 몬스터 포함. 소환 절차는 효과의 발동이 아니다(Effect.procedure — 발동 사건 · 비비안 발동 횟수 ·
   퇴마의 부적 변경 · 세제 제외 대상이 아님, 체인에 대응할 수 없고 무효화되지 않음). 소환 자체는 소환이므로 상대의 더 바이러스 2번 ·
   「소환되었을 때」 트리거의 대상이다.
-- 더 바이러스 2번 「그 소환을 무효로 하고 파괴한다」: 엔진에 소환 무효가 없어 「소환된 몬스터를 파괴하고, 그 소환으로 체인에 올라 아직 처리되지
-  않은 그 몬스터의 [소환] 효과를 처리하지 않게 한다(사용 횟수 반환)」로 근사. 자신 턴에 상대가 소환한 경우(트리거 순서상 상대 [소환]이 위)에는
-  상대의 [소환]이 먼저 처리될 수 있다.
+- 더 바이러스 2번 「그 소환을 무효로 하고 파괴한다」 (설계도 확정 2026-10-10): 소환 무효를 그 소환의 [소환] 효과보다 먼저 묻고(Effect.summon_negate —
+  Game.triggers의 앞 단계에서 발동 · 처리), 무효로 했으면 그 소환 사건에 negated를 달아 [소환] 효과를 묻지 않는다. 소환된 몬스터는 파괴한다.
 - 쌍살벌 2번 「그 발동을 무효로 한다」: 지속 · 필드 마법 카드의 발동이 무효가 되면 그 카드를 묘지로 보낸다. 버터플라이 1번 「그 효과를 무효로
   한다」는 엔진 기본(지속 마법은 필드에 남음).
 - 더 딜리트 2번 「필드의 몬스터가 파괴되었을 때」 = 서로의 몬스터. 「필드의 카드를 1장 파괴」에서 더 딜리트 자신은 고르지 않는다.
@@ -523,9 +522,11 @@ def _(c):
     def cost1(g, c, p, l):
         t = tpick(g, p); l.ctx['t'] = t
         g.L(f'코스트: 패의 {c} 버림 · 대상 {t}'); g.send_grave(c, ('cost', c))
-    def res1(g, c, p, l):
+    def res1(g, c, p, l):   # 앞 효과(묘지로)를 처리해야 뒤 효과(특수소환)도 처리한다 (사용자 답변 2026-10-17 — 재정 데이터버그 8)
         t = l.ctx.get('t')
-        if t is not None and g.on_field(t): g.L(f'{t} 묘지로'); g.send_grave(t)
+        if t is None or not g.on_field(t): g.L(f'{c.name} 1번: 대상 없음 — 특수소환도 하지 않음', 'sys'); return
+        g.L(f'{t} 묘지로'); g.send_grave(t)
+        if g.on_field(t): return
         summon_pick(g, p, [x for x in g.p[p].main if DBM(x) and ss_ok(g, x, p)], f'{c.name} 1번', lambda x: stay_prior(g, p, x))
     def sc1(g, c, p, ev):
         ts = tcands(g, p)
@@ -646,6 +647,12 @@ def _(c):
         hand_ss(3)])
 
 
+def summon_negater(e):
+    """소환 무효 효과 표시: Game.triggers가 그 소환의 [소환] 효과보다 먼저 묻고, 무효로 했으면 [소환]은 묻지 않는다 (설계도 확정 2026-10-10)"""
+    e.summon_negate = True
+    return e
+
+
 @card(VIRUS)
 def _(c):
     def cond2(g, c, p, ev):
@@ -654,6 +661,7 @@ def _(c):
         return g.on_field(x) and x.controller == 1 - p
     def res2(g, c, p, l):
         x = l.ctx['ev']['card']
+        l.ctx['ev']['negated'] = True   # 소환 무효 — 그 소환의 [소환] 효과는 묻지 않는다 (Game.triggers)
         g.L(f'{x}의 소환 무효')
         for lk in g.chain:   # 그 소환으로 체인에 올라 아직 처리되지 않은 그 몬스터의 [소환] 효과는 처리하지 않는다 (소환 무효 근사, 사용 횟수 반환)
             e2 = lk.ctx.get('ev')
@@ -672,7 +680,7 @@ def _(c):
         return 15 + 20 * v + (20 if live else 0)
     db_mon(c, [
         nomi(c),
-        Effect(2, 'trigger', ('field',), cond=cond2, res=res2, score=sc2, threat=1000, label='[트리거] 상대 소환 무효 + 파괴'),
+        summon_negater(Effect(2, 'trigger', ('field',), cond=cond2, res=res2, score=sc2, threat=1000, label='[트리거] 상대 소환 무효 + 파괴')),
         negate_resp(3, destroy=True, gate=500)])
 
 
