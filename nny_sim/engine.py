@@ -790,6 +790,7 @@ class Game:
         if e.cost: self.probing = p
         try:
             if not self.can_act(p, c, e, ev): return False
+            if not self.cost_extra_ok(p, c, e): return False   # 두플리카토르로 2배가 된 코스트를 낼 수 없으면 발동 불가
         finally:
             self.src, self.src_eff = prev
             self.probing = prev_probe
@@ -798,6 +799,45 @@ class Game:
             if c.type == '필드': pass
             elif not self.free_s(p): return False
         return True
+
+    # ── 두플리카토르 (세리 - 두플리카토르 1번 [지속]: 서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배) ──
+    # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수 또는 None, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
+    # 정본 3-6 f 재정: 코스트가 「이 카드」만이면 「이 카드 1장」으로 보아 2배(이 카드 + 같은 곳의 카드 1장 — 후보 None),
+    # 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 세리의 덱 위 제외 · 제외 존→덱 코스트는 cards4가 직접 2배로 한다.
+    COST_ACTIONS = {'grave': 'send_grave', 'release': 'tribute', 'banish': 'banish', 'deck': 'to_deck', 'hand': 'to_hand'}
+
+    def cost_specs(self, p, c, e):
+        """지금 적용되는 코스트 명세 목록 (dupcost.py) — 두플리카토르가 없으면 빈 목록"""
+        specs = getattr(e, 'cost_spec', None)
+        if not specs or not self.rule('cost_double', p): return []
+        return [s for s in specs if len(s) < 5 or s[4](self, c, p)]
+
+    def cost_extra_pool(self, p, c, s, zone=None):
+        """두플리카토르로 더 내야 하는 카드의 후보. 후보 함수가 없으면(「이 카드」 코스트) 이 카드가 있는 곳의 다른 카드"""
+        act, pool = s[0], s[1]
+        if pool is not None: return list(pool(self, c, p))   # 후보 함수가 정한 범위 그대로 (이 카드를 포함할 수 있는 코스트 — 재정 질문 데이터버그 12)
+        z = zone or c.zone; pl = self.p[p]
+        if z == 'hand': xs = list(pl.hand)
+        elif z == 'grave': xs = list(pl.grave)
+        elif z in ('m', 'shared'): xs = [x for x in self.monsters(p) if x.is_monster()]
+        else: xs = self.field_cards(p)
+        xs = [x for x in xs if x is not c]
+        if act == 'release': xs = [x for x in xs if self.releasable(x)]
+        return xs
+
+    def cost_extra_ok(self, p, c, e):
+        return all(len(self.cost_extra_pool(p, c, s)) >= s[2] + s[3] for s in self.cost_specs(p, c, e))
+
+    def pay_cost_extra(self, p, c, specs, link):
+        for s in specs:
+            # 자신의 카드는 덜 아끼는 것부터, 상대의 카드(상대 카드를 코스트로 쓰는 효과)는 상대가 아끼는 것부터
+            xs = sorted(self.cost_extra_pool(p, c, s, link.ctx.get('from_zone')),
+                        key=lambda x: self.p[x.controller].ai.card_pri(self, x.controller, x) * (1 if x.controller == p else -1))[:s[3]]
+            self.L(f'두플리카토르: 코스트 {s[3]}장 더 지불 — {", ".join(map(str, xs)) or "없음"}', 'sys')
+            for x in xs:
+                if s[0] == 'hand_opp': self.to_hand(x, ('cost', c), p=1 - p)
+                elif s[0] == 'deck_grave': self.deck_to_grave(p, x, '두플리카토르 코스트')
+                else: getattr(self, self.COST_ACTIONS[s[0]])(x, ('cost', c))
 
     def activate(self, p, c, e, ev=None):
         link = Link(c, e, p, {'ev': ev, 'from_zone': c.zone})
@@ -811,12 +851,14 @@ class Game:
         self.L(f'{self.pname(p)} {c} {e.num}번 효과 발동' + (f' [{e.label}]' if e.label else '') + f' — 체인 {len(self.chain)+1}')
         link.ctx['opt_keys'] = [self.opt_key(c, e)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4 — Game.opt_key). 코스트 처리에서 바꿀 수 있다
         prev_costing = getattr(self, 'costing', None); self.costing = link   # 코스트 단계 = 대상을 고르는 중 (Game.targeting_now)
+        specs = self.cost_specs(p, c, e)   # 두플리카토르: 원래 코스트를 내기 전에 정한다 (코스트로 이 카드 · 조건이 바뀌므로)
         try: cancel = bool(e.cost) and e.cost(self, c, p, link) is False
         finally: self.costing = prev_costing
         if cancel:
             self.L(f'{c} 발동 취소 (코스트/대상 불가)', 'sys')
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)
             return None
+        if specs: self.pay_cost_extra(p, c, specs, link)
         for k in link.ctx['opt_keys']: self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
         # e.procedure: 소환 절차(「…해야만 패에서 특수소환할 수 있다」 — 데이터버그 더 바이러스 · 더 딜리트, 2026-10-12 추가)는 효과의 발동이 아니다 —
         # 발동 횟수 · 발동 사건을 남기지 않는다 (no_resp · unnegatable과 함께 쓴다). 표시가 없는 효과는 그대로

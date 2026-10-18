@@ -115,5 +115,35 @@ class MatchRulingTest(unittest.TestCase):
         self.assertTrue(all(r['chooser'] in (None, 0, 1) for r in rounds))
 
 
+class DuplicatorTest(unittest.TestCase):
+    """세리 - 두플리카토르: 서로의 카드 코스트 매수 2배 (재정 정리 2026-10-17, 정본 3-6 f)"""
+    def test_self_cost_needs_one_more_card(self):
+        g = make('던전마스터 셔플!', '세제')
+        on_field(g, '세리 - 두플리카토르', 1)
+        sac = card(g, '던전마스터 새크리파이스', 0, 'hand')
+        g.p[0].hand[:] = [sac]                                  # 패에 이 카드뿐 → 「이 카드」 + 1장을 낼 수 없다
+        self.assertFalse(g.legal(0, sac, eff(sac, 1)))
+        other = card(g, '던전마스터 망령', 0, 'hand')
+        self.assertTrue(g.legal(0, sac, eff(sac, 1)))
+        g.activate(0, sac, eff(sac, 1))
+        self.assertEqual((sac.zone, other.zone), ('grave', 'grave'))
+
+    def test_counted_cost_doubles(self):
+        g = make('데이터버그 패키지 프로그램', '세제')
+        on_field(g, '세리 - 두플리카토르', 1)
+        evo = on_field(g, '데이터버그 에볼루션 마스터', 0)
+        ms = [on_field(g, '데이터버그 리틀버그', 0) for _ in range(2)]
+        self.assertFalse(g.legal(0, evo, eff(evo, 1)))          # 2장 → 4장 필요 (에볼루션 자신 포함 3장뿐)
+        ms.append(on_field(g, '데이터버그 리틀버그', 0))
+        self.assertTrue(g.legal(0, evo, eff(evo, 1)))
+        g.activate(0, evo, eff(evo, 1))
+        self.assertEqual(len(g.monsters(0)), 0)
+
+    def test_no_duplicator_no_change(self):
+        g = make('던전마스터 셔플!', '세제')
+        sac = card(g, '던전마스터 새크리파이스', 0, 'hand'); g.p[0].hand[:] = [sac]
+        self.assertTrue(g.legal(0, sac, eff(sac, 1)))
+
+
 if __name__ == '__main__':
     unittest.main()
