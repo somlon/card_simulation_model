@@ -229,6 +229,14 @@ class Game:
         if cause and cause[0] == 'rule': return False
         self.L(f'{c}은(는) 파괴 이외의 방법으로 필드를 벗어나지 않음', 'sys'); return True
 
+    def must_attack(self, m):
+        """「상대는 반드시 공격해야 한다」([지속] 규칙 'must_attack' — 격투가의 투기장 1번)가 몬스터 m에 적용되는가.
+        그 효과를 받지 않는 몬스터(고대의 봉인 등)는 공격하지 않아도 된다 (설계도 확정 2026-10-10)"""
+        for src in self.continuous_sources():
+            f = getattr(src, 'rules', {}).get('must_attack')
+            if f and f(self, src, m.controller) and not self.immune(m, src.controller, src): return True
+        return False
+
     def attack_banned(self, m):
         """「공격할 수 없다」: flags['no_attack'](callable 가능) · flags['no_attack_until'](그 턴까지)"""
         return bool(self.flag(m, 'no_attack')) or m.flags.get('no_attack_until', -1) >= self.turn
@@ -416,18 +424,20 @@ class Game:
         if self.blocked(c, cause): return
         self.L(f'{c} 릴리스'); self.send_grave(c, cause, released=True)
 
+    def can_change_control(self, c, p):
+        """c의 컨트롤을 p에게 옮길 수 있는가: 새 컨트롤러의 빈 몬스터 존이 있어야 한다(공유 존의 몬스터도 — 설계도 확정 2026-10-07).
+        옮길 수 없으면 처리할 수 없는 효과이므로 발동할 수 없다(정본 3-6 e)"""
+        return c.controller == p or bool(self.free_m(p))
+
     def change_control(self, c, p):
+        """컨트롤 변경. 공유 존은 마커가 가리키는 플레이어의 소유이므로, 공유 존의 몬스터가 상대에게 넘어가면 마커는 그대로 두고
+        그 몬스터를 새 컨트롤러의 몬스터 존으로 옮긴다 (설계도 확정 2026-10-07 — 예전에는 공유 존에 둔 채 마커를 뒤집었다)"""
         if c.controller == p: return True
-        if c.zone == 'shared':
-            c.controller = p
-            if self.shared_owner != p:
-                old = self.shared_owner; self.shared_owner = p
-                if old is not None: self.flip_marker(old)
-            return True
         fr = self.free_m(p)
         if not fr: return False
-        self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
-        self.p[p].m[fr[0]] = c; c.controller = p
+        if c.zone == 'shared': self.shared = None
+        else: self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
+        self.p[p].m[fr[0]] = c; c.zone = 'm'; c.controller = p
         return True
 
     # ── 소환 ──
@@ -541,6 +551,12 @@ class Game:
         c.counters[name] = c.counters.get(name, 0) + n
         self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n, total=c.counters[name])
         self.state_check(); return True
+    def clear_counters_facedown(self, c):
+        """정본 6-4: 카운터가 놓인 카드가 뒷면 표시가 되면 카운터는 전부 사라진다 (제거 효과가 아니므로 counter 사건을 내지 않는다)"""
+        if c.counters:
+            self.L(f'{c} 뒷면 — 카운터 소멸 ({", ".join(f"{k} {v}" for k, v in c.counters.items())})', 'sys')
+            c.counters = {}; self.state_check()
+
     def remove_counter(self, c, name, n=1):
         k = min(n, c.counters.get(name, 0))
         if k <= 0: return 0
@@ -561,7 +577,22 @@ class Game:
         self.p[p].hp -= amt
         self.L(f'{self.pname(p)} {amt} 대미지 ({src}) → HP {self.p[p].hp}')
         self.emit('damage', player=p, amount=amt)
-        if self.p[p].hp <= 0: raise GameOver(1 - p, f'{self.pname(p)} HP 0')
+        if not getattr(self, '_hp_defer', 0): self.hp_check()
+
+    def hp_check(self):
+        """HP 0 판정. 효과 하나를 처리하는 동안(_hp_defer)은 미뤘다가 처리가 끝난 뒤 한 번에 본다 —
+        양쪽 HP가 동시에 0이 되면 무승부(승점 없음, 설계도 확정 2026-10-07)"""
+        dead = [i for i in (0, 1) if self.p[i].hp <= 0]
+        if len(dead) == 2: raise GameOver(None, '양쪽 HP 동시 0 — 무승부')
+        if dead: raise GameOver(1 - dead[0], f'{self.pname(dead[0])} HP 0')
+
+    def deferring_hp(self, fn, *a):
+        """fn(*a)을 HP 0 판정을 미룬 채 실행하고, 끝난 뒤 판정한다 (효과 하나의 처리 · [지속] 종료 처리)"""
+        self._hp_defer = getattr(self, '_hp_defer', 0) + 1
+        try: return fn(*a)
+        finally:
+            self._hp_defer -= 1
+            if not self._hp_defer: self.hp_check()
     def heal(self, p, amt):
         self.p[p].hp += amt; self.L(f'{self.pname(p)} HP {amt} 회복 → {self.p[p].hp}')
 
@@ -575,7 +606,10 @@ class Game:
                 if not pl.main and not pl.upper: raise GameOver(1 - p, f'{pl.name} 덱아웃')
                 choice = pl.ai.choose_draw_deck(self, p) if pl.main and pl.upper else ('main' if pl.main else 'upper')
                 src = pl.main if choice == 'main' else pl.upper
-            if not src: raise GameOver(1 - p, f'{pl.name} 덱아웃 (지정 덱 없음)')
+            if not src:
+                # 패배는 메인 덱과 상급 덱이 모두 떨어졌을 때만(정본 4 b). 한 덱만 비었으면 지정한 덱에서 뽑지 못할 뿐 (설계도 확정 2026-10-07)
+                if not pl.main and not pl.upper: raise GameOver(1 - p, f'{pl.name} 덱아웃')
+                self.L(f'{pl.name} {"메인" if deck == "main" else "상급"} 덱이 비어 드로우하지 못함', 'sys'); return
             c = src.pop(); c.zone = 'hand'; pl.hand.append(c)
             self.L(f'{pl.name} 드로우 ({"상급" if src is pl.upper else "메인"}) {c}', 'draw')
             self.emit('draw', player=p, card=c)
@@ -678,13 +712,22 @@ class Game:
             if h: h(self, src, ev)
 
     # ── 1턴 1회 ──
+    @staticmethod
+    def opt_key(c, e):
+        """1턴 1번을 세는 단위: 카드명 × 효과 번호(전역 규칙 — 같은 이름 단위). 효과를 받아 얻은 효과(e.opt_per_card — 올인 2번 · 격투가 세레모니)는
+        얻을 때마다 별개의 사용 횟수를 가지므로 그 카드 한 장 단위로 센다 (사용자 답변 2026-10-17)"""
+        return (c.name, e.num, c.uid) if getattr(e, 'opt_per_card', False) else (c.name, e.num)
+
     def opt_ok(self, p, c, e):
         if e.opt is None: return True
-        return self.p[p].opt.get((c.name, e.num), 0) < e.opt
+        return self.p[p].opt.get(self.opt_key(c, e), 0) < e.opt
 
     # ── 발동 가능 판정 ──
     def zone_ok(self, c, e, p):
         z = c.zone
+        if e.kind == 'lastwill' and c.uid in getattr(self, 'lw_grace', ()) and c.owner == p: return True   # Game.triggers의 [유언] 우선 선언
+        if z in ('main', 'upper', 'banish'):   # 덱 · 제외 존에서 발동하는 효과는 그 영역을 적은 효과만 (호박옥 - 황금봉랍 2번)
+            return ('deck' if z != 'banish' else 'banish') in e.zones and c.owner == p
         if z == 'hand' and 'hand' not in e.zones: return False
         if z in ('m', 's', 'shared', 'fieldz'):
             # e.owner_only: 「이 효과의 발동은, 원래 주인인 플레이어만 선언할 수 있다」 — 컨트롤러 대신 원래 주인 (던전마스터 깜짝상자, 2026-10-12 추가 — 표시가 없는 효과는 그대로)
@@ -766,7 +809,7 @@ class Game:
                 self._remove(c); self.place_spell(c, p, True)
             else: c.faceup = True
         self.L(f'{self.pname(p)} {c} {e.num}번 효과 발동' + (f' [{e.label}]' if e.label else '') + f' — 체인 {len(self.chain)+1}')
-        link.ctx['opt_keys'] = [(c.name, e.num)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4). 코스트 처리에서 바꿀 수 있다
+        link.ctx['opt_keys'] = [self.opt_key(c, e)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4 — Game.opt_key). 코스트 처리에서 바꿀 수 있다
         prev_costing = getattr(self, 'costing', None); self.costing = link   # 코스트 단계 = 대상을 고르는 중 (Game.targeting_now)
         try: cancel = bool(e.cost) and e.cost(self, c, p, link) is False
         finally: self.costing = prev_costing
@@ -818,12 +861,12 @@ class Game:
             if link.negated:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 무효', 'res')
             elif link.replaced:
-                self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 처리 치환', 'res'); link.replaced(self, link)
+                self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 처리 치환', 'res'); self.deferring_hp(link.replaced, self, link)
             else:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 처리', 'res')
                 self.src = c; self.src_eff = e
                 prev_res = getattr(self, 'resolving_link', None); self.resolving_link = link   # 처리 중인 발동 (Game.targeted_by) — 엔진의 resolving(불린)과 다른 이름
-                if e.res: e.res(self, c, p, link)
+                if e.res: self.deferring_hp(e.res, self, c, p, link)
                 self.resolving_link = prev_res
                 self.src = None; self.src_eff = None
             if e.spell_act and self.on_field(c) and c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') \
@@ -865,17 +908,26 @@ class Game:
         self.state_check()
         if self.locked or depth > 12 or not self.events: self.events = []; return
         evs = self.events; self.events = []; self.cur_evs = evs
-        tp = self.turn_player; built = False
-        for p in (tp, 1 - tp):
+        tp = self.turn_player; built = False; last = None
+        def collect(p):
             pl = self.p[p]
             cards = list(pl.hand) + self.field_cards(p) + list(pl.grave) + ([pl.skill] if pl.skill else []) + list(pl.banish)
-            cands = []
+            cards += [x for x in pl.main + pl.upper if x.flags.get('deck_trigger')]   # 덱에서 발동하는 트리거를 가진 카드만
+            out = []
             for c in cards:
                 for e in c.effects:
                     if e.kind not in ('trigger', 'summon', 'lastwill', 'battle'): continue
                     for ev in evs:
                         if self.legal(p, c, e, ev):
-                            cands.append((c, e, ev)); break
+                            out.append((c, e, ev)); break
+            return out
+        # [유언]은 우선적으로 발동 선언한다(정본 3-6 b): 사건 때 발동할 수 있던 [유언]은, 같은 선언 차례에 먼저 선언한 쪽의 코스트로
+        # 그 카드가 묘지를 떠나도 발동한다 (재정 로그 2 — 헬 3번). lw_grace = 그런 카드의 uid (Game.zone_ok · [유언] 조건이 본다)
+        prev_grace = getattr(self, 'lw_grace', frozenset())
+        self.lw_grace = prev_grace | frozenset(c.uid for q in (tp, 1 - tp) for c, e, _ in collect(q) if e.kind == 'lastwill')
+        for p in (tp, 1 - tp):
+            pl = self.p[p]
+            cands = collect(p)
             if not cands: continue
             order = pl.ai.choose_triggers(self, p, cands)
             seen_x = set(); order2 = []
@@ -888,8 +940,11 @@ class Game:
             order = order2
             for c, e, ev in order:
                 if self.legal(p, c, e, ev):
-                    if self.activate(p, c, e, ev): built = True
-        if built: self.priority(1 - tp)
+                    if self.activate(p, c, e, ev): built = True; last = p
+        self.lw_grace = prev_grace
+        # 조건이 채워진 효과는 번갈아 하지 않는다: 턴 플레이어가 다 선언한 뒤 상대가 이어서 선언하고, 마지막에 선언한 쪽의 상대부터
+        # 번갈아 응답한다 (설계도 확정 2026-10-08 — 예전에는 늘 비턴 플레이어부터)
+        if built: self.priority(1 - last)
         elif self.events: self.triggers(depth + 1)
 
     def after_action(self, actor):
@@ -914,9 +969,9 @@ class Game:
         return self.turn_player == p and self.turn > 1 and self.no_attack.get(p) != self.turn and self.phase in ('준비', '진행', '전투')
 
     def blockers(self, p):
-        """p 필드에서 상대의 직접공격을 막는 몬스터. 뒷면 공격 표시 몬스터는 막지 못한다 — 상대는 그 몬스터를 무시하고
-        직접공격할 수 있다 (사용자 재정 2026-10-06). 뒷면 수비 표시는 지금처럼 막는다(공격 대상은 아님, 정본 1-1)"""
-        return [m for m in self.monsters(p) if m.faceup or m.pos != 'atk']
+        """p 필드에서 상대의 직접공격을 막는 몬스터: 앞면 몬스터만. 상대 몬스터가 없거나 뒷면 몬스터뿐이면 직접공격할 수 있다
+        (설계도 확정 2026-10-07 — 뒷면 몬스터는 공격 대상이 아니다, 정본 1-1)"""
+        return [m for m in self.monsters(p) if m.faceup]
 
     def can_direct(self, c):
         opp = 1 - c.controller
@@ -929,11 +984,12 @@ class Game:
     def set_face_down(self, c, cause=None):
         """「뒷면 표시로 한다」 효과 (사용자 재정 2026-10-06): 표시 형식은 그대로 두고 뒷면으로 — 공격 표시 몬스터는
         뒷면 공격 표시, 수비 표시 몬스터는 뒷면 수비 표시가 된다. 텍스트가 「뒷면 수비 표시로」를 정하면 pos='def'를 넘긴다.
-        뒷면 몬스터는 [지속]이 적용되지 않는다(continuous_sources는 앞면만). 카운터 · 장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
+        뒷면 몬스터는 [지속]이 적용되지 않는다(continuous_sources는 앞면만). 뒷면이 되면 놓여 있던 카운터는 전부 사라진다(정본 6-4).
+        장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
         cause = cause or ('effect', self.src)
         if not self.on_field(c) or not c.is_monster() or not c.faceup: return False
         if self.blocked(c, cause): return False
-        c.faceup = False
+        c.faceup = False; self.clear_counters_facedown(c)
         self.L(f'{c} 뒷면 {"공격" if c.pos == "atk" else "수비"} 표시로')
         self.emit('face_down', card=c, cause=cause)
         return True
@@ -949,9 +1005,12 @@ class Game:
         self.L(f'{self.pname(p)} {a}(ATK {self.atk(a)}) → ' + (f'{target}' if target else '직접공격'))
         self.emit('attack', card=a, target=target)
         self.after_action(p)
+        # 공격 선언 뒤의 응답으로 공격한 몬스터나 대상이 사라졌으면 그 공격은 끝나고, 공격하지 않은 것으로 보아 다시 공격 선언할 수 있다
+        # (설계도 확정 2026-10-08)
         if not self.on_field(a) or a.controller != p or not a.faceup: return
-        if target is not None and (not self.on_field(target) or target.controller != o):
-            self.L('공격 대상 소멸 — 공격 종료', 'sys'); return
+        if target is not None and (not self.on_field(target) or target.controller != o or not target.faceup):
+            a.attacks_made -= 1
+            self.L('공격 대상 소멸 — 공격 종료 (공격하지 않은 것으로 봄)', 'sys'); return
         if target is None:
             self.battle_damage(o, self.atk(a), f'{a.name} 직접공격')
             self.emit('direct_hit', card=a)
@@ -1018,7 +1077,7 @@ class Game:
         self.set_phase('종료')
         for c in self.continuous_sources():   # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다)
             f = getattr(c, 'end_process', None)
-            if f and (self.on_field(c) or c.zone == 'skill'): f(self, c)
+            if f and (self.on_field(c) or c.zone == 'skill'): self.deferring_hp(f, self, c)
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()

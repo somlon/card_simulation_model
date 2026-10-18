@@ -17,16 +17,17 @@ ASSUME:
 - 효과 종류 표기가 없는 효과(아우렘 4번 · 수액정 1번 · 반혼체 1번 · 태고의 수해 3번 · 봉인을 푸는 자 3번)는 기동 효과(자신 턴 진행/정비 단계 · 체인 없음).
 - [소환] 효과(아우렘 · 레시나 · 실렉스 1번 등)는 「(강제)」 문구가 없으므로 임의 효과(§6-3). AI는 언제나 발동한다.
 - 「상대가 효과를 발동했을 때」 [트리거](레시나 · 실렉스 3번, 황금봉랍 1번 [신속])는 체인에 대응하는 발동(resp)으로 처리한다.
-- 「(이 효과는 강제로 발동한다.)」 트리거 마법(월식 · 몽마의 도래 · 깨어남의 종 · 꿈의 파열): 세트한 카드는 조건이 갖춰지면 반드시 발동하고,
-  패에서는 발동 여부를 고를 수 있다(패에서 강제로 발동해야 하면 패의 꿈의 파열이 자신 필드까지 쓸어버리므로).
+- 「(이 효과는 강제로 발동한다.)」 트리거 마법(월식 · 몽마의 도래 · 깨어남의 종 · 꿈의 파열): 세트한 카드도 패의 카드도 조건이 갖춰지면
+  반드시 발동한다(사용자 답변 2026-10-17 — 정본 1-2 트리거 마법은 패 또는 필드에서 발동). 빈 마법 존이 없으면 패에서는 발동할 수 없다.
 - 녹스 솜니페르 4번 「턴 종료 시」 = 양쪽 플레이어의 턴 종료 시(end_phase 사건). 에이스 2번 · 수호자 2번의 「릴리스되지 않는다」 등은 앞면일 때만.
 - 녹스 솜니페르 4번 · 월식의 「뒷면 수비 표시로 한다」: Game.set_face_down 뒤 표시 형식을 수비로 바꾼다. 이미 뒷면 공격 표시인 상대 몬스터(월식)는
-  표시 형식만 수비로 바꾼다. 뒷면이 된 몬스터의 카운터는 그대로 둔다(엔진 ASSUME).
+  표시 형식만 수비로 바꾼다. 뒷면이 된 카드의 카운터는 전부 사라진다(정본 6-4 — 엔진 set_face_down).
 - 마르모르 · 카르분쿨루스 1번 「필드의 릴리스 가능한 몬스터가 없는 경우, 대신 봉인 카운터 3개를 제거」: 「필드」 = 자신 필드(코스트로 릴리스하는
   「자신 필드의 몬스터」와 같은 범위), 3개는 자신 필드의 몬스터들에서 합계로 뗄 수 있다.
 - 수호자 4번 [유언]의 코스트 「묘지의 「호박옥」 카드 1장」은 자신 묘지의, 이 카드 이외의 카드. 덱에서 묘지로 보내진 경우에도 발동한다(단서 없음).
 - 반혼체 1번: 덱으로 되돌릴 2장은 특수소환할 몬스터를 남기도록 고르고, 특수소환할 몬스터는 처리 시에 고른다(대상 지정 없음).
-- 황금봉랍 2번 「이 카드가 상대의 효과로 필드를 벗어났을 때」: 엔진상 묘지 · 패에 있을 때만 발동할 수 있다(덱 · 제외 존의 카드는 발동 불가).
+- 황금봉랍 2번 「이 카드가 상대의 효과로 필드를 벗어났을 때」: 가는 곳을 가리지 않는다 — 묘지 · 패 · 덱 · 제외 존에서 발동 (재정 정리 2026-10-17,
+  엔진 zone_ok의 'deck' · 'banish' 영역 + flags['deck_trigger']).
   「상대의 효과」 = 상대 카드의 효과(사건의 cause가 'effect'이고 그 주체가 상대가 컨트롤하는 카드).
 - 각성의 태동 「상대가 자신 필드의 카드를 필드에서 벗어나게 하는 효과를 발동했을 때」: 그 효과 번호의 처리 문장(「…발동.」 뒤)에서 「자신 필드」를
   지운 뒤 「필드」와 파괴 · 제외 · 덱으로 · 패에 넣 · 묘지로 보내 · 릴리스 · 되돌 중 하나가 있으면 그런 효과로 본다(문장 판정). 대상이 자신 필드의
@@ -35,8 +36,9 @@ ASSUME:
   카운터 수를 고른다. 아우렘 4번은 「개수까지」이므로 상대 카드만.
 - 임시 봉인 「다음 턴 종료 시까지」 = 발동한 턴의 다음 턴 종료 시까지. 「다른 카드의 효과를 받지 않는다」는 자신 · 상대 카드 모두(카운터는 내성과
   무관하게 놓인다 — 엔진 add_counter).
-- 봉인을 푸는 자 1번: 덱의 「봉인을 푸는 자」 트리거 마법이 3장 미만이면 있는 만큼 보여 주고, 1장 이상이면 발동할 수 있다. 같은 이름도 보여 줄 수
-  있다(서로 다른 이름을 먼저). 세트할 빈 마법 존이 없으면 발동하지 않는다. 2번(공유 존): 2장을 고르게 하고 빈 마법 존만큼 세트.
+- 봉인을 푸는 자 1번: 덱의 「봉인을 푸는 자」 트리거 마법이 3장 미만이면 「3장을 골라 보여 준다」를 처리할 수 없으므로 발동할 수 없다(정본 3-6 e,
+  재정 정리 2026-10-17). 같은 이름도 보여 줄 수 있다(서로 다른 이름을 먼저 — 재정 질문 남음). 세트할 빈 마법 존이 없으면 발동하지 않는다.
+  2번(공유 존): 2장을 고르게 하고 빈 마법 존만큼 세트.
 - 깨어남의 종: 녹스에 봉인 카운터가 1개 이상 있어야 발동한다(0개를 「전부 제거」하면 특수소환할 수가 0). HP가 2000 초과에서 2000 이하로
   바뀐 대미지(자해 포함)에만.
 - 몽식의 계약 1번은 「발동한다」이므로 체인에 올리는 강제 트리거(game_start), 봉인의 계약 1번은 「발동」 문구가 없으므로 [지속] 처리(희생제와 같은 on_event).
@@ -52,7 +54,7 @@ ASSUME:
 - (검토 2026-10-13) 「대상으로 하고」 판정의 시점 차이: 발동 판정은 대상 지정 여부를 모르는 상태로 보고, 코스트 단계에서 대상 지정으로 본다.
   상대 필드에 봉인된 카르분쿨루스(대상이 되지 않음)만 있을 때는 발동 판정은 통과해도 코스트에서 취소될 수 있다(AI는 같은 단계에서 다시 고르지 않음).
   임시 봉인은 이 카드를 주체로 내성을 판정한다 — 봉인된 아우렘 · 녹스(「호박옥」 카드의 효과는 받음)도 고를 수 있다.
-재정 질문:
+재정 질문 (2026-10-17 해결: 1 패에서도 강제 · 3 양쪽 턴 · 4 3장 미만 불가 · 6 덱 · 제외도 발동 · 9 5개 미만이면 처리 없음):
 1. 「강제로 발동한다」 트리거 마법을 패에 들고 있을 때도 조건이 갖춰지면 반드시 발동해야 하는가 (지금: 세트한 카드만 강제).
 2. 「대상을 지정하는 효과」의 범위 — 이 시뮬레이터는 「대상으로 하고 발동」 문구가 있는 효과만 대상 지정으로 본다. 「고르고」 효과는 비대상으로 보아
    마르모르(봉인 카운터가 있을 때)는 「상대 필드의 카드 1장을 고르고 파괴」 같은 효과를 받지 않는다. 맞는가.
@@ -290,9 +292,9 @@ def dump_pick(g, p, cands):
 
 
 def forced_trigger(cond, res, sc, threat=600, label='', cost=None):
-    """「(이 효과는 강제로 발동한다.)」 트리거 마법 1번: 세트한 카드는 반드시 발동, 패에서는 고를 수 있다 (ASSUME)"""
+    """「(이 효과는 강제로 발동한다.)」 트리거 마법 1번: 세트한 카드도 패의 카드도 조건이 갖춰지면 반드시 발동한다 (사용자 답변 2026-10-17)"""
     return [Effect(1, 'trigger', ('field',), spell_act=True, mandatory=True, cond=cond, cost=cost, res=res, score=sc, threat=threat, label=label + ' (강제)'),
-            Effect(1, 'trigger', ('hand',), spell_act=True, cond=cond, cost=cost, res=res, score=sc, threat=threat, label=label + ' (패에서)')]
+            Effect(1, 'trigger', ('hand',), spell_act=True, mandatory=True, cond=cond, cost=cost, res=res, score=sc, threat=threat, label=label + ' (패에서 · 강제)')]
 
 
 # ═══════════════════════ 에이스 ═══════════════════════
@@ -551,7 +553,7 @@ def _(c):
         t = l.ctx['t']
         if t.zone == 'grave': g.to_hand(t); g.L(f'{t} 패에 넣음')
     c.effects = [
-        Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(deck_trig(g, p)) and bool(g.free_s(p)),
+        Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and len(deck_trig(g, p)) >= 3 and bool(g.free_s(p)),
                res=res1, score=lambda *a: 80, threat=400, label='[소환] 트리거 마법 3장 공개 → 상대가 무작위로 고른 카드 세트'),
         Effect(3, 'ignition', ('field',), cond=lambda g, c, p, ev: any(UNSL_TRIG(x) for x in g.p[p].grave),
                cost=cost3, res=res3, score=lambda *a: 40, threat=300, label='묘지의 트리거 마법 회수')]
@@ -579,6 +581,7 @@ def _(c):
 @card('호박옥 - 황금봉랍')
 def _(c):
     amber_common(c)
+    c.flags['deck_trigger'] = True   # 2번은 덱으로 간 뒤에도 발동 — Game.triggers가 덱의 이 카드도 본다
     def payers(g, p): return [m for m in g.monsters(p) if seals(m) >= 2]
     def cost1(g, c, p, l):
         m = max(payers(g, p), key=lambda m: (seals(m) - 2 - keep_of(m) >= 0, seals(m), -value(g, m)))
@@ -595,7 +598,7 @@ def _(c):
                score=lambda g, c, p, ev: 5 if any(x.name == c.name and x.faceup for x in g.spells(p)) else 40, threat=300),
         Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None and bool(payers(g, p)),
                cost=cost1, res=lambda g, c, p, l: g.negate(l.ctx['t'], by=c), score=sc1, threat=800, label='봉인 카운터 2 → 상대 발동 무효'),
-        Effect(2, 'trigger', ('grave', 'hand'), cond=cond2, res=lambda g, c, p, l: put_seals(g, p, 2, why=c.name),
+        Effect(2, 'trigger', ('grave', 'hand', 'deck', 'banish'), cond=cond2, res=lambda g, c, p, l: put_seals(g, p, 2, why=c.name),
                score=lambda *a: 70, threat=300, label='상대 효과로 필드를 벗어남 → 봉인 카운터 2')]
 
 
@@ -690,7 +693,10 @@ def _(c):
     def cond(g, c, p, ev):
         return ev_is(ev, 'counter') and ev.get('amber_side') == p and ev.get('amber_prev', 99) < 5 <= ev.get('amber_sum', 0)
     def res(g, c, p, l):
-        n = pay_seals(g, p, 5, [m for m in g.monsters(p) if m.faceup and AMB_MON(m)])
+        pool = [m for m in g.monsters(p) if m.faceup and AMB_MON(m)]
+        if sum(seals(m) for m in pool) < 5:   # 5개를 제거할 수 없으면 앞 효과를 처리하지 못한 것 — 아무것도 하지 않는다 (사용자 답변 2026-10-17)
+            g.L('봉인 카운터가 5개 미만 — 월식 처리 없음', 'sys'); return
+        n = pay_seals(g, p, 5, pool)
         g.L(f'봉인 카운터 {n}개 제거')
         for m in list(g.monsters(1 - p)): face_down_def(g, m)
     def sc(g, c, p, ev):

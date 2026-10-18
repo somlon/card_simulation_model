@@ -120,11 +120,11 @@ def _(c):
 #  서치(2번)는 코스트가 아닌 처리 · 「덱」(메인 · 상급), 카드군 「격투가」가 생김.
 # ASSUME:
 #  - [전투] = 전투로 카드를 파괴하는 데 성공했을 때(엔진 battle_win, §7). 몬스터가 아닌 카드(세레모니 · 스킬 1번)의 [전투] = 자신 몬스터의 battle_win.
-#  - 스네이크 스케일 1번 「그 카드를 파괴하고 자신의 패를 1장 버린다」: 대상이 처리 시 없어도 패 1장은 버린다(이 카드 자신도 버릴 수 있음).
+#  - 처리 순서(사용자 답변 2026-10-17): 텍스트 앞 효과를 처리해야 뒤 효과도 처리한다 — 스네이크 스케일 1번은 대상을 파괴하지 못하면 패를 버리지 않는다.
+#    라이노 혼 2번도 대상을 파괴하지 못하면 1000 대미지를 주지 않는다.
 #  - 엘리펀트 노즈 · 라이노 혼 1번: 「자신 필드에 몬스터가 존재하지 않을 경우」는 발동 조건, 특수소환하지 못하면 파괴도 하지 않는다.
-#  - 라이노 혼 2번: 대상이 처리 시 없어도 1000 대미지는 준다.
 #  - 세레모니: 대상 = 자신 필드의 앞면 「격투가」 몬스터(전투한 몬스터가 아니어도 됨). 부여(재정) — 그 몬스터가 필드에 있는 동안 영구:
-#    매 턴 공격 횟수 +1(부여한 턴 포함) · 부여 [전투](효과 번호 30+k, k번째 부여분마다 1턴 1번). 필드를 벗어나면 사라진다.
+#    매 턴 공격 횟수 +1(부여한 턴 포함) · 부여 [전투](효과 번호 30+k, k번째 부여분마다 · 몬스터 한 장마다 1턴 1번). 필드를 벗어나면 사라진다.
 #    부여 [전투] 「필드의 카드 1장을 대상으로」: 상대 카드 우선, 상대 카드가 없으면 1000 대미지로 결착할 때만 자신 카드를 대상으로 쓴다.
 #  - 격투가의 투기장 3번 「상대 필드의 몬스터가 파괴되었을 경우」: 파괴 직전 상대가 컨트롤하던 몬스터(to_grave 사건의 ctrl).
 #  - 투기장의 규칙 2번: 되돌리기 · 서치 모두 처리(코스트 아님). AI는 되돌린 카드와 다른 이름을 서치(없으면 같은 이름도 가능).
@@ -162,8 +162,9 @@ def pick_opp_target(g, c, p, l, why=''):
     l.ctx['t'] = best(g, [x for x in ts if id(x) not in tk] or ts, p); g.L(f'{why}대상: {l.ctx["t"]}')
 
 def destroy_target(g, p, l):
+    """발동 시 고른 대상을 파괴한다. 파괴했으면 True — 뒤 효과는 앞 효과를 처리했을 때만 처리한다 (사용자 답변 2026-10-17)"""
     t = l.ctx.get('t')
-    if t is not None and g.on_field(t) and t.controller == 1 - p: g.destroy(t)
+    return bool(t is not None and g.on_field(t) and t.controller == 1 - p and g.destroy(t))
 
 def discard1(g, p):
     if g.p[p].hand:
@@ -172,7 +173,7 @@ def discard1(g, p):
 @card('격투가 스네이크 스케일')
 def _(c):
     def res(g, c, p, l):
-        destroy_target(g, p, l); discard1(g, p)
+        if destroy_target(g, p, l): discard1(g, p)
     e = need(lastwill(lambda g, c, p, l: search(g, p, FGTR, '스네이크 스케일')), lambda g, c, p, ev: g.can_search(p, FGTR))
     e.num = 2
     c.effects = [Effect(1, 'quick', ('hand',), cond=lambda g, c, p, ev: bool(opp_t(g, p)),
@@ -241,7 +242,7 @@ def _(c): c.effects = [fighter_ss_target(), battle(lambda g, c, p, l: destroy_n(
 @card('격투가 라이노 혼')
 def _(c):
     def r(g, c, p, l):
-        destroy_target(g, p, l); g.damage(1 - p, 1000, c.name)
+        if destroy_target(g, p, l): g.damage(1 - p, 1000, c.name)
     c.effects = [fighter_ss_target(),
                  battle(r, cond=lambda g, c, p, ev: bool(opp_t(g, p)), cost=lambda g, c, p, l: pick_opp_target(g, c, p, l), label='[전투] 상대 카드 대상 파괴 + 1000')]
 
@@ -270,7 +271,9 @@ def cer_effect(k):
     def sc(g, c, p, ev):
         if opp_pool(g, p): return 90
         return 1000 if g.p[1 - p].hp <= 1000 else VETO   # 자신 카드를 파괴하게 되면 결착일 때만
-    return battle(res, sc, num=CER_BASE + k, cond=cond, cost=cost, label=f'[전투] (세레모니 부여 {k}) 1000 대미지 + 대상 파괴')
+    e = battle(res, sc, num=CER_BASE + k, cond=cond, cost=cost, label=f'[전투] (세레모니 부여 {k}) 1000 대미지 + 대상 파괴')
+    e.opt_per_card = True   # 부여받은 효과 — 부여마다 별개의 1턴 1번(같은 이름 몬스터 2장이 각각 받아도 각각 1번, 사용자 답변 2026-10-17)
+    return e
 
 @card('격투가 세레모니')
 def _(c):

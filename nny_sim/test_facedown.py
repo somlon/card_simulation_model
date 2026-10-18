@@ -57,11 +57,14 @@ class FaceDownTest(unittest.TestCase):
         g.attack(a, None)
         self.assertEqual(g.p[1].hp, hp - 2500)
 
-    def test_face_down_defense_still_blocks_direct_attack(self):
+    def test_face_down_defense_does_not_block_direct_attack(self):
+        # 설계도 확정(2026-10-07): 상대 몬스터가 없거나 뒷면 몬스터뿐이면 직접공격할 수 있다 (예전 재정: 뒷면 수비는 막음)
         g = make()
         blocker = put(g, '세리 - 릭토르', 1, 'def'); g.set_face_down(blocker)
         a = put(g, '솔루나 시엘', 0, 'atk')
-        self.assertFalse(g.can_direct(a))
+        self.assertTrue(g.can_direct(a))
+        front = put(g, '세리 - 엑삭토르', 1, 'def')
+        self.assertFalse(g.can_direct(a))                     # 앞면 몬스터가 하나라도 있으면 막는다
 
     def test_learned_ai_takes_the_direct_attack(self):
         g = make(P.LearnedAI)

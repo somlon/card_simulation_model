@@ -9,8 +9,8 @@ ASSUME:
 - 「(이 효과는 종료 단계에서만 사용할 수 있다.)」 [신속]은 종료 단계의 발동 기회(트리거 체인 · 종료 단계 발동 창)에서만.
 - 퇴마의 부적 2번의 「이 카드의 주인」은 재정대로 부적이 놓인 마법 존의 플레이어(컨트롤러). 변경된 효과는 부적의 효과로 본다
   (저주인형 - 저주인형의 「퇴마의 부적 이외의 카드의 효과를 받지 않는다」를 통과).
-- 저주 - 의심: 신속 마법이지만 「이 카드가 묘지로 보내졌을 때 다시 활성화」가 뜻을 가지려면 필드에 남아야 하므로, 처리 후 필드에 남고
-  필드를 벗어나면 부적의 효과가 다시 적용된다.
+- 저주 - 의심 (설계도 확정 2026-10-10): 쓰고 나면 보통의 신속 마법처럼 묘지로 가고, 그때 부적이 다시 활성화된다. 그래서 처리 내용은
+  체인 위에서 처리를 기다리는 부적의 효과(부적 3번 · 부적 2번으로 바뀐 효과 포함)를 무효로 하는 것이다 — 그런 효과가 없으면 처리할 수 없으므로 발동하지 않는다.
 - 저주 - 위저보드: 서로의 턴 시작 시마다 컨트롤러가 둘 중 하나를 고른다(특수소환이 가능하면 특수소환, 아니면 퇴마 카운터).
 - 저주 - 탐욕: 상대는 부적이 있으면 퇴마 카운터(자신에게 유리), 없으면 패 1장 버리기를 고른다.
 - 희생제 3번 「저주 카운터가 4개 놓였을 때」 = 카운터가 4개 미만에서 4개 이상이 되었을 때.
@@ -123,10 +123,9 @@ def _(c):
 def _(c):
     def cost(g, c, p, l):
         remove_curse(g, p, 2); l.ctx['t'] = best(g, targets(g, p, opp_cards(g, p)), p); g.L(f'코스트: 저주 카운터 2개 제거, 대상 {l.ctx["t"]}')
-    def res(g, c, p, l):
+    def res(g, c, p, l):   # 앞 효과(파괴)를 처리해야 뒤 효과(300 대미지)도 처리한다 (사용자 답변 2026-10-17)
         t = l.ctx.get('t')
-        if t and g.on_field(t): g.destroy(t)
-        g.damage(1 - p, 300, c.name)
+        if t and g.on_field(t) and g.destroy(t): g.damage(1 - p, 300, c.name)
     def sc(g, c, p, ev):
         ts = targets(g, p, opp_cards(g, p))
         if not ts: return VETO
@@ -205,25 +204,19 @@ def _(c):
 
 @card('저주 - 의심')
 def _(c):
+    def pending(g, p, c):
+        """처리를 기다리는 부적의 효과: 부적 자신의 발동 · 부적 2번으로 바뀐 발동 (그 부적이 이 카드의 효과를 받을 때만)"""
+        out = []
+        for t in talismans(g):
+            if g.immune(t, p, c): continue
+            out += [lk for lk in g.chain if not lk.negated and (lk.card is t or t.flags.get('replace_pending') is lk)]
+        return out
     def res(g, c, p, l):
-        ts = [x for x in talismans(g) if not x.flags.get('perma_neg')]
-        if not ts or not g.on_field(c): return
-        c.flags['stay'] = True
-        for t in ts:
-            if g.negate_card(t, c, perma=c.uid): g.L(f'{t}의 효과 무효 (「{c.name}」이 필드에 있는 동안)')
-        def fl(g2, ev, me=c):
-            if ev['kind'] == 'leave_field' and ev['card'] is me:
-                for x in talismans(g2) + [y for y in g2.all_field() if y.flags.get('perma_neg') == me.uid]:
-                    if x.flags.get('perma_neg') == me.uid: x.flags.pop('perma_neg'); g2.L(f'{x}의 효과 다시 활성화', 'sys')
-                me.flags.pop('stay', None)
-                if fl in g2.floating: g2.floating.remove(fl)
-        fl.until = None; g.floating.append(fl)
+        for lk in pending(g, p, c):
+            g.L(f'{lk.card}의 처리 대기 중인 부적 효과 무효 (「{c.name}」)'); g.negate(lk, by=c)
     def sc(g, c, p, ev):
-        ts = [x for x in talismans(g) if not x.flags.get('perma_neg')]
-        if not ts: return VETO
-        hi = max(x.counters.get(EXO, 0) for x in ts)
-        return (45 if hi >= 3 else 20) if main_ok(g, p) else (40 if hi >= 4 else 0)
-    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: any(not x.flags.get('perma_neg') for x in talismans(g)),
+        return 80 if any(lk.replaced is not None for lk in pending(g, p, c)) else 40
+    c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(pending(g, p, c)),
                         res=res, score=sc, threat=500)]
 
 @card('저주 - 불문율')

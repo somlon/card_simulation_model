@@ -87,12 +87,15 @@ class MatchSimTest(unittest.TestCase):
             self.assertIn(len(rs), (2, 3))
             self.assertEqual([r['round'] for r in rs], list(range(1, len(rs) + 1)))
             wins = [sum(r['winner_seat'] == s for r in rs) for s in (0, 1)]
-            self.assertEqual(max(wins), 2)
-            self.assertEqual(rs[0]['match_winner_seat'], wins.index(2))
+            if len(rs) == 2: self.assertEqual(max(wins), 2)         # 2라운드에 끝났으면 2점 선취. 3라운드는 고정 상한(무승부 가능, 설계도 확정)
+            mw = 0 if wins[0] > wins[1] else 1 if wins[1] > wins[0] else None
+            self.assertEqual(rs[0]['match_winner_seat'], mw)
             sch = next(x for x in self.sched if x[4] == mid)
             self.assertEqual(rs[0]['first_seat'], sch[2])           # 1라운드 선공 = 일정
-            for prev, cur in zip(rs, rs[1:]):                       # 2 · 3라운드: 직전 패자가 정함(기본 지침: 선공)
-                self.assertEqual(cur['first_seat'], 1 - prev['winner_seat'])
+            self.assertIsNone(rs[0]['first_chooser_seat'])
+            for prev, cur in zip(rs, rs[1:]):                       # 2 · 3라운드: 직전 패자가 선후공을 정한다(정본 4) — 선공 · 후공은 그 선택
+                if prev['winner_seat'] is not None:
+                    self.assertEqual(cur['first_chooser_seat'], 1 - prev['winner_seat'])
 
     def test_records_have_factors(self):
         r = self.rounds[0]

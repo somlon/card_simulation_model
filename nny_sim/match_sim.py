@@ -139,7 +139,7 @@ def round_record(g, rnd, rinfo, decks, names, log, match_meta, swaps_before):
     rec = {
         'type': 'round', 'schema': SCHEMA, 'match_id': match_meta['match_id'], 'seed': match_meta['seed'], 'round': rnd,
         'ai': match_meta['ai'], 'decks': match_meta['decks'], 'mirror': match_meta['decks'][0] == match_meta['decks'][1],
-        'first_seat': first, 'winner_seat': w, 'reason': rinfo['reason'], 'turns': rinfo['turns'],
+        'first_seat': first, 'first_chooser_seat': rinfo.get('chooser'), 'winner_seat': w, 'reason': rinfo['reason'], 'turns': rinfo['turns'],
         'end_turn_player': g.turn_player, 'final_blow': blow if 'HP 0' in rinfo['reason'] else None,
         'side_swaps_before': swaps_before, 'players': players,
     }
