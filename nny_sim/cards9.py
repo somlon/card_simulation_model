@@ -33,9 +33,9 @@
 
 ASSUME:
 - 효과 종류 표기가 없는 효과(새크리파이스 1~3 · 어새신 2 · 매지션 1 · 헬 1 · 컨트롤러 1 · 2 · 셔플! 1 · 3)는 기동 효과(자신 턴 진행/정비 단계 · 체인 없음).
-- 지속 마법의 표기 없는 효과(트랩 리페어 시스템 1번 · 암흑의 율법 2번)는 카드의 발동 시 처리(표시목과 같은 관례). 처리 후 카드는 필드에 남는다 —
-  트랩퍼 2번으로 다시 뒷면(세트)이 되면 자신 턴에 다시 발동할 수 있다. 율법은 묘지에 대상이 없어도 발동(놓기)할 수 있다(2번은 처리 없음 —
-  [지속] 1번을 쓰려고 놓는 경우).
+- 지속 마법의 표기 없는 효과(트랩 리페어 시스템 1번 · 암흑의 율법 2번): 지속 마법은 「사용 후 필드에 남아 계속해서 사용할 수 있는 마법 카드」(정본 1-2)
+  이므로, 카드의 발동 때 처리하고 그 뒤에도 앞면으로 있는 동안 1턴에 1번(같은 효과 번호 — 발동한 턴에는 다시 못 씀) 기동 효과로 쓴다
+  (재정 정리 2026-10-17). 율법은 묘지에 대상이 없어도 발동(놓기)할 수 있고(재정 로그 19), 앞면 상태의 2번은 대상이 있을 때만 쓴다.
 - 「묘지」 · 「덱」(새크리파이스 2 · 매지션 1 · 컨트롤러 1)은 자신의 묘지 · 덱(율법 2번의 「자신 묘지」와 같게). 율법이 바꾼 효과의
   「「던전마스터」 카드를 1장 패에 넣는다」는 덱(메인 · 상급)에서. 「이 카드」 = [유언]을 발동한 그 카드.
 - [유언] 「상대는 1장 드로우」(강제)도 1턴 1번 제약(§6-4)을 받는다 — 같은 이름 카드가 한 턴에 여러 장 묘지로 가도 한 번.
@@ -47,7 +47,8 @@ ASSUME:
   (1장 이상 세트할 수 있어야 발동).
 - 트랩퍼 1번 「「트랩」 카드를 1장 세트」 = 「트랩」 마법 카드(몬스터 세트는 규칙에 없음 — §5-2). 2번 대상은 뒷면으로 할 수 있는 앞면 카드
   (몬스터 존의 몬스터, 마법 존의 마법 카드 — 장착 카드 · 필드 존 제외), 자신 쪽은 이 카드 자신도 고를 수 있다.
-- 어새신 1번: 특수소환과 파괴는 독립 — 「필드의 카드」는 양쪽(상대 카드 우선, 없으면 자신의 가장 가치가 낮은 카드). AI는 상대 카드가 없으면 쓰지 않는다.
+- 어새신 1번: 특수소환을 처리해야 파괴도 처리한다(사용자 답변 2026-10-17 — 앞 효과 → 뒤 효과). 「필드의 카드」는 양쪽(상대 카드 우선,
+  없으면 자신의 가장 가치가 낮은 카드). AI는 상대 카드가 없으면 쓰지 않는다.
 - 매지션 1번: 덱에 「다크」 마법이 없어도 묘지에 「던전마스터」 몬스터가 있으면 발동할 수 있다. 종료 단계 회수는 이 턴의 종료 단계 시작 시
   (임의 — AI는 대상이 있으면 회수).
 - 헬 1번: 덱에 「망령」 몬스터가 있어야 발동. 「「망령」 몬스터가 존재하는 한」 = 필드(양쪽)에 앞면 「망령」 몬스터. 보호는 앞면일 때만.
@@ -74,8 +75,7 @@ ASSUME:
 5. 「묘지에서」(새크리파이스 2 · 매지션 1 · 컨트롤러 1)는 자신 묘지만인가, 상대 묘지도 포함하는가? (지금: 자신 묘지만)
 6. 암흑의 율법이 바꾼 효과의 「「던전마스터」 카드를 1장 패에 넣는다」는 어디에서인가 (지금: 덱)? 「이 카드」는 [유언] 카드(지금) · 율법 중 어느 쪽인가?
 7. 트랩: 거짓 샘물 「카드를 효과로 제거」의 범위 — 필드를 벗어나게 하는 모든 효과(지금) / 파괴만 / 패 · 묘지의 카드도 포함?
-8. 트랩 리페어 시스템 1번 · 암흑의 율법 2번은 카드의 발동 시 1번만 처리되는가(지금), 앞면으로 있는 동안 1턴에 1번 쓰는 기동 효과인가?
-9. 상급 보스의 강제 [유언] 「상대는 1장 드로우」도 1턴에 1번 제약을 받는가? (지금: 받는다 — 강제 효과에 예외 문구 없음)
+(해결 2026-10-17: 2 마법 카드만 · 8 앞면으로 있는 동안 1턴 1번 · 9 받는다. 헬 「망령」= 던전마스터 망령만 — 설계도 확정)
 
 엔진 변경 (engine.py · ai.py, 모두 추가 · 표시/규칙이 없는 카드는 예전과 같음):
 - Game.zone_ok: Effect.owner_only(원래 주인만 발동 — 컨트롤러 대신 주인) · Effect.facedown_ok(뒷면 몬스터의 효과 발동 허용).
@@ -104,7 +104,7 @@ def DM_MON(x): return grp(x, DM) and x.is_monster()
 def TRAP_SPELL(x): return grp(x, TRAP) and x.type == '마법'
 def TD_SPELL(x): return (grp(x, TRAP) or grp(x, DARK)) and x.type == '마법'
 def DARK_SPELL(x): return grp(x, DARK) and x.type == '마법'
-def mourner(x): return '망령' in x.name and x.is_monster()   # 재정: 카드명에 '망령'이 들어간 몬스터 (종족 무관)
+def mourner(x): return x.name == MOURNER and x.is_monster()   # 설계도 확정(2026-10-10): 「망령」 몬스터 = 「던전마스터 망령」만
 def pri(g, p, x): return g.p[p].ai.card_pri(g, p, x)
 
 
@@ -125,7 +125,7 @@ def turn_face_down(g, x, src):
     if x.zone in FIELD_M: return g.set_face_down(x, cause)
     if g.blocked(x, cause): return False
     x.faceup = False; x.set_turn = g.turn; x.flags.pop('act_this_turn', None)
-    g.L(f'{x} 뒷면(세트) 표시로')
+    g.L(f'{x} 뒷면(세트) 표시로'); g.clear_counters_facedown(x)
     g.emit('face_down', card=x, cause=cause)
     return True
 
@@ -206,7 +206,7 @@ def law_on(g, p): return any(x.name == LAW and x.faceup and not g.is_neg(x) for 
 
 def lastwill(num, res, score=50, cond=None, mandatory=False, label='[유언]', threat=200):
     def cnd(g, c, p, ev):
-        if not (ev_is(ev, 'to_grave') and ev['card'] is c and c.zone == 'grave'): return False
+        if not (ev_is(ev, 'to_grave') and ev['card'] is c and (c.zone == 'grave' or c.uid in getattr(g, 'lw_grace', ()))): return False   # 우선 선언(Game.triggers)
         return cond is None or cond(g, c, p, ev)
     sc = score if callable(score) else (lambda *a, s=score: s)
     return Effect(num, 'lastwill', ('grave',), cond=cnd, res=res, score=sc, mandatory=mandatory, threat=threat, label=label)
@@ -365,8 +365,8 @@ def _(c):
 
 @card(ASSASSIN)
 def _(c):
-    def res1(g, c, p, l):
-        if c.zone == 'hand': g.special_summon(c, p)
+    def res1(g, c, p, l):   # 앞 효과(특수소환)를 처리해야 뒤 효과(파괴)도 처리한다 — 마침표로 나뉜 문장도 같다 (사용자 답변 2026-10-17)
+        if not (c.zone == 'hand' and g.special_summon(c, p)): g.L(f'{c} 특수소환 못 함 — 파괴도 하지 않음', 'sys'); return
         t = field_pick(g, p)   # 「필드의 카드 1장」: 서로의 필드 — 상대 카드 우선
         if t: g.destroy(t, ('effect', c))
     def sc1(g, c, p, ev):
@@ -602,9 +602,12 @@ def _(c):
         for x in xs: g.to_deck(x, ('effect', c))
         if xs: g.shuffle(p); g.L(f'묘지의 「트랩」 카드 {len(xs)}장 덱으로: {", ".join(map(str, xs))}')
         g.draw(p, 1)
-    c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(g.p[p].main or g.p[p].upper), res=res,
-                        score=lambda g, c, p, ev: 30 + 8 * min(3, sum(1 for x in g.p[p].grave if grp(x, TRAP))), threat=200,
-                        label='묘지 「트랩」 3장까지 덱으로 · 1장 드로우')]
+    cond = lambda g, c, p, ev: bool(g.p[p].main or g.p[p].upper)
+    sc = lambda g, c, p, ev: 30 + 8 * min(3, sum(1 for x in g.p[p].grave if grp(x, TRAP)))
+    c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=cond, res=res, score=sc, threat=200,
+                        label='묘지 「트랩」 3장까지 덱으로 · 1장 드로우'),
+                 Effect(1, 'ignition', ('field',), cond=cond, res=res, score=sc, threat=200,   # 앞면으로 있는 동안 1턴에 1번 (정본 1-2 지속 마법)
+                        label='(앞면) 묘지 「트랩」 3장까지 덱으로 · 1장 드로우')]
 
 
 def law_wants(g, p, link):
@@ -642,7 +645,10 @@ def _(c):
         return 0 if law_on(g, p) else 15
     c.effects = [Effect(2, 'ignition', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: True,
                         res=lambda g, c, p, l: summon_best(g, p, gy(g, p), f'{c.name} 2번'), score=sc, threat=500,
-                        label='카드의 발동: 자신 묘지의 「던전마스터」 몬스터 특수소환')]
+                        label='카드의 발동: 자신 묘지의 「던전마스터」 몬스터 특수소환'),
+                 Effect(2, 'ignition', ('field',), cond=lambda g, c, p, ev: bool(gy(g, p)),   # 앞면으로 있는 동안 1턴에 1번 (정본 1-2 지속 마법)
+                        res=lambda g, c, p, l: summon_best(g, p, gy(g, p), f'{c.name} 2번'), score=lambda g, c, p, ev: sc(g, c, p, ev) if gy(g, p) else 0,
+                        threat=500, label='(앞면) 자신 묘지의 「던전마스터」 몬스터 특수소환')]
 
 
 # ═══════════════════════ 스킬 ═══════════════════════

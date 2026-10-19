@@ -370,11 +370,11 @@ def _(c):
     HERO = '기적의 영웅'
     def need1(g, p):
         """1번 코스트: 묘지의 행운 · 용기 · 지혜 · 희생 카드를 각 2장 (카드 1장은 한 종류에만 쓴다 — 4종 중 2종 이상인 카드는 없다)"""
-        out = []
+        out = []; m = 2 if g.rule('cost_double', p) else 1   # 두플리카토르: 카드 매수 2배 → 종류마다 4장 (재정 정리 2026-10-17)
         for k in WISH4:
             xs = sorted([x for x in g.p[p].grave if grp(x, k) and x not in out], key=lambda x: g.p[p].ai.card_pri(g, p, x))
-            if len(xs) < 2: return None
-            out += xs[:2]
+            if len(xs) < 2 * m: return None
+            out += xs[:2 * m]
         return out
     def hero_cands(g, p): return [x for x in g.p[p].upper if x.name == HERO and g.can_special(x, p)]
     def cost1(g, c, p, l):
@@ -390,13 +390,13 @@ def _(c):
         pool = [x for x in g.p[p].grave] + [x for x in g.field_cards(p) if x.name != HERO]
         by = {k: [x for x in pool if grp(x, k)] for k in WISH4}
         ks = sorted([k for k in WISH4 if by[k]], key=lambda k: -sum(1 for x in by[k] if x.zone == 'grave'))
-        if len(ks) < 3: return None
+        m = 2 if g.rule('cost_double', p) else 1   # 두플리카토르: 합계 6장, 같은 종류는 2장까지로 본다 (재정 정리 2026-10-17 — 종류 상한 2배는 ASSUME)
         out = []
-        for k in ks[:3]:
+        for k in ks:
             xs = sorted([x for x in by[k] if x not in out], key=lambda x: (x.zone != 'grave', g.p[p].ai.card_pri(g, p, x), value(g, x)))
-            if not xs: return None
-            out.append(xs[0])
-        return out
+            out += xs[:min(m, 3 * m - len(out))]
+            if len(out) >= 3 * m: break
+        return out if len(out) >= 3 * m and len({k for k in WISH4 for x in out if grp(x, k)}) >= 3 else None
     def cost2(g, c, p, l):
         xs = need2(g, p)
         for x in xs: g.banish(x, ('cost', c))

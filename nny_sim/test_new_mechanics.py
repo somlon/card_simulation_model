@@ -169,15 +169,31 @@ class DollTest(unittest.TestCase):
         self.assertFalse(g.on_field(ace))
         self.assertEqual(tal.counters.get('퇴마', 0), 0)
 
-    def test_talisman_only_opponents_doubt_negates(self):
+    def test_doubt_negates_pending_talisman_effect_then_goes_to_grave(self):
+        # 설계도 확정(2026-10-10): 의심은 처리를 기다리는 부적의 효과(바뀐 효과 포함)를 무효로 하고, 쓰고 나면 묘지로 간다.
         # 부적 1번 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」 — 미러전: 자기 의심은 자기가 컨트롤하는 부적에 듣지 않는다
         g = make('희생제', '희생제')
         mine = next(x for x in g.spells(0) if x.name == '퇴마의 부적')
         theirs = next(x for x in g.spells(1) if x.name == '퇴마의 부적')
         d = card(g, '저주 - 의심', 0, 'hand')
+        self.assertFalse(g.legal(0, d, eff(d, 1)))              # 처리를 기다리는 부적 효과가 없으면 처리할 수 없으므로 발동 불가
+        mine.counters['퇴마'] = 4; theirs.counters['퇴마'] = 4
+        own = card(g, '소환세', 0, 'hand')
+        own_link = g.activate(0, own, eff(own, 1))               # 0의 발동 → 0이 컨트롤하는 부적(mine)이 바꿈
+        self.assertIsNotNone(own_link.replaced)
+        self.assertFalse(g.legal(0, d, eff(d, 1)))              # 자기 의심은 자기 부적의 바뀐 효과를 무효로 하지 못한다
+        g.chain.clear(); mine.flags.pop('replace_pending', None); mine.counters.clear()   # mine이 다음 발동(의심)을 바꾸지 않게
+        g.turn_player = 1
+        src = card(g, '소환세', 1, 'hand')
+        link = g.activate(1, src, eff(src, 1))                   # 1의 발동 → theirs가 바꿈
+        self.assertIsNotNone(link.replaced)
+        g.turn_player = 0                                        # (패의 신속 마법은 자신 턴에 발동 — 시점 규칙과 별개로 처리만 확인)
+        self.assertTrue(g.legal(0, d, eff(d, 1)))
         g.activate(0, d, eff(d, 1)); g.resolve_chain()
-        self.assertTrue(theirs.flags.get('perma_neg'))
-        self.assertFalse(mine.flags.get('perma_neg'))
+        self.assertTrue(link.negated)
+        self.assertEqual(theirs.counters.get('퇴마', 0), 4)      # 바뀐 효과가 무효 — 카운터 그대로
+        self.assertEqual(d.zone, 'grave')                        # 의심은 처리 후 묘지로
+        self.assertFalse(theirs.flags.get('perma_neg'))
 
     def test_third_ace_banished_wins(self):
         g = make('희생제', '세제')

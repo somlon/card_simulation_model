@@ -490,11 +490,11 @@ class HeuristicAI:
                     if av > tv: plan.append((200 + value(g, t) * 400 + (av - tv if t.pos == 'atk' else 0), a, t))
                     elif av == tv and t.pos == 'atk' and value(g, t) > value(g, a): plan.append((50, a, t))
             if not plan and g.rule('must_attack', p):   # 반드시 공격해야 하는데 지는 공격만 남음(격투가의 투기장 1번): 잃는 것이 가장 적은 짝
-                for a in attackers:
+                for a in [x for x in attackers if g.must_attack(x)]:   # 투기장의 효과를 받지 않는 몬스터는 공격하지 않아도 된다
                     av = g.atk(a)
                     for t in g.attack_targets(a):
                         tv = g.atk(t) if t.pos == 'atk' else g.df(t)
-                        if t.pos != 'atk': loss = tv - av                                   # 수비 표시: 반사 대미지만
+                        if t.pos != 'atk': loss = tv - av                                  # 수비 표시: 반사 대미지만
                         elif av == tv: loss = 1000 * (value(g, a) - value(g, t))             # 서로 파괴
                         else: loss = (tv - av) + 1000 * value(g, a)                          # 자신 몬스터 파괴 + 대미지
                         plan.append((-1 - loss / 1e4, a, t))

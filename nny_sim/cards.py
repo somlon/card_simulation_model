@@ -30,6 +30,7 @@ class Impl:
         f = IMPL.get(c.name)
         if f: f(c)
         else: c.flags['unimplemented'] = True
+        import dupcost; dupcost.apply(c)   # 두플리카토르 코스트 명세 (Effect.cost_spec)
         # 같은 이름 예외 자동 표시: 해당 번호 효과 문장에 「동명」 허용 문구나 자기 카드명이 가져오기 · 특수소환 대상으로 적힌 경우
         import re as _re
         for e in c.effects:

@@ -133,7 +133,10 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
     decks = [dict(dA, _seat=0), dict(dB, _seat=1)]   # 자리 번호: make_ai(deck) · side_fn이 자리를 알 수 있게 (게임 · 교체 규칙에는 영향 없음)
     wins = [0, 0]; rounds = []; f = first; rnd = 0
     chooser = None   # 직전 선후공을 정한 (AI, 자리) — 그 라운드 결과를 알려 준다
-    while max(wins) < 2:   # 승점 2점 선취 (§11-2). 라운드는 규칙의 종료 조건으로만 끝나므로 무승부는 없다
+    chooser_seat = None   # 이 라운드의 선후공을 정한 자리 (1라운드는 일정이 정함 → None)
+    # 승점 2점 선취로 끝나고, 라운드 수는 3으로 고정 — 무승부(양쪽 HP 동시 0, 승점 없음)가 나와도 늘어나지 않는다.
+    # 3라운드를 마쳤는데 승점이 같으면 매치 무승부 (설계도 확정 2026-10-07)
+    while max(wins) < 2 and rnd < 3:
         rnd += 1
         log.append({'t': 0, 'ph': '', 'tp': 0, 'k': 'round', 'm': f'████ {rnd}라운드 — 선공 {decks[f]["이름"]} ████',
                     'data': {'round': rnd, 'first': f, 'decks': [counts_of(d) for d in decks]}})
@@ -142,21 +145,23 @@ def play_match(dA, dB, first, rng, log, make_ai, side=True, side_eps=0.0, learn_
         g = Game(decks, [make_ai(decks[0]), make_ai(decks[1])], f, random.Random(seed), log, Impl)
         g.seed = seed; g.dlog = []          # 탐색 AI의 재현용
         w, why = g.run()
-        rounds.append({'first': f, 'winner': w, 'reason': why, 'turns': g.turn, 'log': (i0, len(log))})
-        wins[w] += 1
+        rounds.append({'first': f, 'winner': w, 'reason': why, 'turns': g.turn, 'log': (i0, len(log)), 'chooser': chooser_seat})
+        if w is not None: wins[w] += 1
         if chooser is not None:
             chooser[0].first_result(w == chooser[1]); chooser = None
-        if learn_side:
+        if learn_side and w is not None:
             for i in (0, 1): record_round(decks[i], decks[1 - i]['스킬'], w == i, used_cards(log[i0:], decks[i]['이름']))
-        if max(wins) < 2 and side:
+        more = max(wins) < 2 and rnd < 3
+        if more and side:
             if side_fn is None:
                 decks = [side_swap(decks[i], decks[1 - i]['스킬'], rng, side_eps, log, decks[i]['이름']) for i in (0, 1)]
             else:
                 decks = [side_fn(i, decks, wins, rounds, rng, side_eps, log) for i in (0, 1)]
-        # 교체 후, 이전 라운드의 패자가 선후공을 결정한다 (정본 4, §11-2)
-        if max(wins) < 2:
-            loser = 1 - w; ai = make_ai(decks[loser])
-            go = ai.choose_first(decks[loser]['스킬'], decks[w]['스킬'], rnd + 1, rng, log, decks[loser]['이름'])
-            f = loser if go else w; chooser = (ai, loser)
+        # 교체 후, 이전 라운드의 패자가 선후공을 결정한다 (정본 4, §11-2).
+        # 무승부였으면 패자가 없으므로 첫 라운드처럼 결정권자를 무작위로 뽑는다 (설계도 확정 2026-10-07)
+        if more:
+            loser = 1 - w if w is not None else rng.randrange(2); other = 1 - loser; ai = make_ai(decks[loser])
+            go = ai.choose_first(decks[loser]['스킬'], decks[other]['스킬'], rnd + 1, rng, log, decks[loser]['이름'])
+            f = loser if go else other; chooser = (ai, loser); chooser_seat = loser
     mw = 0 if wins[0] > wins[1] else 1 if wins[1] > wins[0] else None
     return mw, rounds

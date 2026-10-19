@@ -10,7 +10,7 @@ ASSUME:
 - 필드의 재료는 앞면 카드만 (뒷면 카드의 레벨 · 속성은 알 수 없다). 상대 카드는 내 효과를 받는 카드만(내성), 릴리스 재료는 릴리스할 수 있는 카드만.
 - 패에서 발동한 풀 하우스(강아지 2번) · 포카드(고양이 2번)는 패의 이 카드도 재료로 덱으로 되돌린다 (「이 카드를 포함하는」).
 - 올인 2번의 트리플 「자신의 몬스터를 포함하는」 = 세 장 중 1장 이상이 자신의 카드(패 · 자신 필드)면 된다 — 발동한 몬스터 자신일 필요는 없다.
-- 올인 2번이 준 효과는 그 몬스터의 효과다: 1턴 1번은 (몬스터 카드명 × 부여 효과)로 센다(§6-4 — 부여 효과 번호 21 · 22),
+- 올인 2번이 준 효과는 그 몬스터의 효과다: 1턴 1번은 부여받은 몬스터 한 장마다 따로 센다(사용자 답변 2026-10-17 — 부여 효과 번호 21 · 22, Game.opt_key),
   「자신이 포커짐승들 효과를 발동할 때마다」(메이드에 실패한 강아지 2번)에 포함된다. 효과가 무효인 몬스터는 쓸 수 없다(엔진 zone_ok).
 - 레벨 · 속성 부여(표시목 1번 · 올인 원페어 · 짐승조커)는 그 카드가 필드에 있는 동안만 유지된다 (필드를 벗어나면 원래대로 —
   flags['clear_on_leave']). 표시목이 필드를 떠나도 이미 부여된 레벨 · 속성은 남는다. 부여된 속성은 원래 속성을 대신한다(쥐의 「모두」도 덮어씀).
@@ -301,7 +301,7 @@ def steal_cands(g, p, sel=()):
     fs = bool(g.free_s(p)) or any(m.where == 'own_f' and m.card.zone == 's' for m in sel)
     out = []
     for x in targets(g, p, opp_cards(g, p)):
-        if x in used or (x.zone == 'm' and not fm) or (x.zone == 's' and not fs): continue
+        if x in used or (x.zone in FIELD_M and not fm) or (x.zone == 's' and not fs): continue   # 공유 존의 몬스터도 새 컨트롤러의 빈 몬스터 존이 필요(설계도 확정)
         out.append(x)
     return out
 
@@ -461,6 +461,7 @@ def allin_effects():
     e2 = Effect(22, 'quick', ('field',), cond=cond_triple, cost=cost_triple, res=res_triple, score=sc('triple'), threat=700,
                 label='[올인] 트리플 → 덱에서 소환')
     e1.pk_kind = 'pair'; e2.pk_kind = 'triple'
+    e1.opt_per_card = e2.opt_per_card = True   # 부여받은 효과 — 몬스터마다 별개의 1턴 1번 (사용자 답변 2026-10-17, Game.opt_key)
     return [e1, e2]
 
 
@@ -804,7 +805,8 @@ def _(c):
 @card('표시목')
 def _(c):
     def cost1(g, c, p, l):
-        ts = targets(g, p, g.all_field())   # 「필드의 카드 1장」: 서로의 필드, 이 카드 자신(지금 마법 존) 포함
+        ts = targets(g, p, [x for x in g.all_field() if x.faceup])   # 「필드의 카드 1장」: 서로의 필드, 이 카드 자신(지금 마법 존) 포함.
+        # 「대상으로 하고 발동」이므로 뒷면 카드는 고를 수 없다 (정본 1-1: 뒷면 카드는 효과의 대상이 되지 않는다 — 재정 로그 9)
         if not ts: return False
         _, t, _, _ = _memo(g, ('mark', p), lambda: plan_mark(g, p, mark_cands(g, p)))
         if t is None or t not in ts:

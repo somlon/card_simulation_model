@@ -390,8 +390,9 @@ class LearnedAI(HeuristicAI):
                     h = (200 + value(g, t) * 400 + (av - tv if t.pos == 'atk' else 0)) if av > tv else (50 if av == tv else -300)
                     lab = f'{a.name}→{t.name}'
                     if lab not in seen: seen.add(lab); opts.append((lab, h, (a, t)))
-            if g.rule('must_attack', p) and len(opts) > 1:
-                opts = opts[1:]   # 격투가의 투기장: 공격 가능한 몬스터가 있으면 반드시 공격
+            if len(opts) > 1 and any(g.must_attack(o[2][0]) for o in opts[1:]):
+                opts = opts[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료 불가.
+                # 투기장의 효과를 받지 않는 몬스터(고대의 봉인 등)는 공격하지 않아도 된다 (설계도 확정 2026-10-10)
             pick = self.choose(g, p, '공격', opts, scale=400)
             if pick is None: return
             g.attack(*pick)
