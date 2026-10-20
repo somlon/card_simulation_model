@@ -38,6 +38,9 @@ class Impl:
             if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
                (f'「{c.name}」' in line and _re.search(r'특수소환|패에 넣', line)):
                 e.same_name_ok = True
+            # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
+            if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
+            e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
 
 # ───────────── 공통 헬퍼 ─────────────
 def own_turn(g, p): return g.turn_player == p
@@ -71,6 +74,68 @@ def cause_card(ev):
     ca = ev.get('cause')
     return ca[1] if ca else None
 def ev_is(ev, kind): return isinstance(ev, dict) and ev.get('kind') == kind
+
+
+# ── 카드 텍스트 판정 (여러 카드가 같은 문구를 쓰는 규칙은 텍스트에서 한 번에 판정한다 — CLAUDE.md R6) ──
+import re as _re_t
+
+def eff_text(c, num):
+    """카드 c의 num번 효과 문장 (「num.」으로 시작하는 줄부터 다음 번호 전까지)"""
+    lines, on = [], False
+    for x in (c.d.get('text') or '').split('\n'):
+        if _re_t.match(r'^\d+\.', x): on = x.startswith(f'{num}.')
+        if on: lines.append(x)
+    return ' '.join(lines)
+
+# 필드의 카드를 필드가 아닌 곳(묘지 · 제외 존 · 덱 · 패)으로 옮기는 처리 동사(능동형만 — 「파괴되지 않는다」 · 「파괴되었을 때」 같은 보호 · 조건 문구는 빼고).
+# 「파괴」는 언제나 필드의 카드를 묘지로 보낸다
+_LEAVE = _re_t.compile(r'(파괴|제외|릴리스)(한다|하고|하며)|되돌린다|되돌리고|패에 넣는다|패에 넣고|묘지로 보낸다|묘지로 보내고|덱으로 보낸다')
+_DESTROY = _re_t.compile(r'파괴(한다|하고|하며)')
+_SELF_CLAUSE = _re_t.compile(r'(자신 필드|자신의 필드|이 카드)[^.,]*')
+_REF_CLAUSE = _re_t.compile(r'그 (카드|몬스터|효과)[^.,]*')
+
+def effect_body(c, num):
+    """효과 문장에서 처리 부분(「…발동(한다).」 뒤, 발동 문구가 없으면 번호 뒤 전체). 괄호 안의 단서는 뺀다"""
+    t = _re_t.sub(r'^\d+\.\s*', '', eff_text(c, num))
+    parts = _re_t.split(r'발동(?:한다)?\.', t, maxsplit=1)
+    return _re_t.sub(r'\([^)]*\)', '', parts[1] if len(parts) > 1 else t)
+
+_COND_END = _re_t.compile(r'(경우|때|상태에서|1턴에 \d+번)$')
+_NOT_PAY = _re_t.compile(r'(대상으로 하|보여주|지정하|고르)$')
+
+def parse_cost(line):
+    """효과 문장의 코스트(「…하고 발동」 · 「…고 발동한다」)를 항목으로: [{'text', 'self', 'deck'}]. 대상 지정(「대상으로 하고 발동」)과
+    공개(「보여주고 발동」)는 지불이 아니므로 뺀다(「지정하고」 · 「고르고」도 대상 지정). 조건 구절(「…경우, 」 · 「…때, 」 · 「1턴에 1번, 」)은 뺀다.
+    self: 「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」 — 이 카드 자신으로 내는 코스트
+    deck: 「덱의 위에서부터 카드를 n장 제외」 · 「덱에서 카드를 n장 제외」 — 덱으로 내는 코스트"""
+    t = _re_t.sub(r'^\d+\.\s*', '', line or '')
+    out = []
+    for m in _re_t.finditer(r'([^.]*?)고 발동', t):
+        for ph in _re_t.split(r'고,\s*', m.group(1)):
+            parts = ph.split(',')
+            start = max([i + 1 for i, x in enumerate(parts) if _COND_END.search(x.strip())] or [0])
+            last = ','.join(parts[start:]).strip()
+            if not last or _NOT_PAY.search(last): continue
+            out.append({'text': last,
+                        'self': bool(_re_t.search(r'이 카드(를|의)|자신을 포함하는|이 카드를 포함하는', last)),
+                        'deck': bool(_re_t.search(r'덱의 위에서부터 카드를 \d+장 제외|덱에서 카드를 \d+장 제외', last))})
+    return out
+
+def moves_off_field(g, link, p):
+    """그 발동이 「p의 필드의 카드를 필드에서 벗어나게 하는 효과」인가 — 필드에 있는 카드를 필드가 아닌 위치로 이동시키는 효과
+    (사용자 답변 2026-10-20 · 이탈세 2번 · 각성의 태동 1번). 발동 선언 때 판정한다:
+    ① 발동 시 고른 대상(engine.link_targets)에 p의 필드 카드가 있고 처리 문장이 「그 카드 · 그 몬스터」를 옮기거나
+    ② 처리 문장에서 발동한 쪽 자신의 카드(「자신 필드 …」 · 「이 카드 …」)와 대상을 가리키는 구절을 뺀 나머지의 한 구절이 필드의 카드를 옮기면
+    (「파괴한다」 또는 「필드」 + 이동 동사). [지속] 효과는 발동하지 않으므로 해당 없음"""
+    from engine import link_targets
+    if not g.field_cards(p): return False
+    body = effect_body(link.card, link.eff.num)
+    if not _LEAVE.search(body): return False
+    if any(g.on_field(x) and x.controller == p for x in link_targets(link)) and \
+       any(_LEAVE.search(m.group(0)) for m in _REF_CLAUSE.finditer(body)): return True
+    rest = _REF_CLAUSE.sub('', _SELF_CLAUSE.sub('', body))
+    # 같은 구절(마침표 · 쉼표로 나뉜 부분) 안에서 「필드」와 이동 동사가 함께 나와야 한다 (조건 구절의 「필드」는 세지 않음)
+    return any(_DESTROY.search(cl) or ('필드' in cl and _LEAVE.search(cl)) for cl in _re_t.split(r'[.,]', rest))
 
 
 # ═══════════════════════ 번성충 ═══════════════════════

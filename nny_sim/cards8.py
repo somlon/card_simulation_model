@@ -54,9 +54,10 @@ ASSUME:
   (권리가 없으면 normal_summons > 0과 같음). extra_summon_options: 카드의 ns_value(g, p, 제물, 제물 가치) 훅 — [소환]이 본체인 상급 몬스터의 제물 소환 가치
 - ai.DECK_POLICY['올인']
 """
+import re
 from collections import namedtuple
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text
 from cards2 import targets
 
 PK = '포커짐승들'
@@ -201,13 +202,14 @@ def with_over(g, p, ms, mode, over=None, virt=()):
     return out
 
 
-# ── 족보 찾기: (비용 합, [재료]) 또는 None. me = 발동하는 카드의 재료 항목 ──
-def f_straight(ms, me):
+# ── 족보 찾기: (비용 합, [재료]) 또는 None. me = 발동하는 카드의 재료 항목, n = 이 카드를 포함한 재료 매수 (combo_sizes) ──
+def f_straight(ms, me, n=3):
+    """연속되는 레벨 n장 (레벨마다 1장, 이 카드 포함)"""
     bestr = None
-    for lo in range(me.lv - 2, me.lv + 1):
+    for lo in range(me.lv - n + 1, me.lv + 1):
         if lo < 1: continue
         pick = [me]
-        for l in range(lo, lo + 3):
+        for l in range(lo, lo + n):
             if l == me.lv: continue
             cs = [m for m in ms if m.lv == l and m.card is not me.card]
             if not cs: pick = None; break
@@ -218,12 +220,12 @@ def f_straight(ms, me):
     return bestr
 
 
-def f_flush(ms, me):
+def f_flush(ms, me, n=3):
     bestr = None
     for s in me.at:
         cs = sorted((m for m in ms if s in m.at and m.card is not me.card), key=lambda m: m.cost)
-        if len(cs) >= 2:
-            pick = [me] + cs[:2]; tot = sum(m.cost for m in pick)
+        if len(cs) >= n - 1:
+            pick = [me] + cs[:n - 1]; tot = sum(m.cost for m in pick)
             if bestr is None or tot < bestr[0]: bestr = (tot, pick)
     return bestr
 
@@ -236,50 +238,89 @@ def _by_level(ms, me):
     return by
 
 
-def f_full(ms, me):
-    """풀 하우스: 같은 레벨 3장 + 같은 레벨 2장 (두 레벨은 달라야 한다). 이 카드는 3장 쪽이든 2장 쪽이든"""
+def f_full(ms, me, splits=((3, 2), (2, 3))):
+    """풀 하우스: 같은 레벨 묶음 두 개(두 레벨은 달라야 한다 — 「5장이 전부 같은 레벨일 수는 없으며」).
+    splits = [(이 카드가 든 묶음의 매수(이 카드 포함), 다른 묶음의 매수), …] — 이 카드는 어느 묶음에든 들 수 있다"""
     by = _by_level(ms, me); same = by.get(me.lv, [])
     bestr = None
     for lv, lst in by.items():
         if lv == me.lv: continue
-        for pick in (([me] + same[:2] + lst[:2]) if len(same) >= 2 and len(lst) >= 2 else None,
-                     ([me] + same[:1] + lst[:3]) if len(same) >= 1 and len(lst) >= 3 else None):
-            if pick:
+        for a, b in splits:
+            if len(same) >= a - 1 and len(lst) >= b:
+                pick = [me] + same[:a - 1] + lst[:b]
                 tot = sum(m.cost for m in pick)
                 if bestr is None or tot < bestr[0]: bestr = (tot, pick)
     return bestr
 
 
-def f_four(ms, me):
+def f_four(ms, me, n=4):
     same = _by_level(ms, me).get(me.lv, [])
-    if len(same) < 3: return None
-    pick = [me] + same[:3]
+    if len(same) < n - 1: return None
+    pick = [me] + same[:n - 1]
     return sum(m.cost for m in pick), pick
 
 
-def f_pair(ms, me):
+def f_pair(ms, me, n=2):
     same = _by_level(ms, me).get(me.lv, [])
-    if not same: return None
-    pick = [me, same[0]]
+    if len(same) < n - 1: return None
+    pick = [me] + same[:n - 1]
     return sum(m.cost for m in pick), pick
 
 
-def f_triple(ms):
-    """트리플: 같은 레벨 3장, 그중 1장 이상은 자신의 카드(패 · 자신 필드)"""
+def f_triple(ms, n=3):
+    """트리플: 같은 레벨 n장, 그중 1장 이상은 자신의 카드(패 · 자신 필드)"""
     by = {}
     for m in ms: by.setdefault(m.lv, []).append(m)
     bestr = None
     for lv, lst in by.items():
-        if len(lst) < 3: continue
+        if len(lst) < n: continue
         lst = sorted(lst, key=lambda m: m.cost)
-        pick = lst[:3]
+        pick = lst[:n]
         if not any(m.where in ('hand', 'own_f') for m in pick):
-            own = [m for m in lst[3:] if m.where in ('hand', 'own_f')]
+            own = [m for m in lst[n:] if m.where in ('hand', 'own_f')]
             if not own: continue
-            pick = lst[:2] + own[:1]
+            pick = lst[:n - 1] + own[:1]
         tot = sum(m.cost for m in pick)
         if bestr is None or tot < bestr[0]: bestr = (tot, pick)
     return bestr
+
+
+# ── 족보 재료 매수: 카드 텍스트의 코스트 문장(「…고 발동」)에서 읽는다 ──
+_SIZES = {}
+
+
+def combo_text(g, c, p, kind):
+    """족보 효과의 원문: 올인이 준 효과(원페어 · 트리플)는 스킬 텍스트의 「-」 항목(부여 효과 번호 21 · 22 순서), 나머지는 그 카드의 효과 문장"""
+    e = next((x for x in c.effects if getattr(x, 'pk_kind', None) == kind), None)
+    if e is not None and getattr(e, 'pk_granted', None) is not None:
+        sk = g.p[p].skill
+        items = [l.strip() for l in (sk.d.get('text') or '').split('\n') if l.strip().startswith('-')] if sk else []
+        return items[e.pk_granted] if e.pk_granted < len(items) else ''
+    return eff_text(c, e.num if e is not None else 2)
+
+
+def combo_base(g, c, p, kind):
+    """(묶음별 매수, 이 카드를 포함하는가) — 「이 카드를 포함하는 … 3장」 → ([3], True), 「자신의 몬스터를 포함하는 … 3장」 → ([3], False)"""
+    key = (c.name, kind, g.p[p].skill.name if kind in ('pair', 'triple') and g.p[p].skill else None)
+    if key not in _SIZES:
+        t = combo_text(g, c, p, kind)
+        m = re.search(r'([^.]*?)고 발동', t)
+        ph = m.group(1) if m else t
+        _SIZES[key] = ([int(x) for x in re.findall(r'(\d+)장', ph)], bool(re.search(r'(이 카드를|자신을) 포함하는', ph)))
+    return _SIZES[key]
+
+
+def combo_sizes(g, c, p, kind):
+    """족보 재료 매수(이 카드 포함). 두플리카토르 1번(코스트 카드 매수 2배, Game.rule cost_double)이면 2배 —
+    「이 카드를 포함하는 n장」은 이 카드를 뺀 나머지만 2배(이 카드 + 2(n-1)장, 사용자 답변 2026-10-20 · 재정 정리 2026-10-17),
+    「이 카드」가 없는 매수(트리플 「자신의 몬스터를 포함하는」)는 전체 2배. 늘어난 재료도 그 족보의 레벨 · 속성 조건을 지킨다 (ASSUME)"""
+    nums, self_inc = combo_base(g, c, p, kind)
+    dup = bool(g.rule('cost_double', p))
+    def tot(n, has_me): return (2 * n - 1 if has_me and self_inc else 2 * n) if dup else n
+    if kind == 'full':
+        a, b = (nums + [3, 2])[:2]
+        return [(tot(a, True), tot(b, False)), (tot(b, True), tot(a, False))]
+    return tot(nums[0] if nums else 0, True)
 
 
 FINDERS = {'straight': f_straight, 'flush': f_flush, 'full': f_full, 'four': f_four, 'pair': f_pair}
@@ -343,13 +384,13 @@ def plan(g, c, p, kind, R=None, D=None, over=None, virt=(), fresh=False):
     ms = with_over(g, p, R if mode == 'release' else D, mode, over, virt)
     if kind in UP_TARGET and not any(x.name == UP_TARGET[kind] for x in g.p[p].upper): return None
     if kind == 'triple':
-        r = f_triple(ms)
+        r = f_triple(ms, combo_sizes(g, c, p, kind))
     else:
         me = next((m for m in ms if m.card is c), None)
         if me is None and mode == 'deck' and c.zone == 'hand' and c.is_monster() and c.level:
             me = Mat(c, c.level, attrs(g, c), 'hand', 0.9)   # 패에서 발동: 이 카드도 패에서 덱으로
         if me is None: return None
-        r = FINDERS[kind](ms, me)
+        r = FINDERS[kind](ms, me, combo_sizes(g, c, p, kind))
     if r is None: return None
     tot, sel = r
     if kind in UP_TARGET:
@@ -461,6 +502,7 @@ def allin_effects():
     e2 = Effect(22, 'quick', ('field',), cond=cond_triple, cost=cost_triple, res=res_triple, score=sc('triple'), threat=700,
                 label='[올인] 트리플 → 덱에서 소환')
     e1.pk_kind = 'pair'; e2.pk_kind = 'triple'
+    e1.pk_granted, e2.pk_granted = 0, 1   # 스킬 텍스트의 「-」 항목 순서 (combo_text)
     e1.opt_per_card = e2.opt_per_card = True   # 부여받은 효과 — 몬스터마다 별개의 1턴 1번 (사용자 답변 2026-10-17, Game.opt_key)
     return [e1, e2]
 

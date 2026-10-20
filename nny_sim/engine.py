@@ -738,12 +738,13 @@ class Game:
         if z in ('m', 's', 'shared', 'fieldz'):
             # e.owner_only: 「이 효과의 발동은, 원래 주인인 플레이어만 선언할 수 있다」 — 컨트롤러 대신 원래 주인 (던전마스터 깜짝상자, 2026-10-12 추가 — 표시가 없는 효과는 그대로)
             who = c.owner if getattr(e, 'owner_only', False) else c.controller
-            if 'field' not in e.zones or who != p: return False
+            # e.either_player: 「서로가 … 발동」 — 컨트롤러가 아닌 플레이어도 발동할 수 있다 (세제 2 · 3번, 사용자 답변 2026-10-20 — cards.Impl.attach가 텍스트로 표시)
+            if 'field' not in e.zones or (who != p and not getattr(e, 'either_player', False)): return False
             # e.facedown_ok: 「뒷면 표시일 때만 발동할 수 있다」 뒷면 몬스터의 효과 (던전마스터 깜짝상자 — 표시가 없는 효과는 그대로)
             if not c.faceup and not (c.is_spell_like() and e.spell_act) and not getattr(e, 'facedown_ok', False): return False
             if self.is_neg(c): return False
         if z == 'grave' and 'grave' not in e.zones: return False
-        if z == 'skill' and c.controller != p: return False
+        if z == 'skill' and c.controller != p and not getattr(e, 'either_player', False): return False
         if z == 'skill' and c.negated: return False
         if z in ('main', 'upper', 'banish'): return False
         if z == 'hand' and c.owner != p: return False
@@ -797,6 +798,7 @@ class Game:
         try:
             if not self.can_act(p, c, e, ev): return False
             if not self.cost_extra_ok(p, c, e): return False   # 두플리카토르로 2배가 된 코스트를 낼 수 없으면 발동 불가
+            if not self.transfer_ok(p, c, e): return False     # 델레가토르로 상대가 대신 낼 수 없는 코스트면 발동 불가
         finally:
             self.src, self.src_eff = prev
             self.probing = prev_probe
@@ -805,6 +807,38 @@ class Game:
             if c.type == '필드': pass
             elif not self.free_s(p): return False
         return True
+
+    # ── 코스트 지불자 (세리 - 델레가토르 1번 [지속]: 자신이 카드의 발동을 위해 지불해야 하는 코스트는 상대가 대신 지불한다) ──
+    # 사용자 답변(2026-10-20): 상대가 대신 낼 수 있는 모든 코스트에 적용한다. 상대가 대신 낼 수 없으면 그 효과는 발동할 수 없다.
+    # 단 덱 코스트는 상대 덱이 모자라도 발동할 수 있고, 대신 지불하다 덱이 모자라면(덱이 음수) 상대가 룰상 패배한다.
+    # 코스트의 종류는 카드 텍스트의 코스트 문장(「…고 발동」)에서 읽는다 — Effect.cost_items (cards.parse_cost):
+    #   self(「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」) — 상대가 대신 낼 수 없다 → 발동 불가
+    #   deck(「덱의 위에서부터 카드를 n장 제외」 · 「덱에서 카드를 n장 제외」) — 상대 덱에서 (Game.pay_deck_cost)
+    #   그 밖 — 지불자를 받는 코스트 함수(Effect.cost_payable(g, c, p, 지불자) — 그 지불자가 낼 수 있는가)가 있을 때만 상대가 대신 낸다.
+    #           cost_payable이 없는 코스트는 활성 플레이어 자신의 자원으로만 구현되어 있으므로 상대가 대신 낼 수 없는 것으로 본다 (ASSUME)
+    def cost_payer(self, p):
+        """p의 발동 코스트를 실제로 내는 플레이어"""
+        return 1 - p if self.rule('cost_transfer', p) else p
+
+    def transfer_ok(self, p, c, e):
+        q = self.cost_payer(p)
+        if q == p: return True
+        items = getattr(e, 'cost_items', None)
+        if not items: return True                       # 텍스트에 코스트가 없다 (코스트 함수는 대상 · 기록만)
+        if any(i['self'] for i in items): return False  # 「이 카드」 코스트는 상대가 대신 낼 수 없다
+        pay_ok = getattr(e, 'cost_payable', None)
+        if pay_ok is not None: return bool(pay_ok(self, c, p, q))
+        return all(i['deck'] for i in items)
+
+    def pay_deck_cost(self, p, n, deck, why):
+        """「덱의 위에서부터 카드를 n장 제외하고 발동」 코스트 (부족분은 다른 덱에서 — 세리 카드 문구). 델레가토르면 상대 덱에서 대신 내고,
+        모자라면 그 플레이어의 덱이 음수가 되어 패배한다(사용자 답변 2026-10-20). 반환: 실제 제외 매수"""
+        q = self.cost_payer(p)
+        if q != p: self.L(f'델레가토르: 코스트를 {self.pname(q)}가 대신 지불', 'sys')
+        k = self.mill(q, n, deck, why, fallback=True)
+        if q != p and k < n:
+            raise GameOver(p, f'{self.p[q].name} 대신 지불한 덱 코스트 {n}장 중 {k}장 — 덱이 음수가 되어 패배')
+        return k
 
     # ── 두플리카토르 (세리 - 두플리카토르 1번 [지속]: 서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배) ──
     # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수 또는 None, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
@@ -880,6 +914,10 @@ class Game:
         cards = list(pl.hand) + self.field_cards(p) + list(pl.grave) + ([pl.skill] if pl.skill else [])
         # 상대 필드에 있는 자신 소유 카드의 「원래 주인만 선언할 수 있다」 효과 (e.owner_only — 던전마스터 깜짝상자, 2026-10-12 추가)
         cards += [x for x in self.field_cards(1 - p) if x.owner == p and any(getattr(e, 'owner_only', False) for e in x.effects)]
+        # 상대 스킬 · 필드 카드의 「서로가 … 발동」 효과 (e.either_player — 세제 2 · 3번, 2026-10-20 추가)
+        opp = self.p[1 - p]
+        cards += [x for x in ([opp.skill] if opp.skill else []) + self.field_cards(1 - p)
+                  if x not in cards and any(getattr(e, 'either_player', False) for e in x.effects)]
         for c in cards:
             for e in c.effects:
                 if e.kind in kinds and self.legal(p, c, e, ev): out.append((c, e))
