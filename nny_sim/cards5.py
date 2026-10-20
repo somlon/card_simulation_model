@@ -7,12 +7,14 @@
 - 「(자신의 효과를 발동하기 위해 묘지로 보내졌을 경우, 이 효과는 발동하지 않는다.)」 — 「자신」 = 이 카드(사용자 답변 2026-10-20).
   이 카드의 효과를 발동하기 위한 코스트로 묘지로 보내졌을 때만 발동하지 않는다. 다른 카드의 코스트로 보내졌거나, 발동 후 규칙에 따라 묘지로 간 경우는 발동한다.
 - 「묘지에서 이 카드와 「X」 카드 1장을 덱으로 되돌린다」 — ASSUME: 함께 되돌릴 카드가 없으면 발동하지 않는다.
-ASSUME: 「상대가 카드를 발동했을 때」(지혜의 원천 - 마도서)는 인지세와 같게 상대의 모든 발동으로 본다 (재정 대기 — 인지세 「카드의 발동」 범위와 같은 질문).
-ASSUME: 행운의 도적 2번(코인 효과 변경)은 코인 몬스터의 [유언](덱 위 2장 → 메인 덱에서 고른 1장)에만 쓴다. 1번(패에서 버리기)을 바꾸면 코인이 패에 남아 얻는 것이 없다.
+재정: 「상대가 카드를 발동했을 때」(지혜의 원천 - 마도서)는 카드의 발동만 — 효과의 발동은 들지 않는다 (사용자 답변 2026-10-20, cards.opp_card_activation).
+재정: 행운의 도적 2번(코인 효과 변경)은 코인의 1번(패에서 버리기)도 [유언](덱 위 2장)도 「메인 덱에서 카드 1장을 묘지로」로 바꿀 수 있다 (사용자 답변 2026-10-20).
+  1번을 바꾸면 코인은 패에 남는다. AI는 메인 덱이 얇을 때(coin_replace_pick) 바꾼다.
+재정: 효과는 자기 자신과 동명의 카드를 제외하고 고른다 (전역 선택 규칙, 사용자 답변 2026-10-20 — engine.Game.pickable). 희생의 의사 [유언]은 묘지의 자기 자신을 소생하지 않는다.
 ASSUME: 기적의 영웅 3 · 4번은 공격력/수비력을 함께 깎으므로 둘을 합쳐 3번까지 (재정: 0에 도달하면 더는 발동할 수 없다).
 """
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, opp_card_activation
 from cards2 import targets
 
 WISH4 = ('행운', '용기', '지혜', '희생')
@@ -51,14 +53,25 @@ def recycle(num, group=None, not_cost=False, not_from_field=False):
                     cond=lambda g, c, p, ev: bool(others(g, c, p)), label='[유언] 묘지 → 덱', threat=100)
 
 
+def coin_replace_pick(g, c, p):
+    """행운의 도적 2번 [지속]: 자신의 「코인」 카드의 효과를 「메인 덱에서 카드 1장을 묘지로 보낸다」로 바꿀 수 있다 — 바꿀 때 보낼 카드, 안 바꾸면 None.
+    AI: 메인 덱이 얇으면(12장 이하) 바꾼다 — [유언]이 있는 카드를 먼저"""
+    if not (grp(c, '코인') and g.rule('coin_replace', p) and g.p[p].main and len(g.p[p].main) <= 12): return None
+    return max(g.p[p].main, key=lambda x: (any(e.kind == 'lastwill' for e in x.effects), g.p[p].ai.card_pri(g, p, x)))
+
+
+def coin_replaced(g, c, p):
+    """코인 효과를 바꿨으면 True (메인 덱에서 고른 1장을 묘지로)"""
+    x = coin_replace_pick(g, c, p)
+    if x is None: return False
+    g.L(f'판단[{g.pname(p)}] 행운의 도적: {c}의 효과를 「메인 덱에서 1장 묘지로」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
+    g.deck_to_grave(p, x, f'{c.name} (변경)')
+    return True
+
+
 def coin_dump(g, c, p, l):
     """코인 몬스터 [유언]: 메인 덱 위에서 2장 묘지로. 행운의 도적 2번이 있으면 「메인 덱에서 카드 1장을 묘지로」로 바꿀 수 있다"""
-    if g.rule('coin_replace', p) and g.p[p].main and len(g.p[p].main) <= 12:
-        x = max(g.p[p].main, key=lambda x: (any(e.kind == 'lastwill' for e in x.effects), g.p[p].ai.card_pri(g, p, x)))
-        g.L(f'판단[{g.pname(p)}] 행운의 도적: 코인 효과를 「메인 덱에서 1장 묘지로」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
-        g.deck_to_grave(p, x, f'{c.name} (변경)')
-    else:
-        g.dump(p, 2, c.name)
+    if not coin_replaced(g, c, p): g.dump(p, 2, c.name)
 
 
 def coin_lastwill():
@@ -66,8 +79,10 @@ def coin_lastwill():
 
 
 def discard_self(label):
+    """「이 카드를 패에서 버린다」 (코인 1번). 행운의 도적 2번으로 바꾸면 코인은 패에 남고 메인 덱의 1장이 묘지로 간다 (사용자 답변 2026-10-20)"""
     def res(g, c, p, l):
-        if c.zone == 'hand': g.L(f'{c} 패에서 버림'); g.send_grave(c)
+        if c.zone != 'hand' or coin_replaced(g, c, p): return
+        g.L(f'{c} 패에서 버림'); g.send_grave(c)
     return res
 
 
@@ -284,14 +299,17 @@ def _(c):
 
 @card('지혜의 원천 - 마도서')
 def _(c):
+    def cost_cands(g, c, p):
+        return [x for x in g.field_cards(p) if g.pickable(x, c) and not x.flags.get('immune_others')]
     def cost1(g, c, p, l):
         l.ctx['t'] = g.chain[-1]
-        cs = [x for x in g.field_cards(p) if x is not c and not x.flags.get('immune_others')] or [c]
+        cs = cost_cands(g, c, p)   # 「자신 필드의 카드 1장」 — 자기 자신 · 동명 제외 (전역 선택 규칙)
+        if not cs: return False    # 낼 코스트가 없으면 발동 취소
         x = min(cs, key=lambda x: (not any(e.kind == 'lastwill' for e in x.effects), value(g, x)))
         g.L(f'코스트: {x} 묘지로'); g.send_grave(x, ('cost', c))
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 40, threat=500),
-        Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None, cost=cost1,
+        Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: opp_card_activation(g, p, c, 1) is not None and bool(cost_cands(g, c, p)), cost=cost1,
                res=lambda g, c, p, l: g.negate(l.ctx['t']), score=lambda g, c, p, ev: 60 if threat(g, p) >= 700 else 0, threat=800, label='무효'),
         recycle(2, '지혜', not_cost=True)]
 

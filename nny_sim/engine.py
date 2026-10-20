@@ -456,8 +456,21 @@ class Game:
         return self.can_place(c, p)
 
     def same_name_blocked(self, c):
-        """정본 3-6 f: 지금 처리(또는 발동 판정) 중인 효과의 주체와 같은 이름의 카드를 덱에서 특수소환할 수 없다"""
-        return c.zone in ('main', 'upper') and self.src is not None and self.src.name == c.name and not self.same_name_ok()
+        """정본 3-6 f + 전역 선택 규칙(Game.pickable): 지금 처리(또는 발동 판정 · 코스트) 중인 효과는 주체 자신과 같은 이름의 카드를 고를 수 없다
+        — 덱만이 아니라 모든 영역 (사용자 답변 2026-10-20)"""
+        return self.src is not None and not self.pickable(c)
+
+    def pickable(self, x, src=None):
+        """전역 선택 규칙 (사용자 답변 2026-10-20): 기본적으로 모든 효과는 자기 자신과 동명의 카드를 제외하고 선택한다.
+        예외는 효과 문장이 직접 허용할 때 — 자기 자신: Effect.self_ok(「이 카드를 …」 등 이 카드를 가리키는 문장),
+        동명의 카드: Effect.same_name_ok(「동명의 카드를 … 할 수 있다」 · 자기 카드명을 적은 문장) — 둘 다 cards.Impl.attach가 텍스트로 표시.
+        src = 효과의 주체(주지 않으면 지금 판정 · 처리 중인 효과의 주체 Game.src)"""
+        s = self.src if src is None else src
+        if s is None or x is None: return True
+        e = getattr(self, 'src_eff', None) if s is self.src else None
+        if x is s: return bool(e is not None and getattr(e, 'self_ok', False))
+        if x.name == s.name: return bool(e is not None and getattr(e, 'same_name_ok', False))
+        return True
 
     def can_place(self, c, p):
         """놓을 자리가 있는가. 공유 존은 언제든 고를 수 있으나(§10-2), 몬스터 존이 가득 찼을 때 공유 존을 쓸지는 AI가 판단"""
@@ -697,9 +710,7 @@ class Game:
 
     def salvage(self, p, cands, why='회수', source=None):
         """묘지 · 제외 존에서 패로. 효과 주체와 같은 이름의 카드는 가져올 수 없다 (사용자 재정)"""
-        src = source or self.src
-        if not (self.same_name_ok() and source is None):
-            cands = [c for c in cands if not (src is not None and c.name == src.name)]
+        cands = [c for c in cands if self.pickable(c, source)]   # 자기 자신 · 같은 이름 제외 (전역 선택 규칙 — Game.pickable)
         if not cands: self.L(f'{why}: 대상 없음', 'sys'); return None
         c = max(cands, key=lambda x: self.p[p].ai.card_pri(self, p, x))
         self.to_hand(c); self.L(f'{self.pname(p)} {why}: {c} 패에 넣음'); return c
@@ -891,9 +902,10 @@ class Game:
         self.L(f'{self.pname(p)} {c} {e.num}번 효과 발동' + (f' [{e.label}]' if e.label else '') + f' — 체인 {len(self.chain)+1}')
         link.ctx['opt_keys'] = [self.opt_key(c, e)]   # 이 발동이 소모하는 1턴 1회 (카드명 × 효과 번호, §6-4 — Game.opt_key). 코스트 처리에서 바꿀 수 있다
         prev_costing = getattr(self, 'costing', None); self.costing = link   # 코스트 단계 = 대상을 고르는 중 (Game.targeting_now)
+        prev_src = (self.src, getattr(self, 'src_eff', None)); self.src, self.src_eff = c, e   # 코스트 · 대상 선택도 이 효과의 선택 (Game.pickable)
         specs = self.cost_specs(p, c, e)   # 두플리카토르: 원래 코스트를 내기 전에 정한다 (코스트로 이 카드 · 조건이 바뀌므로)
         try: cancel = bool(e.cost) and e.cost(self, c, p, link) is False
-        finally: self.costing = prev_costing
+        finally: self.costing = prev_costing; self.src, self.src_eff = prev_src
         if cancel:
             self.L(f'{c} 발동 취소 (코스트/대상 불가)', 'sys')
             if e.spell_act and placed_from == 'hand' and self.on_field(c): self._remove(c); c.zone = 'hand'; self.p[p].hand.append(c)

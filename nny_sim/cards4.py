@@ -15,7 +15,7 @@
 """
 import math
 from engine import Effect
-from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, moves_off_field
+from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, moves_off_field, opp_card_activation
 from cards2 import targets
 
 SERI = lambda x: x.has('세리') and x.type == '몬스터'
@@ -152,7 +152,7 @@ def _(c):
             g.mill(q, 5, 'main', '인지세', fallback=True)
         else:
             g.L(f'판단[{g.pname(q)}] 인지세: 덱 {left}장 → 무효 선택', 'decision'); g.negate(t)
-    e = Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
+    e = Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: opp_card_activation(g, p, c, 1) is not None,   # 「카드의 발동」만 (사용자 답변 2026-10-20)
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=res,
                score=lambda g, c, p, ev: 55 if threat(g, p) >= 500 or len(g.p[1 - p].main) + len(g.p[1 - p].upper) <= 12 else 25, threat=700)
     c.effects = [e, spell_lastwill()]
