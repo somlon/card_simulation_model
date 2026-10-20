@@ -721,11 +721,12 @@ def _(c):
 @card('솔루나 아츠')
 def _(c):
     def lim(g, src, x, p):
+        """1번 [지속] 자신 필드에 「시아」 · 「시엘」 몬스터는 각각 1장밖에 존재할 수 없다 — 소환 · 제외 존 복귀 · 컨트롤 획득 모두 (사용자 답변 2026-10-20)"""
         if p != src.controller or not x.is_monster(): return False
         for pred in (SIA, CIEL):
-            if pred(x) and any(pred(m) for m in g.monsters(p)): return True
+            if pred(x) and any(pred(m) for m in g.monsters(p) if m is not x): return True
         return False
-    c.rules = {'no_special': lim}
+    c.rules = {'no_special': lim, 'field_limit': lim}
     def res2(g, c, p, l):
         cands = [x for x in g.deck_cards(p) if x.has('아츠') and x.type == '마법']
         if cands and g.free_s(p):

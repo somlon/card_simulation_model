@@ -427,7 +427,12 @@ class Game:
     def can_change_control(self, c, p):
         """c의 컨트롤을 p에게 옮길 수 있는가: 새 컨트롤러의 빈 몬스터 존이 있어야 한다(공유 존의 몬스터도 — 설계도 확정 2026-10-07).
         옮길 수 없으면 처리할 수 없는 효과이므로 발동할 수 없다(정본 3-6 e)"""
-        return c.controller == p or bool(self.free_m(p))
+        return c.controller == p or (bool(self.free_m(p)) and not self.field_limited(c, p))
+
+    def field_limited(self, c, p):
+        """[지속] 「자신 필드에 「X」 몬스터는 n장밖에 존재할 수 없다」(솔루나 아츠 1번 — rules['field_limit']) — c가 p의 필드에 새로 나올 수 없는가.
+        소환(no_special과 같은 판정)뿐 아니라 제외 존에서의 복귀 · 컨트롤 획득에도 적용한다 (사용자 답변 2026-10-20)"""
+        return self.rule('field_limit', c, p)
 
     def change_control(self, c, p):
         """컨트롤 변경. 공유 존은 마커가 가리키는 플레이어의 소유이므로, 공유 존의 몬스터가 상대에게 넘어가면 마커는 그대로 두고
@@ -435,6 +440,7 @@ class Game:
         if c.controller == p: return True
         fr = self.free_m(p)
         if not fr: return False
+        if self.field_limited(c, p): self.L(f'{c} — {self.pname(p)} 필드에 같은 종류가 이미 있어 컨트롤을 옮길 수 없음', 'sys'); return False
         if c.zone == 'shared': self.shared = None
         else: self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
         self.p[p].m[fr[0]] = c; c.zone = 'm'; c.controller = p
@@ -1152,9 +1158,10 @@ class Game:
             for c in list(x.banish):
                 if c.flags.get('return_from_banish') == self.turn:
                     c.flags.pop('return_from_banish')
-                    if not self.free_m(c.owner) and self.shared is not None:
-                        # 돌아갈 몬스터 존 · 공유 존이 없으면 묘지로 (ASSUME — 재정 질문). 예전에는 어느 존에도 없는 카드가 되어 사라졌다
-                        self.L(f'{c} 제외에서 복귀할 자리 없음 — 묘지로', 'sys'); self.send_grave(c, ('rule', None)); continue
+                    # 돌아갈 몬스터 존 · 공유 존이 없거나 필드에 나올 수 없으면(솔루나 아츠 1번 등 — Game.field_limited) 그대로 제외 존에 남는다
+                    # (사용자 답변 2026-10-20 — 예전에는 묘지로 보냈다)
+                    if (not self.free_m(c.owner) and self.shared is not None) or self.field_limited(c, c.owner):
+                        self.L(f'{c} 제외에서 복귀할 수 없음 — 제외 존에 남음', 'sys'); continue
                     self.L(f'{c} 제외에서 복귀', 'sys')
                     x.banish.remove(c); c.zone = None; self.place_monster(c, c.owner)
         self.events = []   # b · c 처리 중 생긴 사건은 발동 기회 없이 소멸

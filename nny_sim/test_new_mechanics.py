@@ -304,13 +304,14 @@ class BanishReturn(unittest.TestCase):
         g.play_turn()
         self.assertIn(c.zone, ('m', 'shared')); self.assertNotIn(c, g.p[0].banish)
 
-    def test_no_zone_left_goes_to_grave(self):
+    def test_no_zone_left_stays_banished(self):
+        # 돌아올 자리가 없으면 그대로 제외 존에 남는다 (사용자 답변 2026-10-20 — 예전 가정: 묘지로)
         g = make('솔루나 아츠', '세제'); c = self._banished_ciel(g)
         for _ in range(5): on_field(g, '솔루나 시아', 0)
         s = card(g, '솔루나 시아', 1, None); g.place_monster(s, 1)   # 상대가 공유 존까지 채운 상태
         if s.zone != 'shared': g._remove(s); g.shared = s; s.zone = 'shared'; s.controller = 1
         g.play_turn()
-        self.assertEqual(c.zone, 'grave'); self.assertIn(c, g.p[0].grave); self.assertNotIn(c, g.p[0].banish)
+        self.assertEqual(c.zone, 'banish'); self.assertIn(c, g.p[0].banish); self.assertNotIn(c, g.p[0].grave)
 
 
 if __name__ == '__main__':
