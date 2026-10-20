@@ -82,5 +82,40 @@ class WishSelfCostClauseTest(unittest.TestCase):
         self.assertTrue(e.cond(g, c, 0, ev))
 
 
+# ═══════════════════════ Q9 퇴마의 부적 2번 (텍스트 변경) ═══════════════════════
+class TalismanTextChangeTest(unittest.TestCase):
+    def _setup(self, keep):
+        """0 = 희생제(저주인형), 1 = 부적이 놓인 쪽. keep: 0이 남기고 싶은 카드 이름 (card_pri를 높게)"""
+        g = make('희생제', '세제')
+        tal = next(x for x in g.spells(1) if x.name == '퇴마의 부적')
+        tal.counters['퇴마'] = 5
+        ace = on_field(g, '저주인형 - 저주인형', 0); doll = on_field(g, '저주인형 마들렌', 0)
+        g.p[0].ai.card_pri = lambda g2, p, x: 10 if x.name == keep else 0
+        g.p[1].ai.card_pri = lambda g2, p, x: 0
+        src = card(g, '소환세', 1, 'hand'); g.turn_player = 1
+        link = g.activate(1, src, eff(src, 1))
+        return g, tal, ace, doll, link
+
+    def test_numbers_from_text(self):
+        import cards6
+        g = make('희생제', '세제')
+        tal = next(x for x in g.spells(1) if x.name == '퇴마의 부적')
+        self.assertEqual(cards6.talisman_numbers(tal), (4, 4))
+
+    def test_next_effect_negated_and_owner_of_dolls_chooses(self):
+        g, tal, ace, doll, link = self._setup(keep='저주인형 - 저주인형')
+        self.assertIsNotNone(link.replaced)                         # 부적 쪽의 다음 발동은 무효(바뀐 처리)
+        h0 = len(g.p[1].hand)
+        g.resolve_chain()
+        self.assertEqual(len(g.p[1].hand), h0)                      # 소환세 원래 처리(서치) 없음
+        self.assertTrue(g.on_field(ace)); self.assertFalse(g.on_field(doll))   # 저주인형 플레이어(0)가 고른 카드가 파괴
+        self.assertEqual(tal.counters.get('퇴마', 0), 1)            # 카운터 4개 제거
+
+    def test_chooser_can_pick_ace(self):
+        g, tal, ace, doll, link = self._setup(keep='저주인형 마들렌')
+        g.resolve_chain()
+        self.assertFalse(g.on_field(ace)); self.assertTrue(g.on_field(doll))   # 부적의 효과이므로 저주인형 - 저주인형도 파괴된다
+
+
 if __name__ == '__main__':
     unittest.main()
