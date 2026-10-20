@@ -234,6 +234,7 @@
   - 할 일: ① CLAUDE.md 규칙(R5 자동 이어하기 루틴 · R6 하드 코딩 금지) ② model 새 브랜치(기준 `model/main`)에 Q1 · Q3 · Q4 구현 + 테스트 ③ `docs/main` 재정 문서 갱신(5건 해결) ④ PR(계열 기준 브랜치) · 보고 · 루틴 끄기.
   - 진행 기록: (여기에 단계별로 덧붙인다)
     - 2026-10-20 03:26 UTC 시작 — 루틴 생성, 실행 폴더 `../run`(model/main + data/main) 준비.
+    - 2026-10-20 03:40 UTC ① 완료 — CLAUDE.md R5(자동 이어하기 루틴) · R6(하드 코딩 금지) `6598e3f`, `.claude/settings.json` 허용 규칙 · main 직접/강제 푸시 차단 · `autoContinueAtUsageLimit` + 세션 압축 인계 훅 `aaa2960`, main 동기화 PR #44 머지(`c86aa6f`, 사용자 지시). Auto 모드는 설정 파일 수정을 막으므로 그때만 Accept edits로 바꿔 승인받음.
 
 - **【완료 — PR #39 ~ #43 머지 2026-10-19, 재학습은 사용자가 나중에 지시】 룰지 재정 구현 + 설계도 확정 반영 + 시뮬레이터 설계도 (세션 claude/admiring-bohr-s4cujj):**
   - 사용자 지시: ① 구현 변경을 model 새 브랜치 `model/rulebook-rulings`(기준 `model/main`)에서 진행 ② 사용자가 올린 「뉴 네오 유희왕 프로그램 설계도」(언리얼 판, 18쪽 PDF)의
