@@ -4,33 +4,40 @@
 - 「메인 덱의 위에서부터」 · 「상급 덱의 위에서부터」는 그 덱만. 「제외할 카드가 부족할 경우 … 대신 제외한다」 문구가 있을 때만 다른 덱에서 채운다.
 - 「덱의 위에서부터」(메인/상급 미지정)는 메인 · 상급 중 한쪽을 골라 그 덱에서 제외한다.
   고르는 쪽은 문장의 주어: 「상대의 덱의 위에서부터 … 제외한다」는 효과를 쓴 플레이어, 「그 플레이어는 자신의 덱」 · 「서로 자신의 덱」은 덱 주인.
-ASSUME (재정 목록 G):
-- 델레가토르(코스트 대납) · 두플리카토르(코스트 2배)는 「덱 위에서 제외」 · 「제외 존에서 덱으로」 형태의 코스트에만 적용
-  (세제 2 · 3번, 마법 [유언], 세리 몬스터 [유언]). 프로쿠라토르 2번 「제외 존의 카드를 전부」는 매수가 정해지지 않아 적용하지 않는다.
-- 세제 2 · 3번은 스킬 주인만 사용(「서로가」 문구의 상대 사용 여부 미확정).
-- 이탈세 2번의 「필드에서 벗어나게 하는 효과」는 상대가 자신 필드 카드를 대상으로 한 제거 · 바운스 · 제외 계열(위협도 900 이상)로 근사.
+재정 (사용자 답변 2026-10-20):
+- 델레가토르 1번: 상대가 대신 낼 수 있는 모든 코스트를 상대가 낸다. 상대가 대신 낼 수 없으면 그 효과는 발동할 수 없다.
+  덱 코스트는 상대 덱이 모자라도 발동할 수 있고, 대신 지불하다 모자라면 상대의 덱이 음수가 되어 패배한다.
+  → 엔진 공통 규칙(engine.Game.cost_payer · transfer_ok · pay_deck_cost, 코스트 종류는 카드 텍스트 — cards.parse_cost).
+  이 파일의 코스트 함수는 지불자를 엔진에서 받는다: 덱 위 제외(tax_cost) · 제외 존→덱(return_cost — 세리 [유언] · 프로쿠라토르 2번).
+- 세제 2 · 3번(「서로가 … 제외하고 발동」)은 상대도 발동할 수 있다(발동한 플레이어가 자신의 덱으로 코스트를 내고 드로우) — 엔진 Effect.either_player.
+- 이탈세 2번 「필드에서 벗어나게 하는 효과」 = 필드에 있는 카드를 필드가 아닌 위치로 이동시키는 효과(말 그대로) — cards.moves_off_field.
+- 두플리카토르(코스트 2배)는 카드 매수로 지불하는 모든 코스트(재정 정리 2026-10-17 — dupcost.py). 프로쿠라토르 2번 「제외 존의 카드를 전부」는 매수가 없어 그대로.
 """
 import math
 from engine import Effect
-from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO
+from cards import card, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, moves_off_field
 from cards2 import targets
 
 SERI = lambda x: x.has('세리') and x.type == '몬스터'
 SERI3 = lambda x: SERI(x) and x.level == 3
 DECUMA = lambda x: x.has('데쿠마')
 
+def tax_n(g, p, n):
+    """세리식 덱 코스트의 매수: 두플리카토르면 2배"""
+    return n * 2 if g.rule('cost_double', p) else n
+
 def tax_cost(g, p, n, why, kind='mill', deck='main'):
-    """세리식 코스트: 덱 위 n장 제외(deck: 'main' 메인 덱 · 부족분 상급 덱 / 'upper' 그 반대). 두플리카토르면 2배, 델레가토르면 상대가 대신 지불"""
-    if g.rule('cost_double', p): n *= 2; g.L(f'두플리카토르: 코스트 {n}장으로', 'sys')
-    payer = 1 - p if g.rule('cost_transfer', p) else p
-    if payer != p: g.L(f'델레가토르: 코스트를 {g.pname(payer)}가 대신 지불', 'sys')
-    return g.mill(payer, n, deck, why, fallback=True)   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
+    """세리식 코스트: 덱 위 n장 제외(deck: 'main' 메인 덱 · 부족분 상급 덱 / 'upper' 그 반대). 두플리카토르면 2배,
+    델레가토르면 상대가 대신 지불(모자라면 상대 패배 — engine.Game.pay_deck_cost)"""
+    k = tax_n(g, p, n)
+    if k != n: g.L(f'두플리카토르: 코스트 {k}장으로', 'sys')
+    return g.pay_deck_cost(p, k, deck, why) or True   # 「메인 덱의 위에서부터 … 부족하면 상급 덱에서 대신」
 
 def return_cost(g, p, k):
     """세리식 「자신의 제외 존에서 카드를 k장 골라 자신의 덱으로 되돌리고 발동」 코스트의 (지불자, 매수).
-    두플리카토르면 2배, 델레가토르면 상대가 자신의 제외 존에서 대신 지불 (머리말 ASSUME)"""
+    두플리카토르면 2배, 델레가토르면 상대가 자신의 제외 존에서 대신 지불 (engine.Game.cost_payer)"""
     if g.rule('cost_double', p): k *= 2
-    return (1 - p if g.rule('cost_transfer', p) else p), k
+    return g.cost_payer(p), k
 
 def seri_lastwill():
     def need(g, p): return return_cost(g, p, 1 if g.rule('seri_lw_one', p) else 3)   # 세 - 아이라리움 2번: 1장
@@ -47,8 +54,10 @@ def seri_lastwill():
     def res(g, c, p, l):
         cs = [x for x in g.p[p].main if SERI(x) and g.can_special(x, p)]
         if cs: g.special_summon(g.p[p].ai.pick_search(g, p, cs, '세리 유언'), p)
-    return Effect(2, 'lastwill', ('grave',), cond=cond, cost=cost, res=res,
-                  score=lambda *a: 80, threat=400, label='[유언] 제외 존 → 덱 (코스트) + 세리 특수소환')
+    e = Effect(2, 'lastwill', ('grave',), cond=cond, cost=cost, res=res,
+               score=lambda *a: 80, threat=400, label='[유언] 제외 존 → 덱 (코스트) + 세리 특수소환')
+    e.cost_payable = lambda g, c, p, q: len(g.p[q].banish) >= need(g, p)[1]   # 델레가토르: 상대 제외 존에서 대신 (engine.Game.transfer_ok)
+    return e
 
 def spell_lastwill(num=2):
     """마법 공통 [유언]: 상대에 의해 묘지로 → 자신 덱 위 3장 제외(코스트)하고 이 카드를 패로"""
@@ -102,12 +111,16 @@ def _(c):
     alt_normal(c, lambda g, p: sum(1 for x in g.p[p].grave if SERI3(x)) >= 3,
                lambda g, p: [g.banish(x, ('cost', c)) for x in [x for x in g.p[p].grave if SERI3(x)][:3]])
     def cost2(g, c, p, l):
-        xs = list(g.p[p].banish); l.ctx['n'] = len(xs)
-        for x in xs: g.p[p].banish.remove(x); x.zone = None; g._to_deck_raw(x)
-        g.shuffle(p); g.L(f'코스트: 제외 존 {len(xs)}장 덱으로')
+        q = g.cost_payer(p)   # 델레가토르면 상대가 자신의 제외 존 전부를 자신의 덱으로 (engine.Game.cost_payer)
+        if q != p: g.L(f'델레가토르: 코스트를 {g.pname(q)}가 대신 지불', 'sys')
+        xs = list(g.p[q].banish); l.ctx['n'] = len(xs)
+        for x in xs: g.p[q].banish.remove(x); x.zone = None; g._to_deck_raw(x)
+        g.shuffle(q); g.L(f'코스트: {g.pname(q)} 제외 존 {len(xs)}장 덱으로')
+    e2 = Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(g.p[g.cost_payer(p)].banish),
+                cost=cost2, res=lambda g, c, p, l: g.mill(1 - p, l.ctx['n'], None, '프로쿠라토르', chooser=p), score=lambda *a: 90, threat=900)
+    e2.cost_payable = lambda g, c, p, q: bool(g.p[q].banish)
     c.effects = [
-        Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c and bool(g.p[p].banish),
-               cost=cost2, res=lambda g, c, p, l: g.mill(1 - p, l.ctx['n'], None, '프로쿠라토르', chooser=p), score=lambda *a: 90, threat=900),
+        e2,
         Effect(3, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c and any(SERI3(x) for x in g.p[p].grave),
                res=lambda g, c, p, l: [g.special_summon(x, p) for x in [x for x in g.p[p].grave if SERI3(x)][:2]], score=lambda *a: 85, threat=500)]
 
@@ -147,8 +160,8 @@ def _(c):
 @card('이탈세')
 def _(c):
     def cond2(g, c, p, ev):
-        l = last_opp_link(g, p)
-        return l is not None and l.eff.threat >= 900 and bool(g.field_cards(p))
+        l = last_opp_link(g, p)   # 상대가 자신 필드의 카드를 필드가 아닌 위치로 이동시키는 효과의 발동을 선언했을 때 (사용자 답변 2026-10-20)
+        return l is not None and moves_off_field(g, l, p)
     def res2(g, c, p, l):
         t = l.ctx['t']; q = t.player
         t.replaced = lambda g2, tl: g2.mill(q, 5, 'upper', '이탈세로 변경된 효과', fallback=True)
@@ -212,11 +225,18 @@ def _(c):
     c.on_event = on_ev
     def res2(g, c, p, l): g.draw(p, 2, 'main')
     def res3(g, c, p, l): g.draw(p, 1, 'upper')
+    def can_tax_draw(g, p, n, deck, draws):
+        """코스트 n장(자신의 deck에서, 부족분은 다른 덱)을 내고 나서 deck에서 draws장 드로우할 수 있는가 (정본 3-6 e).
+        델레가토르면 코스트는 상대 덱에서 나가므로(모자라도 발동 — engine.Game.pay_deck_cost) 드로우할 매수만 본다"""
+        own = len(g.p[p].main if deck == 'main' else g.p[p].upper)
+        if g.cost_payer(p) != p: return own >= draws
+        return own >= tax_n(g, p, n) + draws
+    # 「서로가 … 발동」: 상대도 이 스킬의 2 · 3번을 발동할 수 있다 (사용자 답변 2026-10-20 — 엔진 Effect.either_player, cards.Impl.attach가 텍스트로 표시)
     c.effects = [
-        Effect(2, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].main) >= 11,
-               cost=lambda g, c, p, l: tax_cost(g, p, 9, '세제 2번 코스트') and None, res=res2,   # 두플리카토르 · 델레가토르 적용 (머리말 ASSUME)
+        Effect(2, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and can_tax_draw(g, p, 9, 'main', 2),
+               cost=lambda g, c, p, l: tax_cost(g, p, 9, '세제 2번 코스트') and None, res=res2,   # 두플리카토르 · 델레가토르 적용
                score=lambda g, c, p, ev: 30 if len(g.p[p].main) > len(g.p[1 - p].main) + 9 else 0, threat=200, label='9장 제외 → 2장 드로우'),
-        Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and len(g.p[p].upper) >= 5,
+        Effect(3, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and can_tax_draw(g, p, 4, 'upper', 1),
                cost=lambda g, c, p, l: tax_cost(g, p, 4, '세제 3번 코스트', deck='upper') and None, res=res3,
                score=lambda g, c, p, ev: 25 if len(g.p[p].upper) >= 8 else 0, threat=200, label='상급 4장 제외 → 1장 드로우')]
 
