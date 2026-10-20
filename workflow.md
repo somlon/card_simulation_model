@@ -237,6 +237,7 @@
     - 2026-10-20 06:40 UTC 완료 — `model/remaining-rulings-1020c` ce60bb8: Q14 엔진 Game.pickable(자기 자신 · 동명 제외 — best · field_pick · targets · salvage · can_special 모든 영역, 코스트 단계에도 Game.src, 예외 Effect.self_ok · same_name_ok 텍스트) ·
       Q13 cards.opp_card_activation(카드의 발동만 — 마도서 1 · 타락 1 · 인지세 1, 마도서 코스트도 자기 자신 · 동명 제외) · Q11 cards5.coin_replaced(코인 1번도 변경) · Q17 희생제 3번 정확히 4개(텍스트).
       **테스트 · 스모크 리그는 사용자 지시로 돌리지 않음(py_compile만).** docs `docs/remaining-rulings-1020c` 1b26bed — 남은 41건. PR #50(model → model/main) · #51(docs → docs/main).
+    - 2026-10-20 사용자 지시: Q14 전역 선택 규칙을 자신 카드에만 적용(상대의 같은 이름 카드는 고를 수 있음, Game.side_of — 필드는 컨트롤러 · 그 밖은 주인) — model 5b2bca6 · docs 6fecd23 를 PR #50 · #51 에 추가. py_compile만.
   - 남은 일(사용자 지시 대기): PR #50 · #51 머지 · 테스트 · 리그(전역 선택 규칙은 영향이 넓어 권장) · 남은 재정 41건 · 재학습 여부.
 
 - **【완료 — 2026-10-20, PR #45 ~ #49 머지 완료 · 루틴 끔】 남은 재정 답변 2차 구현 (10-19 PDF Q6 ~ Q10, 세션 claude/vigilant-tesla-ifxf9v):**
