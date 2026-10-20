@@ -235,6 +235,7 @@
   - 진행 기록: (여기에 단계별로 덧붙인다)
     - 2026-10-20 03:26 UTC 시작 — 루틴 생성, 실행 폴더 `../run`(model/main + data/main) 준비.
     - 2026-10-20 03:40 UTC ① 완료 — CLAUDE.md R5(자동 이어하기 루틴) · R6(하드 코딩 금지) `6598e3f`, `.claude/settings.json` 허용 규칙 · main 직접/강제 푸시 차단 · `autoContinueAtUsageLimit` + 세션 압축 인계 훅 `aaa2960`, main 동기화 PR #44 머지(`c86aa6f`, 사용자 지시). Auto 모드는 설정 파일 수정을 막으므로 그때만 Accept edits로 바꿔 승인받음.
+    - 2026-10-20 04:20 UTC ② 완료 — `model/remaining-rulings-1020`(기준 `model/main`) `69b7840`: Q1 족보 매수를 텍스트에서 읽고 두플리카토르면 이 카드 뺀 나머지 2배(cards8.combo_sizes) · Q3 델레가토르 엔진 공통 규칙(cost_payer · transfer_ok · pay_deck_cost, 코스트 종류는 텍스트 parse_cost) · Q4 세제 2·3 상대 사용(Effect.either_player) · 이탈세 2 · 각성의 태동 「필드에서 벗어나게 하는 효과」 공통 판정(cards.moves_off_field). 테스트 304건 통과(test_rulings_1020 16 추가), 휴리스틱 전 순서쌍 484매치 오류 · 중단 0 — 상대 덱의 세제 2·3 사용 149회 확인. 다음: ③ docs 재정 문서 갱신.
 
 - **【완료 — PR #39 ~ #43 머지 2026-10-19, 재학습은 사용자가 나중에 지시】 룰지 재정 구현 + 설계도 확정 반영 + 시뮬레이터 설계도 (세션 claude/admiring-bohr-s4cujj):**
   - 사용자 지시: ① 구현 변경을 model 새 브랜치 `model/rulebook-rulings`(기준 `model/main`)에서 진행 ② 사용자가 올린 「뉴 네오 유희왕 프로그램 설계도」(언리얼 판, 18쪽 PDF)의
