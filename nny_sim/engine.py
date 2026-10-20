@@ -456,12 +456,17 @@ class Game:
         return self.can_place(c, p)
 
     def same_name_blocked(self, c):
-        """정본 3-6 f + 전역 선택 규칙(Game.pickable): 지금 처리(또는 발동 판정 · 코스트) 중인 효과는 주체 자신과 같은 이름의 카드를 고를 수 없다
-        — 덱만이 아니라 모든 영역 (사용자 답변 2026-10-20)"""
+        """정본 3-6 f + 전역 선택 규칙(Game.pickable): 지금 처리(또는 발동 판정 · 코스트) 중인 효과는 주체 자신과 자신의 같은 이름 카드를 고를 수 없다
+        — 덱만이 아니라 모든 영역, 자신 카드에만 (사용자 답변 · 지시 2026-10-20)"""
         return self.src is not None and not self.pickable(c)
 
+    def side_of(self, x):
+        """x가 누구의 카드인가: 필드의 카드는 컨트롤러, 그 밖의 영역(패 · 묘지 · 덱 · 제외 존)은 주인"""
+        return x.controller if self.on_field(x) else x.owner
+
     def pickable(self, x, src=None):
-        """전역 선택 규칙 (사용자 답변 2026-10-20): 기본적으로 모든 효과는 자기 자신과 동명의 카드를 제외하고 선택한다.
+        """전역 선택 규칙 (사용자 답변 2026-10-20): 효과는 자기 자신과 자신의 동명의 카드를 제외하고 선택한다 — 자신 카드에만 적용
+        (사용자 지시 2026-10-20: 상대의 같은 이름 카드는 고를 수 있다). 「자신」 = 효과의 주체를 컨트롤하는 플레이어(Game.side_of).
         예외는 효과 문장이 직접 허용할 때 — 자기 자신: Effect.self_ok(「이 카드를 …」 등 이 카드를 가리키는 문장),
         동명의 카드: Effect.same_name_ok(「동명의 카드를 … 할 수 있다」 · 자기 카드명을 적은 문장) — 둘 다 cards.Impl.attach가 텍스트로 표시.
         src = 효과의 주체(주지 않으면 지금 판정 · 처리 중인 효과의 주체 Game.src)"""
@@ -469,7 +474,8 @@ class Game:
         if s is None or x is None: return True
         e = getattr(self, 'src_eff', None) if s is self.src else None
         if x is s: return bool(e is not None and getattr(e, 'self_ok', False))
-        if x.name == s.name: return bool(e is not None and getattr(e, 'same_name_ok', False))
+        if x.name == s.name and self.side_of(x) == self.side_of(s):
+            return bool(e is not None and getattr(e, 'same_name_ok', False))
         return True
 
     def can_place(self, c, p):
