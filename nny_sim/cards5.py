@@ -4,8 +4,8 @@
 [유언] 단서 해석:
 - 「(이 카드가 덱에서 묘지로 보내졌을 경우 이 효과는 발동하지 않는다.)」 — 사건의 이전 영역이 메인 · 상급 덱이면 발동하지 않는다.
 - 「(이 효과는 필드에서 묘지로 보내졌을 경우, 발동하지 않는다.)」 — 이전 영역이 필드면 발동하지 않는다(발동 후 묘지로 간 마법 포함).
-- 「(자신의 효과를 발동하기 위해 묘지로 보내졌을 경우, 이 효과는 발동하지 않는다.)」 — ASSUME: 「자신」 = 플레이어.
-  자신의 효과의 코스트로 묘지로 보내졌을 때만 발동하지 않는다. 발동 후 규칙에 따라 묘지로 간 경우는 발동한다.
+- 「(자신의 효과를 발동하기 위해 묘지로 보내졌을 경우, 이 효과는 발동하지 않는다.)」 — 「자신」 = 이 카드(사용자 답변 2026-10-20).
+  이 카드의 효과를 발동하기 위한 코스트로 묘지로 보내졌을 때만 발동하지 않는다. 다른 카드의 코스트로 보내졌거나, 발동 후 규칙에 따라 묘지로 간 경우는 발동한다.
 - 「묘지에서 이 카드와 「X」 카드 1장을 덱으로 되돌린다」 — ASSUME: 함께 되돌릴 카드가 없으면 발동하지 않는다.
 ASSUME: 「상대가 카드를 발동했을 때」(지혜의 원천 - 마도서)는 인지세와 같게 상대의 모든 발동으로 본다 (재정 대기 — 인지세 「카드의 발동」 범위와 같은 질문).
 ASSUME: 행운의 도적 2번(코인 효과 변경)은 코인 몬스터의 [유언](덱 위 2장 → 메인 덱에서 고른 1장)에만 쓴다. 1번(패에서 버리기)을 바꾸면 코인이 패에 남아 얻는 것이 없다.
@@ -27,7 +27,7 @@ def lastwill(num, res, score=70, not_from_deck=False, not_cost=False, not_from_f
         if not (ev_is(ev, 'to_grave') and ev['card'] is c and c.zone == 'grave'): return False
         if not_from_deck and ev['prev'] in ('main', 'upper'): return False
         ca = ev.get('cause') or ('', None)
-        if not_cost and ca[0] == 'cost' and ca[1] is not None and ca[1].controller == p: return False   # 「자신의」 효과의 코스트
+        if not_cost and ca[0] == 'cost' and ca[1] is c: return False   # 「자신(이 카드)의 효과를 발동하기 위해」 — 이 카드의 효과의 코스트
         if not_from_field and ev['prev'] in FIELD_Z: return False
         return cond is None or cond(g, c, p, ev)
     sc = score if callable(score) else (lambda *a, s=score: s)

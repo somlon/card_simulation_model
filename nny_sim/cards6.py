@@ -7,8 +7,10 @@ ASSUME:
 - 효과 종류 표기가 없는 효과(마들렌 1번 · 저주인형 - 저주인형 2번 · 희생제 2번)는 기동 효과(자신 턴 · 체인 없음)로 처리한다.
 - 「종료 단계(페이즈)가 되었을 때」 트리거는 양쪽 플레이어의 종료 단계마다(엔진의 phase 사건 '종료').
 - 「(이 효과는 종료 단계에서만 사용할 수 있다.)」 [신속]은 종료 단계의 발동 기회(트리거 체인 · 종료 단계 발동 창)에서만.
-- 퇴마의 부적 2번의 「이 카드의 주인」은 재정대로 부적이 놓인 마법 존의 플레이어(컨트롤러). 변경된 효과는 부적의 효과로 본다
-  (저주인형 - 저주인형의 「퇴마의 부적 이외의 카드의 효과를 받지 않는다」를 통과).
+- 퇴마의 부적 2번의 「이 카드의 주인」은 재정대로 부적이 놓인 마법 존의 플레이어(컨트롤러). 텍스트 변경(사용자 답변 2026-10-20):
+  그 플레이어가 다음에 발동하는 효과는 무효가 되고 「부적 카운터 n개 제거 · 상대가 자신 필드의 「저주인형」 카드 1장을 골라 파괴」로 바뀐다.
+  파괴할 카드는 상대(저주인형 플레이어)가 고른다. 바뀐 효과는 부적의 효과로 본다(저주인형 - 저주인형의 「퇴마의 부적 이외의 카드의 효과를
+  받지 않는다」를 통과). 문턱 · 제거 개수는 카드 텍스트에서 읽는다(talisman_numbers).
 - 저주 - 의심 (설계도 확정 2026-10-10): 쓰고 나면 보통의 신속 마법처럼 묘지로 가고, 그때 부적이 다시 활성화된다. 그래서 처리 내용은
   체인 위에서 처리를 기다리는 부적의 효과(부적 3번 · 부적 2번으로 바뀐 효과 포함)를 무효로 하는 것이다 — 그런 효과가 없으면 처리할 수 없으므로 발동하지 않는다.
 - 저주 - 위저보드: 서로의 턴 시작 시마다 컨트롤러가 둘 중 하나를 고른다(특수소환이 가능하면 특수소환, 아니면 퇴마 카운터).
@@ -16,8 +18,9 @@ ASSUME:
 - 희생제 3번 「저주 카운터가 4개 놓였을 때」 = 카운터가 4개 미만에서 4개 이상이 되었을 때.
 - 저주 - 원한의 굴레: 묘지의 「저주」 · 「저주인형」 카드가 5장 이상일 때만 발동한다.
 """
+import re
 from engine import Effect, GameOver
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text
 from cards2 import targets
 
 SAC = '희생제'
@@ -165,29 +168,43 @@ def _(c):
 
 
 # ═══════════════════════ 마법 · 필드 ═══════════════════════
+_TAL_NUM = {}
+
+def talisman_numbers(c):
+    """부적 2번 텍스트의 (발동 조건 카운터 수, 제거하는 카운터 수) — 「퇴마 카운터가 n개 이상」 · 「카운터를 m개 제거」 (카드명마다 한 번 읽는다)"""
+    if c.name not in _TAL_NUM:
+        t = eff_text(c, 2)
+        th = re.search(r'카운터가 (\d+)개 이상', t); rm = re.search(r'카운터를 (\d+)개 제거', t)
+        _TAL_NUM[c.name] = ((int(th.group(1)) if th else 4), (int(rm.group(1)) if rm else 0))
+    return _TAL_NUM[c.name]
+
+
 @card(TALISMAN)
 def _(c):
     c.flags.update(immune_except='저주 - 의심', immune_except_opp=True, no_release=True)   # 1번: 「상대의」 의심만 받는다 (미러전에서 자기 의심은 자기 부적에 듣지 않음)
     def on_ev(g, src, ev):
-        """2번 [지속]: 퇴마 카운터 4개 이상이면 컨트롤러가 다음에 발동하는 효과를 「부적 카운터 4개 제거 · 상대 필드의 저주인형 카드 1장 파괴」로 바꾼다"""
+        """2번 [지속]: 퇴마 카운터가 n개 이상이면 컨트롤러가 다음에 발동하는 효과는 무효가 되고
+        「부적 카운터 m개 제거 · 상대가 자신 필드의 「저주인형」 카드 1장을 골라 파괴」로 바뀐다 (n · m은 텍스트 — talisman_numbers)"""
+        th, rm = talisman_numbers(src)
         if ev['kind'] == 'negated' and src.flags.get('replace_pending') is ev['link']:
             src.flags.pop('replace_pending', None); return   # 변경된 효과가 무효화됨 — 카운터는 그대로, 다음 발동이 다시 변경 대상
-        if ev['kind'] != 'activate' or ev['player'] != src.controller or src.counters.get(EXO, 0) < 4: return
+        if ev['kind'] != 'activate' or ev['player'] != src.controller or src.counters.get(EXO, 0) < th: return
         pend = src.flags.get('replace_pending')
         if pend is not None:
             if not pend.negated and pend in g.chain: return   # 이미 변경해 둔 발동이 아직 처리 전
             src.flags.pop('replace_pending', None)            # 무효화됐거나(부적이 무효인 동안이라 사건을 못 받았을 때 포함) 처리가 끝남
         link = ev['link']   # 부적 자신의 3번도 「이 카드의 주인이 다음에 발동하는 효과」에 포함된다
         q = src.controller
-        def rep(g2, tl, src=src, q=q):
+        def rep(g2, tl, src=src, q=q, rm=rm):
             src.flags.pop('replace_pending', None)
-            if g2.on_field(src): g2.remove_counter(src, EXO, 4)
-            ts = [x for x in g2.field_cards(1 - q) if DOLL(x)]
-            t = g2.p[q].ai.pick_target(g2, q, ts, 'remove') if ts else None
-            if t: g2.destroy(t, ('effect', src))
+            if g2.on_field(src) and rm: g2.remove_counter(src, EXO, rm)
+            o = 1 - q   # 「상대는 자신 필드의 「저주인형」 카드를 1장 골라 파괴한다」 — 저주인형 플레이어가 고른다 (가장 덜 아끼는 카드)
+            ts = [x for x in g2.field_cards(o) if DOLL(x)]
+            t = min(ts, key=lambda x: (g2.p[o].ai.card_pri(g2, o, x), value(g2, x))) if ts else None
+            if t: g2.L(f'판단[{g2.pname(o)}] {TALISMAN}: 파괴할 자신의 「저주인형」 카드 — {t}', 'decision'); g2.destroy(t, ('effect', src))
             else: g2.L('상대 필드에 「저주인형」 카드 없음', 'sys')
         link.replaced = rep; src.flags['replace_pending'] = link
-        g.L(f'{TALISMAN}: {link.card}의 효과가 「퇴마 카운터 4개 제거 · 저주인형 카드 1장 파괴」로 변경됨', 'sys')
+        g.L(f'{TALISMAN}: {link.card}의 효과는 무효 — 「퇴마 카운터 {rm}개 제거 · 상대가 고른 「저주인형」 카드 1장 파괴」로 변경됨', 'sys')
     c.on_event = on_ev
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda *a: VETO, threat=0),   # 자신 필드에 놓으면 자신이 손해 — AI는 쓰지 않는다
