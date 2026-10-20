@@ -29,9 +29,9 @@ ASSUME:
 - 황금봉랍 2번 「이 카드가 상대의 효과로 필드를 벗어났을 때」: 가는 곳을 가리지 않는다 — 묘지 · 패 · 덱 · 제외 존에서 발동 (재정 정리 2026-10-17,
   엔진 zone_ok의 'deck' · 'banish' 영역 + flags['deck_trigger']).
   「상대의 효과」 = 상대 카드의 효과(사건의 cause가 'effect'이고 그 주체가 상대가 컨트롤하는 카드).
-- 각성의 태동 「상대가 자신 필드의 카드를 필드에서 벗어나게 하는 효과를 발동했을 때」: 그 효과 번호의 처리 문장(「…발동.」 뒤)에서 「자신 필드」를
-  지운 뒤 「필드」와 파괴 · 제외 · 덱으로 · 패에 넣 · 묘지로 보내 · 릴리스 · 되돌 중 하나가 있으면 그런 효과로 본다(문장 판정). 대상이 자신 필드의
-  몬스터인 발동은 문장과 무관하게 해당.
+- 각성의 태동 「상대가 자신 필드의 카드를 필드에서 벗어나게 하는 효과를 발동했을 때」: 필드에 있는 카드를 필드가 아닌 위치로 이동시키는 효과
+  (사용자 답변 2026-10-20 — 이탈세 2번과 같은 문구). 판정은 cards.moves_off_field(처리 문장 · 발동 시 고른 대상). 대상이 자신 필드의
+  몬스터인 발동은 문장과 무관하게 해당(「대상이 되었을 때」).
 - 균열 「제거한 개수만큼 필드의 카드를 고르고 파괴한다」: 정확히 그 개수(상대 카드가 모자라면 자신 카드도 — 균열 자신은 제외). AI는 넘치지 않게
   카운터 수를 고른다. 아우렘 4번은 「개수까지」이므로 상대 카드만.
 - 임시 봉인 「다음 턴 종료 시까지」 = 발동한 턴의 다음 턴 종료 시까지. 「다른 카드의 효과를 받지 않는다」는 자신 · 상대 카드 모두(카운터는 내성과
@@ -83,7 +83,7 @@ ASSUME:
 """
 import re
 from engine import Effect, link_targets
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, VETO, field_pick
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, moves_off_field
 from cards2 import targets
 
 SEAL = '봉인'
@@ -211,23 +211,6 @@ def face_down_def(g, t):
     if t.pos != 'def' and not g.blocked(t, ('effect', g.src)):
         t.pos = 'def'; g.L(f'{t} 뒷면 수비 표시로'); return True
     return False
-
-
-_LEAVE = re.compile(r'파괴|제외|덱으로|패에 넣|패로|묘지로 보내|릴리스|되돌')
-
-def eff_text(c, num):
-    lines, on = [], False
-    for x in (c.d.get('text') or '').split('\n'):
-        if re.match(r'^\d+\.', x): on = x.startswith(f'{num}.')
-        if on: lines.append(x)
-    return ' '.join(lines)
-
-def removes_field(link):
-    """그 발동이 「필드의 카드를 필드에서 벗어나게 하는 효과」인가 — 처리 문장(「…발동.」 뒤)에서 발동한 쪽의 「자신 필드」를 지우고 판정 (ASSUME)"""
-    t = eff_text(link.card, link.eff.num)
-    if '발동.' in t: t = t.split('발동.', 1)[1]
-    t = t.replace('자신 필드', '')
-    return '필드' in t and bool(_LEAVE.search(t))
 
 
 def amber_common(c):
@@ -609,7 +592,7 @@ def _(c):
         l = last_opp_link(g, p)
         if l is None or not own_faceup(g, p): return False
         if threatened(g, p): return True                       # 자신 필드의 몬스터가 상대 효과의 대상
-        return bool(g.field_cards(p)) and removes_field(l)     # 상대가 자신 필드의 카드를 벗어나게 하는 효과를 발동
+        return moves_off_field(g, l, p)     # 상대가 자신 필드의 카드를 벗어나게 하는 효과를 발동 (cards.moves_off_field)
     c.effects = [Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=cond, res=lambda g, c, p, l: put_seals(g, p, 2, why=c.name),
                         score=lambda g, c, p, ev: 60, threat=300, label='상대의 대상 지정 · 제거 효과 발동 → 봉인 카운터 2')]
 
@@ -664,7 +647,7 @@ def _(c):
     def sc(g, c, p, ev):
         if any(m.controller == p and AMB_MON(m) and m.flags.get('immune_all_until', -1) < g.turn for m in threatened(g, p)): return 60
         l = last_opp_link(g, p)
-        if l is not None and threat(g, p) >= 900 and removes_field(l) and any(m.controller == p for m in cands(g, p, c)): return 35
+        if l is not None and threat(g, p) >= 900 and moves_off_field(g, l, p) and any(m.controller == p for m in cands(g, p, c)): return 35
         return 0
     c.effects = [Effect(1, 'quick', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: bool(cands(g, p, c)),
                         cost=cost, res=res, score=sc, threat=400, label='「호박옥」 몬스터 1장 다음 턴 종료 시까지 보호')]
