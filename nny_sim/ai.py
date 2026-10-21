@@ -476,14 +476,14 @@ class HeuristicAI:
     def battle_phase(self, g, p):
         for _ in range(20):
             if p in g.no_attack and g.no_attack[p] == g.turn: g.L('공격 봉인 상태', 'sys'); return
-            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and not g.attack_banned(m)
-                         and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]
+            attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and not g.attack_banned(m)
+                         and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]   # 몬스터로 취급되는 마법 포함 (Game.battle_cards)
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue
             plan = []
             for a in attackers:
                 av = g.atk(a)
-                if g.can_direct(a) and not (a.flags.get('attack_all') and g.monsters(1 - p)):
+                if g.can_direct(a) and not (a.flags.get('attack_all') and g.battle_cards(1 - p)):
                     plan.append((av + 500, a, None))
                 for t in g.attack_targets(a):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)

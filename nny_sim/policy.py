@@ -375,14 +375,14 @@ class LearnedAI(HeuristicAI):
     def battle_phase(self, g, p):
         for _ in range(20):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
-            attackers = [m for m in g.monsters(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
+            attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]   # 「공격할 수 없다」 (호박옥)
             if not attackers: return
             if self.take_lethal(g, p, attackers): continue   # 결착 우선 지침 — 학습 대상 아님
             opts = [('공격 종료', 0, None)]; seen = set()
             for a in attackers:
                 av = g.atk(a)
-                if g.can_direct(a) and not (a.flags.get('attack_all') and g.monsters(1 - p)):
+                if g.can_direct(a) and not (a.flags.get('attack_all') and g.battle_cards(1 - p)):
                     lab = f'{a.name}→직접'
                     if lab not in seen: seen.add(lab); opts.append((lab, av + 500, (a, None)))
                 for t in g.attack_targets(a):
