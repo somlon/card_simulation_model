@@ -10,7 +10,8 @@
 재정: 「상대가 카드를 발동했을 때」(지혜의 원천 - 마도서)는 카드의 발동만 — 효과의 발동은 들지 않는다 (사용자 답변 2026-10-20, cards.opp_card_activation).
 재정: 행운의 도적 2번(코인 효과 변경)은 코인의 1번(패에서 버리기)도 [유언](덱 위 2장)도 「메인 덱에서 카드 1장을 묘지로」로 바꿀 수 있다 (사용자 답변 2026-10-20).
   1번을 바꾸면 코인은 패에 남는다. AI는 메인 덱이 얇을 때(coin_replace_pick) 바꾼다.
-재정: 효과는 자기 자신과 자신의 동명의 카드를 제외하고 고른다 — 자신 카드에만 (전역 선택 규칙, 사용자 답변 · 지시 2026-10-20 — engine.Game.pickable). 희생의 의사 [유언]은 묘지의 자기 자신을 소생하지 않는다.
+재정: 덱 · 묘지 · 제외 존 · 패에서 소환하는 효과와 덱 · 묘지 · 제외 존에서 패에 넣는 효과는 효과 주체와 같은 이름의 자신 카드를 고를 수 없다
+  (사용자 답변 · 지시 2026-10-20 — engine.Game.pickable). 희생의 의사 [유언]은 묘지의 자기 자신을 소생하지 않는다.
 ASSUME: 기적의 영웅 3 · 4번은 공격력/수비력을 함께 깎으므로 둘을 합쳐 3번까지 (재정: 0에 도달하면 더는 발동할 수 없다).
 """
 from engine import Effect
@@ -299,17 +300,14 @@ def _(c):
 
 @card('지혜의 원천 - 마도서')
 def _(c):
-    def cost_cands(g, c, p):
-        return [x for x in g.field_cards(p) if g.pickable(x, c) and not x.flags.get('immune_others')]
     def cost1(g, c, p, l):
         l.ctx['t'] = g.chain[-1]
-        cs = cost_cands(g, c, p)   # 「자신 필드의 카드 1장」 — 자기 자신 · 동명 제외 (전역 선택 규칙)
-        if not cs: return False    # 낼 코스트가 없으면 발동 취소
+        cs = [x for x in g.field_cards(p) if x is not c and not x.flags.get('immune_others')] or [c]
         x = min(cs, key=lambda x: (not any(e.kind == 'lastwill' for e in x.effects), value(g, x)))
         g.L(f'코스트: {x} 묘지로'); g.send_grave(x, ('cost', c))
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 40, threat=500),
-        Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: opp_card_activation(g, p, c, 1) is not None and bool(cost_cands(g, c, p)), cost=cost1,
+        Effect(1, 'resp', ('field',), cond=lambda g, c, p, ev: opp_card_activation(g, p, c, 1) is not None, cost=cost1,
                res=lambda g, c, p, l: g.negate(l.ctx['t']), score=lambda g, c, p, ev: 60 if threat(g, p) >= 700 else 0, threat=800, label='무효'),
         recycle(2, '지혜', not_cost=True)]
 
