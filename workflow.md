@@ -238,6 +238,7 @@
       리퍼 상한 battle_cards, 기적의 영웅 카드군 also_ok, 넓적배사마귀 맹세 제약. py_compile · 함수 단위 확인만 ③ docs `docs/cont-rulings-1022` b940a16.
       ④ PR #59(data → data/restriction-keyword) · #60(model → model/restriction-keyword) · #61(docs → docs/restriction-keyword). 루틴 끔.
       크게 바뀌는 동작(사용자 확인 요청): 리퍼 한 턴 최대 2번 공격 · 올인 부여 효과 1턴 1번 · 솔루나 아츠 1번은 처음 한 번만 막음 · 헬 2번 첫 소환에만 · 유니온 · 대발생 공격력 증가는 전투 1회.
+    - 2026-10-22 사용자 지시: 블러드문 리퍼 3번은 「상대 몬스터 전부에 공격」이므로 한 번 적용하면 그 턴 동안 상대 몬스터 전부에 공격 가능 — model 8eb2259(c.cont_lasting · Game.cont_lasts) · docs (PR #60 · #61).
   - 남은 일(사용자 지시 대기): 위 동작 확인 · PR #50 ~ #61 머지(쌓인 순서) · 테스트 · 리그 · 남은 재정 29건 · 재학습 여부.
 
 - **【완료 — 2026-10-22, PR #56 · #57 · #58 에 추가 · 루틴 끔】 [지속] 범위 확인 답변 반영 (사용자 답변 2026-10-22, 세션 claude/vigilant-tesla-ifxf9v):**
