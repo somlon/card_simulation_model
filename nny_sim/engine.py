@@ -297,6 +297,9 @@ class Game:
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
     # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
     # (블러드문 리퍼 3번 「상대 몬스터 전부에 공격 선언을 할 수 있다」 — 한 번의 적용이 상대 몬스터 전부에 대한 공격 허락, 사용자 지시 2026-10-22).
+    # 공격력 · 수비력 증감 [지속](훅 STAT_HOOKS)은 텍스트에 턴 제한(「1턴에 N번」)이 적혀 있을 때만 횟수를 센다 — 적혀 있지 않으면 제한 없이
+    # 늘 적용된다(사용자 지시 2026-10-22 — 번성충-대발생 1번 · 데이터버그 유니온 마스터 2번, Game.cont_num).
+    STAT_HOOKS = ('atk_mod', 'def_mod')
     def cont_limit(self, c, num):
         """c의 num번 효과가 1턴 1번 [지속]이면 1, 아니면 None (카드 텍스트로 판정)"""
         if num is None or num in (getattr(c, 'cont_forced', None) or ()): return None
@@ -309,7 +312,20 @@ class Game:
             cache[k] = 1 if ('[지속]' in line and not free) else None
         return cache[k]
     def cont_num(self, c, hook):
-        return (getattr(c, 'cont_nums', None) or {}).get(hook)
+        """c의 [지속] 훅(hook)이 1턴 횟수를 세는 효과 번호 — 없으면 None(횟수 없이 적용).
+        공격력 · 수비력 증감(STAT_HOOKS)은 그 번호 문장에 턴 제한이 적혀 있을 때만 번호를 돌려준다 (사용자 지시 2026-10-22)"""
+        n = (getattr(c, 'cont_nums', None) or {}).get(hook)
+        if n is not None and hook in self.STAT_HOOKS and not self.turn_limit_text(c, n): return None
+        return n
+    def turn_limit_text(self, c, num):
+        """c의 num번 효과 문장에 턴 제한(「1턴에 N번」 — 「1턴에 1번 제약을 받지 않는다」 단서는 제외)이 적혀 있는가"""
+        cache = self.__dict__.setdefault('_turn_lim_text', {})
+        k = (c.name, num)
+        if k not in cache:
+            import re as _re
+            line = next((l for l in (c.d.get('text') or '').split('\n') if l.startswith(f'{num}.')), '')
+            cache[k] = bool(_re.search(r'1턴에 \d+번(?! 제약을 받지 않는다)', line))
+        return cache[k]
     def cont_ready(self, c, num):
         """num번 [지속]을 이 턴에 아직 적용할 수 있는가 (미리 보기 — 횟수를 쓰지 않는다)"""
         lim = self.cont_limit(c, num)
@@ -341,7 +357,8 @@ class Game:
         if k in getattr(self, 'cont_off', ()): return False
         return self.cont_ready(src, n)
     def battle_mods(self, *cs):
-        """전투 대미지 계산 직전: 이 전투의 몬스터(cs)에 붙는 1턴 1번 [지속] 공격력 · 수비력 증감은 이때 주인이 적용할지 정하고 횟수를 쓴다"""
+        """전투 대미지 계산 직전: 이 전투의 몬스터(cs)에 붙는 1턴 1번 [지속] 공격력 · 수비력 증감은 이때 주인이 적용할지 정하고 횟수를 쓴다.
+        텍스트에 턴 제한이 없는 증감은 횟수가 없어(Game.cont_num) 여기서 묻지 않고 늘 적용된다 (사용자 지시 2026-10-22)"""
         self.cont_inuse, self.cont_off = set(), set()
         for src in self.continuous_sources():
             for hook in ('atk_mod', 'def_mod'):

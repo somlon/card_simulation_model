@@ -573,7 +573,7 @@ def _(c):
         if x.controller != q or not x.is_monster() or not g.on_field(x) or not x.faceup: return 0
         return 100 * sum(1 for y in g.field_cards(q) if y.faceup and DBC(y))
     c.atk_mod = am
-    c.cont_nums = {'atk_mod': 2}   # 2번 [지속] — 1턴 1번(전투 1회), 주인이 고른다 (Game.battle_mods, 사용자 답변 2026-10-22)
+    c.cont_nums = {'atk_mod': 2}   # 2번 [지속] 공격력 증감 — 텍스트에 턴 제한이 없어 횟수 없이 늘 적용 (Game.cont_num, 사용자 지시 2026-10-22)
     def sc1(g, c, p, ev):
         ps = pool(g, p)
         xs = cheapest(g, p, ps, 2)

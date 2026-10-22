@@ -397,7 +397,7 @@ def _(c):
         n = sum(1 for y in g.field_cards(p) if y.faceup and y.has('번성충')) + sum(1 for y in g.p[p].grave if y.has('번성충'))
         return 100 * n
     c.atk_mod = mod
-    c.cont_nums = {'atk_mod': 1}   # 1번 [지속] 공격력 증감 — 1턴 1번(전투 1회), 주인이 고른다 (Game.battle_mods)
+    c.cont_nums = {'atk_mod': 1}   # 1번 [지속] 공격력 증감 — 텍스트에 턴 제한이 없어 횟수 없이 늘 적용 (Game.cont_num, 사용자 지시 2026-10-22)
 
 
 # ═══════════════════════ 공용 ═══════════════════════
