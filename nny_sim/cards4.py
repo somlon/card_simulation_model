@@ -104,6 +104,7 @@ def _(c):
                         res=res, score=lambda g, c, p, ev: 80 if len(g.p[1 - p].main) > len(g.p[p].main) else VETO, threat=500), seri_lastwill()]
 
 def alt_normal(c, can, pay):
+    """[제약] 「이 카드는 … 하는 것으로 일반소환할 수 있다」 — 그 몬스터만의 일반소환 방법(소환 조건, 2026-10-22 텍스트)"""
     c.alt_normal = (can, pay)
 
 @card('치프 세리 - 프로쿠라토르')

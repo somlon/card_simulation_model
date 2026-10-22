@@ -448,7 +448,8 @@ def _(c):
                res=res3, score=lambda *a: 80, threat=400, label='[전투] +1000·추가 공격')]
 
 def effect_only(c):
-    """「이 카드는 카드의 효과로만 소환할 수 있고, 묘지로 보내질 경우 덱으로 되돌아간다」. 소환 조건은 어디서나 판정한다.
+    """1번 [제약] 「이 카드는 카드의 효과로만 소환할 수 있다」 + 2번 「이 카드는 묘지로 보내질 경우 덱으로 되돌아간다」 (2026-10-22 텍스트 — 소환 조건 분리).
+    [제약](그 몬스터만의 소환 조건)은 [지속]이 아니므로 패 · 덱 · 묘지에서도 판정한다(flags['effect_only'] — Game.can_special 등).
     덱으로 되돌아가는 처리는 그 문장이 [지속]이면 필드에 있을 때만(Game.cont_active — 사용자 답변 2026-10-22), 표기가 없으면 어디서나"""
     c.flags['effect_only'] = True
     line = next((x for x in (c.d.get('text') or '').split('\n') if '덱으로 되돌아간다' in x), '')
@@ -464,23 +465,23 @@ def per_card_self(c, num):
 @card('솔루나 시아 - 코로나 이그니스')
 def _(c):
     effect_only(c)
-    c.effects = [
-        Effect(2, 'trigger', ('field',), score=lambda *a: 80,
+    c.effects = [   # 1번 [제약] · 2번(덱으로 되돌아감)은 effect_only — 발동하는 효과는 3 · 4번 (2026-10-22 텍스트에서 번호 +1)
+        Effect(3, 'trigger', ('field',), score=lambda *a: 80,
                cond=lambda g, c, p, ev: ev_is(ev, 'leave_field') and ev['ctrl'] == 1 - p and (ev['cause'] or ('',))[0] in ('effect', 'cost'),
                res=lambda g, c, p, l: g.damage(1 - p, 1000, c.name), threat=500),   # 2026-10-08 텍스트: 예외 · 강제 문구 없음 → 1턴 1번, 임의
-        Effect(3, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
+        Effect(4, 'resp', ('field',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
                cost=lambda g, c, p, l: l.ctx.update(t=g.chain[-1]), res=lambda g, c, p, l: g.negate(l.ctx['t'], destroy=True, by=c),
                score=lambda g, c, p, ev: 70 if threat(g, p) >= 500 else 0, threat=900, label='무효 + 파괴')]
 
 @card('솔루나 시엘 - 블러드문 리퍼')
 def _(c):
     effect_only(c)
-    c.flags['attack_all'] = True
+    c.flags['attack_all'] = True   # 3번 [지속] 상대 몬스터 전부에 공격 선언 (2026-10-22 텍스트에서 번호 +1) — 무효면 적용 안 함(Game.cont_flag)
     def res3(g, c, p, l):
         t = best(g, targets_of(g, p, opp_cards(g, p)), p)
         if t: g.banish(t); g.L(f'{t} 제외')
         g.heal(p, 800)
-    c.effects = [Effect(3, 'battle', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'battle_win') and ev['card'] is c,
+    c.effects = [Effect(4, 'battle', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'battle_win') and ev['card'] is c,
                         res=res3, opt=3, score=lambda *a: 90, threat=900, label='[전투] 제외 + 회복')]
 
 def search_sc(g, p, pred, why):

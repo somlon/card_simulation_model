@@ -259,7 +259,8 @@ def _(c):
 
 @card('기적의 영웅')
 def _(c):
-    c.flags.update(ss_by_skill_only=True, effect_only=True, no_release=True, immune_others=True, also_groups=WISH4)
+    c.flags.update(ss_by_skill_only=True, effect_only=True,   # 1번 [제약]: 스킬 카드의 효과로만 특수소환 (소환 조건 — 패 · 덱에서도 판정)
+                   no_release=True, immune_others=True, also_groups=WISH4)   # 2번 [지속]: 필드의 이 카드
     def alive(g, c): return g.atk(c) > 0 and g.df(c) > 0   # 재정: 0에 도달하면 3 · 4번을 더는 발동할 수 없다
     def shrink(g, c):
         if g.on_field(c): c.mods += [('atk', -1000, None), ('def', -1000, None)]; g.L(f'{c} 공격력/수비력 -1000 → {g.atk(c)}/{g.df(c)}')
