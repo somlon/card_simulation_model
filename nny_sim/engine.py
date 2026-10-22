@@ -279,6 +279,8 @@ class Game:
     # 주인에게 불리한 [지속](유지비 · 제한 · 상대의 직접공격 허용 — 카드 구현의 c.cont_forced)은 고르지 않고, 1턴 횟수로 꺼지지도 않는다:
     # 카드가 무효가 될 때까지 늘 적용된다(사용자 지시 2026-10-22 — 솔루나 아츠 1번처럼 멈추려면 카드를 무효로 하는 효과를 써야 한다).
     # 체인에 응해 한 효과의 발동을 무효로 해도(Game.negate) 그 카드의 다른 번호 효과는 무효가 되지 않는다.
+    # 상대 플레이어에게 거는 금지(「상대는 … 수 없다」)는 1턴 1번이어도 상대의 모든 행동에 작용하므로 사실상 횟수 제한이 없다
+    # (사용자 지시 2026-10-22 — 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
     # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
     # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
@@ -291,7 +293,7 @@ class Game:
         if k not in cache:
             import re as _re
             line = next((l for l in (c.d.get('text') or '').split('\n') if l.startswith(f'{num}.')), '')
-            free = _re.search(r'1턴에 1번 제약을 받지 않는다|1턴에 \d+번까지', line)
+            free = _re.search(r'1턴에 1번 제약을 받지 않는다|1턴에 \d+번까지|상대는 [^.]*수 없다', line)
             cache[k] = 1 if ('[지속]' in line and not free) else None
         return cache[k]
     def cont_num(self, c, hook):
@@ -795,8 +797,8 @@ class Game:
     def search_cands(self, p, pred, which=('main', 'upper'), source=None):
         """서치 후보: 덱에서 pred를 만족하고, 서치 효과의 주체 카드와 이름이 다른 카드 (사용자 재정)"""
         src = source or self.src
-        if self.rule('no_deck_to_hand', p, unlimited=True): return []   # 덱에서 패에 넣을 수 없다 [지속](횟수 제한 없음) — 서치 후보 없음.
-        # 1턴 1번인 금지(데이터버그 버터플라이 2번)는 발동을 막지 않고 처리 때 Game.to_hand가 한 번 막는다 (사용자 지시 2026-10-22)
+        if self.rule('no_deck_to_hand', p, unlimited=True): return []   # 덱에서 패에 넣을 수 없다 [지속](횟수 제한 없음) — 서치 후보가 없어 그 효과는 발동할 수 없다.
+        # (1턴 1번인 금지가 있으면 발동은 막지 않고 처리 때 Game.to_hand가 한 번 막는다 — 지금 그런 카드는 없음)
         ok = self.same_name_ok() and source is None
         return [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
 
