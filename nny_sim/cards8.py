@@ -20,15 +20,18 @@ ASSUME:
   족보 재료 · 「몬스터」를 세는 효과에도 쓰인다. 표시목은 자신도 대상으로 할 수 있다.
 - 짐승조커 1번: 처리 시 레벨(1~10)과 속성(4문양)을 선언하고 몬스터 존(또는 공유 존)에 특수소환한다. 필드를 떠나면 다시 마법 카드.
 - 「이 카드가 릴리스되었을 때」 = Game.tribute로 묘지에 간 경우(코스트 · 일반소환의 제물 포함) — 엔진 사건 to_grave의 released.
-- 스트플을 원하는 쥐 1번(속성 「모두로 취급」)은 패 · 묘지에서도 적용되는 특성으로 본다(필드에서 무효가 되면 원래 속성).
+- 스트플을 원하는 쥐 1번(속성 「모두로 취급」)은 [지속]이므로 필드에 있을 때만 적용된다(사용자 답변 2026-10-22 — [지속] 키워드의 적용 범위는 필드).
+  패 · 묘지 · 덱에서는 원래 속성이고, 필드에서 뒷면이거나 무효가 되어도 원래 속성(engine.Game.cont_active).
 - 쥐 3번 「자신 필드의 포커짐승들 몬스터가 파괴되었을 경우」 = 자신이 컨트롤하던 몬스터 존(공유 존 포함)의 포커짐승들 카드가 파괴되어 묘지로 간 사건.
-- 「같은 속성의 카드 1장당」(플러쉬를 노리는 늑대 1번) · 「같은 레벨의 몬스터 1장당」(포카드를 보는 고양이 1번)은 필드(서로)의 앞면 카드 중
-  그 몬스터 자신을 뺀 카드를 센다. 「다이아 속성의 카드 1장당」(플러쉬 늑대 1번)은 자신도 센다.
+- 「같은 속성의 카드 1장당」(플러쉬를 노리는 늑대 1번) · 「같은 레벨의 몬스터 1장당」(포카드를 보는 고양이 1번)은 필드(서로)의 앞면 카드를 세고,
+  증감을 받는 그 몬스터 자신도 센다(사용자 답변 2026-10-22 — 빼는 경우는 효과 텍스트에 「이외」 · 「다른」으로 적혀 있다: cards.per_card_self).
+  「다이아 속성의 카드 1장당」(플러쉬 늑대 1번)도 자신을 센다.
 - 풀 하우스를 찾는 강아지 1번(종류 표기 없음, 「발동」 문구 없음)은 [지속] 권리로 본다: 앞면으로 필드에 있는 동안 1턴에 1번
   「포커짐승들」 몬스터를 추가로 일반소환할 수 있다 (풀 하우스 강아지 1번은 2번까지). 기본 일반소환을 먼저 쓰고 그 뒤에 추가 권리를 쓴다.
 - 「이 카드를 패에서 상대에게 보여주고 발동」(상급 3종)은 표기가 없어 기동 효과(자신 턴 · 체인 없음): 공개가 코스트, 덱으로 되돌리기 · 서치가 처리.
 - 메이드에 실패한 토끼 1번은 묘지에 2장 이상 있을 때만 발동 (2장을 되돌리지 못하면 「그 후」 드로우도 없다).
-  스트플을 원하는 시골쥐 2번 「3장까지」는 0장도 고를 수 있다(0장이어도 1장 드로우).
+  「N장까지」는 1 ~ N장 — 최소 1장은 골라야 한다(사용자 답변 2026-10-22, 시골쥐 2번). 자신 묘지에 카드가 없으면 시골쥐 2번은 발동하지 않는다.
+  체인 처리 중 묘지가 비어 1장도 되돌리지 못해도 「되돌리고 1장 드로우」의 드로우는 한다(예전 처리 그대로).
 - 메이드에 실패한 강아지 1번 「「포커짐승들」 마법 카드」에 필드 카드(도박장)는 포함하지 않는다 (cards.opp_magic과 같은 구분).
 - 쇠망치: 「덱 또는 묘지에서 카드를 패에 넣었을 경우」는 효과로 넣은 경우(드로우 제외 — 사기 감지와 같음), 처리 시 그 카드가 아직
   상대의 패 · 필드에 있어야 제외한다.
@@ -42,8 +45,7 @@ ASSUME:
 - 올인 2번이 준 [신속]의 1턴 1번은 몬스터 카드명마다인가, 플레이어당(스킬 효과 단위)인가? (지금: 몬스터 카드명마다)
 - 풀 하우스를 찾는 강아지 1번은 [지속] 권리(추가 일반소환 1회)인가, 발동하는 효과(즉시 추가 일반소환)인가? (지금: [지속] 권리)
 - 표시목이 부여한 레벨 · 속성은 표시목이 필드를 떠나도 남는가? 마법 카드에 부여해 몬스터로 취급되면 공격 · 공격 대상이 될 수 있는가? (지금: 남는다 / 안 된다)
-- 「같은 속성의 카드 1장당」 · 「같은 레벨의 몬스터 1장당」은 그 몬스터 자신도 세는가? (지금: 세지 않음 — 플러쉬 늑대의 「다이아 속성의 카드」는 자신 포함)
-- 시골쥐 2번 「3장까지」에 0장이 허용되는가? 쥐의 「모두로 취급」은 패 · 묘지에서도 적용되는가? (지금: 둘 다 예)
+- (해결 2026-10-22) 「1장당」은 자신도 센다 · 「3장까지」는 최소 1장 · [지속]은 필드에서만.
 - 짐승조커 · 표시목 2번 「릴리스되었을 때」에 일반소환의 제물로 릴리스된 경우도 포함되는가? (지금: 포함)
 
 엔진 변경 (모두 추가 · 플래그/속성이 없는 카드는 예전과 같음):
@@ -59,7 +61,7 @@ ASSUME:
 import re
 from collections import namedtuple
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, per_card_self
 from cards2 import targets
 
 PK = '포커짐승들'
@@ -85,10 +87,10 @@ def allin(g, p):
 
 
 def attrs(g, x):
-    """x의 속성 집합: 부여된 속성(flags['attr_set']) > 쥐 1번 「4문양 모두로 취급」(필드에서 무효면 적용 안 함) > 원래 속성"""
+    """x의 속성 집합: 부여된 속성(flags['attr_set']) > 쥐 1번 「4문양 모두로 취급」([지속] — 필드에 앞면으로 있고 무효가 아닐 때만) > 원래 속성"""
     v = x.flags.get('attr_set')
     if v is not None: return frozenset(v) if isinstance(v, (tuple, list, set, frozenset)) else frozenset((v,))
-    if x.flags.get('all_suits') and not (g.on_field(x) and g.is_neg(x)): return ALL4
+    if x.flags.get('all_suits') and g.cont_active(x): return ALL4
     a = x.d.get('attr')
     return frozenset((a,)) if a else frozenset()
 
@@ -685,11 +687,12 @@ def _(c):
 
 @card('◆ 플러쉬를 노리는 늑대')
 def _(c):
-    def am(g, src, x):   # 1번 [지속]: 자신의 포커짐승들 몬스터 공격력 +200 × (필드의 같은 속성 카드, 그 몬스터 제외)
+    self_too = per_card_self(c, 1)
+    def am(g, src, x):   # 1번 [지속]: 자신의 포커짐승들 몬스터 공격력 +200 × (필드의 같은 속성 카드 — 그 몬스터 자신 포함, 텍스트에 「이외」 · 「다른」이 없으면)
         if x.controller != src.controller or not PK_MON(x) or not g.on_field(x) or not x.faceup: return 0
         a = attrs(g, x)
         if not a: return 0
-        return 200 * sum(1 for y in g.all_field() if y is not x and y.faceup and attrs(g, y) & a)
+        return 200 * sum(1 for y in g.all_field() if (self_too or y is not x) and y.faceup and attrs(g, y) & a)
     c.atk_mod = am
     c.effects = [combo_eff(2, 'flush', False)] + allin_effects()
 
@@ -731,9 +734,10 @@ def _(c):
 
 @card('♣ 포카드를 보는 고양이')
 def _(c):
-    def dm(g, src, x):   # 1번 [지속]: 자신의 포커짐승들 몬스터 수비력 +200 × (필드의 같은 레벨 몬스터, 그 몬스터 제외)
+    self_too = per_card_self(c, 1)
+    def dm(g, src, x):   # 1번 [지속]: 자신의 포커짐승들 몬스터 수비력 +200 × (필드의 같은 레벨 몬스터 — 그 몬스터 자신 포함, 텍스트에 「이외」 · 「다른」이 없으면)
         if x.controller != src.controller or not PK_MON(x) or not g.on_field(x) or not x.faceup or not x.level: return 0
-        return 200 * sum(1 for y in g.all_field() if y is not x and y.faceup and y.is_monster() and y.level == x.level)
+        return 200 * sum(1 for y in g.all_field() if (self_too or y is not x) and y.faceup and y.is_monster() and y.level == x.level)
     c.def_mod = dm
     c.effects = [combo_eff(2, 'four', True)] + allin_effects()
 
@@ -766,17 +770,17 @@ def rat_common(c):
 @card('스트플을 원하는 시골쥐')
 def _(c):
     rat_common(c)
-    def pick(g, p):
+    def pick(g, p):   # 「3장까지」: 1 ~ 3장 (최소 1장 — 사용자 답변 2026-10-22)
         gy = gy_order(g, p, list(g.p[p].grave))
-        keep_mon = deck_left(g, p) >= 12   # 덱이 넉넉하면 포커짐승들 몬스터는 묘지에 남긴다
-        return [x for x in gy if not (keep_mon and PK_MON(x))][:3]
+        keep_mon = deck_left(g, p) >= 12   # 덱이 넉넉하면 포커짐승들 몬스터는 묘지에 남긴다 (남길 카드뿐이면 1장은 되돌린다)
+        return [x for x in gy if not (keep_mon and PK_MON(x))][:3] or gy[:1]
     def res2(g, c, p, l):
         xs = pick(g, p)
         for x in xs: g.to_deck(x)
         g.shuffle(p)
         if xs: g.L(f'묘지 {len(xs)}장 덱으로: {", ".join(map(str, xs))}')
         g.draw(p, 1)
-    c.effects = [Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: summoned(g, c, ev), res=res2,
+    c.effects = [Effect(2, 'summon', ('field',), cond=lambda g, c, p, ev: summoned(g, c, ev) and bool(g.p[p].grave), res=res2,
                         score=lambda g, c, p, ev: 55 if deck_left(g, p) + len(pick(g, p)) >= 1 else VETO, threat=300, label='[소환] 묘지 3장까지 덱으로 · 1드로우'),
                  rat_revive()] + allin_effects()
     c.ns_value = ns_value(lambda g, p, ts: 1.0)

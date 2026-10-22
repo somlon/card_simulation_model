@@ -448,8 +448,18 @@ def _(c):
                res=res3, score=lambda *a: 80, threat=400, label='[전투] +1000·추가 공격')]
 
 def effect_only(c):
+    """「이 카드는 카드의 효과로만 소환할 수 있고, 묘지로 보내질 경우 덱으로 되돌아간다」. 소환 조건은 어디서나 판정한다.
+    덱으로 되돌아가는 처리는 그 문장이 [지속]이면 필드에 있을 때만(Game.cont_active — 사용자 답변 2026-10-22), 표기가 없으면 어디서나"""
     c.flags['effect_only'] = True
-    c.grave_redirect = lambda g, x: True
+    line = next((x for x in (c.d.get('text') or '').split('\n') if '덱으로 되돌아간다' in x), '')
+    c.grave_redirect = (lambda g, x: g.cont_active(x)) if '[지속]' in line else (lambda g, x: True)
+
+
+def per_card_self(c, num):
+    """num번 효과의 「…1장당」 세기에 증감을 받는 그 카드 자신도 드는가: 든다. 세는 구절에 「이외」 · 「다른」이 적혀 있을 때만 뺀다
+    (사용자 답변 2026-10-22)"""
+    m = _re_t.search(r'([^.,]*)1장당', eff_text(c, num))
+    return not (m and _re_t.search(r'이외|다른', m.group(1)))
 
 @card('솔루나 시아 - 코로나 이그니스')
 def _(c):
