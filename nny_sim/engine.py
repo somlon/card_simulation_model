@@ -171,14 +171,14 @@ class Game:
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
         for src in self.continuous_sources():
             f = getattr(src, 'atk_mod', None)
-            if f and self.mod_applies(c, src): v += f(self, src, c)
+            if f and self.mod_applies(c, src) and self.mod_on(src, 'atk_mod'): v += f(self, src, c)
         if c.flags.get('atk_set') is not None: v = c.flags['atk_set']
         return max(0, v)
     def df(self, c):
         v = c.base_def() + sum(x for s, x, _ in c.mods if s == 'def')
         for src in self.continuous_sources():   # [지속] 수비력 증감 def_mod (포커짐승들 2026-10-12 추가 — def_mod가 없는 카드는 그대로)
             f = getattr(src, 'def_mod', None)
-            if f and self.mod_applies(c, src): v += f(self, src, c)
+            if f and self.mod_applies(c, src) and self.mod_on(src, 'def_mod'): v += f(self, src, c)
         return max(0, v)
     def immune(self, c, by, src=None):
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
@@ -190,7 +190,7 @@ class Game:
             ex = c.flags.get('immune_except')
             # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
             if ex is not None and src is not c and not (src is not None and src.name == ex and (not c.flags.get('immune_except_opp') or by != c.controller)): return True
-            if c.flags.get('immune_others') and src is not c: return True
+            if self.cont_flag(c, 'immune_others') and src is not c: return True
             eg = self.flag(c, 'immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 callable 플래그(Game.flag)
             if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
@@ -210,6 +210,7 @@ class Game:
     def blocked(self, c, cause):
         if not cause or cause[0] != 'effect' or cause[1] is None or not self.on_field(c): return False
         if self.immune(c, cause[1].controller, cause[1]):
+            if c.flags.get('immune_others') and not self.cont_flag_use(c, 'immune_others', '다른 카드의 효과를 받지 않음'): return False
             self.L(f'{c}은(는) 상대의 효과를 받지 않음', 'sys'); return True
         return False
 
@@ -267,18 +268,91 @@ class Game:
         if c.zone == 'skill': return not c.negated
         return self.on_field(c) and c.faceup and not self.is_neg(c)
     def cont_flag(self, c, key):
-        """카드 자신의 [지속]을 나타내는 플래그 읽기: [지속]이 적용 중일 때만 값을 돌려준다 (Game.cont_active — 필드 · 앞면 · 무효 아님)"""
-        return c.flags.get(key) if self.cont_active(c) else None
+        """카드 자신의 [지속]을 나타내는 플래그 읽기: [지속]이 적용 중이고(Game.cont_active — 필드 · 앞면 · 무효 아님) 이 턴 횟수가 남았을 때만 값을 돌려준다"""
+        return c.flags.get(key) if self.cont_active(c) and self.cont_ready(c, self.cont_num(c, 'flag:' + key)) else None
+    def cont_flag_use(self, c, key, why=''):
+        """플래그로 나타낸 [지속]이 지금 실제로 적용될 때 부른다 — 1턴 횟수를 쓴다(주인이 적용하지 않기로 하면 False)"""
+        return self.cont_use(c, self.cont_num(c, 'flag:' + key), why or key)
+
+    # ── [지속] 1턴 횟수 (사용자 답변 2026-10-22) ──
+    # 횟수 이야기가 텍스트에 없는 [지속]은 1턴 1번 적용: 효과가 실제로 적용되는 순간마다 카드의 주인이 적용할지 고르고, 한 번 적용하면 그 턴에는 더 적용되지 않는다.
+    # 주인에게 불리한 [지속](유지비 · 제한 · 상대의 직접공격 허용 — 카드 구현의 c.cont_forced)은 고르지 않고, 1턴 횟수로 꺼지지도 않는다:
+    # 카드가 무효가 될 때까지 늘 적용된다(사용자 지시 2026-10-22 — 솔루나 아츠 1번처럼 멈추려면 카드를 무효로 하는 효과를 써야 한다).
+    # 체인에 응해 한 효과의 발동을 무효로 해도(Game.negate) 그 카드의 다른 번호 효과는 무효가 되지 않는다.
+    # 상대 플레이어에게 거는 금지(「상대는 … 수 없다」)는 1턴 1번이어도 상대의 모든 행동에 작용하므로 사실상 횟수 제한이 없다
+    # (사용자 지시 2026-10-22 — 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
+    # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
+    # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
+    # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
+    # (블러드문 리퍼 3번 「상대 몬스터 전부에 공격 선언을 할 수 있다」 — 한 번의 적용이 상대 몬스터 전부에 대한 공격 허락, 사용자 지시 2026-10-22).
+    def cont_limit(self, c, num):
+        """c의 num번 효과가 1턴 1번 [지속]이면 1, 아니면 None (카드 텍스트로 판정)"""
+        if num is None or num in (getattr(c, 'cont_forced', None) or ()): return None
+        cache = self.__dict__.setdefault('_cont_lim', {})
+        k = (c.name, num)
+        if k not in cache:
+            import re as _re
+            line = next((l for l in (c.d.get('text') or '').split('\n') if l.startswith(f'{num}.')), '')
+            free = _re.search(r'1턴에 1번 제약을 받지 않는다|1턴에 \d+번까지|상대는 [^.]*수 없다', line)
+            cache[k] = 1 if ('[지속]' in line and not free) else None
+        return cache[k]
+    def cont_num(self, c, hook):
+        return (getattr(c, 'cont_nums', None) or {}).get(hook)
+    def cont_ready(self, c, num):
+        """num번 [지속]을 이 턴에 아직 적용할 수 있는가 (미리 보기 — 횟수를 쓰지 않는다)"""
+        lim = self.cont_limit(c, num)
+        return lim is None or self.cont_lasts(c, num) or self.p[c.owner].opt.get(('cont', c.name, num), 0) < lim
+    def cont_lasts(self, c, num):
+        """이 카드가 이 턴에 이미 적용한, 그 턴 동안 이어지는 [지속]인가 (c.cont_lasting)"""
+        return num in (getattr(c, 'cont_lasting', None) or ()) and num in c.flags.get('cont_spent', ())
+    def cont_use(self, c, num, why='', choose=None):
+        """num번 [지속]을 지금 적용한다. 1턴 1번이면 주인이 적용할지 고르고(choose — 기본은 c.cont_forced에 없으면 고른다) 적용하면 횟수를 쓴다.
+        횟수가 없는 [지속]은 언제나 True"""
+        lim = self.cont_limit(c, num)
+        if lim is None or self.cont_lasts(c, num): return True
+        p = c.owner; k = ('cont', c.name, num)
+        if self.p[p].opt.get(k, 0) >= lim: return False
+        if choose is None: choose = num not in (getattr(c, 'cont_forced', None) or ())
+        if choose and not self.p[p].ai.cont_apply(self, p, c, num, why):
+            self.L(f'판단[{self.pname(p)}] {c} {num}번 [지속] 적용 안 함 ({why})', 'decision'); return False
+        self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
+        c.flags.setdefault('cont_spent', set()).add(num)   # 카드 쪽 표시(cards.grp처럼 게임을 모르는 판정용) — 턴 시작 시 지운다
+        last = num in (getattr(c, 'cont_lasting', None) or ())
+        self.L(f'{c} {num}번 [지속] 적용 — ' + ('이 턴 동안 계속 적용' if last else '이 턴에는 더 적용되지 않음') + f' ({why})', 'sys')
+        return True
+    def mod_on(self, src, hook):
+        """src의 공격력 · 수비력 증감(hook)을 지금 계산에 넣는가: 1턴 1번이면 전투 중에는 그 전투에서 정한 대로(Game.battle_mods), 그 밖에는 횟수가 남았을 때"""
+        n = self.cont_num(src, hook)
+        if n is None: return True
+        k = (src.uid, n)
+        if k in getattr(self, 'cont_inuse', ()): return True
+        if k in getattr(self, 'cont_off', ()): return False
+        return self.cont_ready(src, n)
+    def battle_mods(self, *cs):
+        """전투 대미지 계산 직전: 이 전투의 몬스터(cs)에 붙는 1턴 1번 [지속] 공격력 · 수비력 증감은 이때 주인이 적용할지 정하고 횟수를 쓴다"""
+        self.cont_inuse, self.cont_off = set(), set()
+        for src in self.continuous_sources():
+            for hook in ('atk_mod', 'def_mod'):
+                f = getattr(src, hook, None); n = self.cont_num(src, hook)
+                if not f or n is None or (src.uid, n) in self.cont_inuse or not self.cont_ready(src, n): continue
+                if any(x is not None and self.mod_applies(x, src) and f(self, src, x) for x in cs):
+                    (self.cont_inuse if self.cont_use(src, n, f'전투 ({hook})') else self.cont_off).add((src.uid, n))
     def continuous_sources(self):
         srcs = [c for c in self.all_field() if c.faceup and not self.is_neg(c) and not c.flags.get('as_spell')]
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
         srcs += [self.p[i].skill for i in (0, 1) if self.p[i].skill and not self.p[i].skill.negated]
         return srcs
-    def rule(self, key, *a):
-        """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True"""
+    def rule(self, key, *a, use=False, choose=None, why='', unlimited=False):
+        """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True. 1턴 1번 [지속](c.cont_nums의 'rule:key')은 이 턴에 남아 있을 때만 본다.
+        use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다).
+        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다)"""
         for src in self.continuous_sources():
             f = getattr(src, 'rules', {}).get(key)
-            if f and f(self, src, *a): return True
+            if not f: continue
+            n = self.cont_num(src, 'rule:' + key)
+            if unlimited and self.cont_limit(src, n) is not None: continue
+            if not self.cont_ready(src, n): continue
+            if f(self, src, *a) and (not use or self.cont_use(src, n, why or key, choose)): return True
         return False
 
     # ── 존 이동 ──
@@ -389,7 +463,7 @@ class Game:
     def destroy(self, c, cause=None, battle=False):
         cause = cause or ('effect', self.src)
         if not battle and self.blocked(c, cause): return False
-        if self.rule('indestructible', c, battle):
+        if self.rule('indestructible', c, battle, use=True, why='파괴되지 않음'):
             self.L(f'{c} 파괴되지 않음', 'sys'); return False
         if battle and c.flags.get('battle_indestr_until', -1) >= self.turn and self.on_field(c):   # 「(그 턴까지) 전투로는 파괴되지 않는다」 (임시 봉인)
             self.L(f'{c} 전투로 파괴되지 않음', 'sys'); return False
@@ -415,8 +489,8 @@ class Game:
     def to_hand(self, c, cause=None, p=None):
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
-        if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p):
-            self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음', 'sys'); return
+        if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p, use=True, why='덱에서 패에 넣지 못하게 함'):
+            self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음 (그 효과는 무효가 아님 — 횟수는 그대로 소모)', 'sys'); return
         if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
@@ -436,10 +510,16 @@ class Game:
         if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='banish')
 
     def releasable(self, c):
-        return c.flags.get('no_release_until', -1) < self.turn and not (self.flag(c, 'no_release') and self.on_field(c) and not self.is_neg(c))
+        return c.flags.get('no_release_until', -1) < self.turn and not self.no_release(c)
+
+    def no_release(self, c):
+        """[지속] 「릴리스할 수 없다 · 릴리스되지 않는다」(flags['no_release'], callable 가능) — 필드 · 무효 아님 · 1턴 횟수가 남았을 때"""
+        return bool(self.flag(c, 'no_release') and self.on_field(c) and not self.is_neg(c) and self.cont_ready(c, self.cont_num(c, 'flag:no_release')))
 
     def tribute(self, c, cause=None):
-        if not self.releasable(c): self.L(f'{c}은(는) 릴리스할 수 없음', 'sys'); return
+        if not self.releasable(c) and not (self.no_release(c) and c.flags.get('no_release_until', -1) < self.turn
+                                            and not self.cont_flag_use(c, 'no_release', '릴리스할 수 없음')):
+            self.L(f'{c}은(는) 릴리스할 수 없음', 'sys'); return
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
         self.L(f'{c} 릴리스'); self.send_grave(c, cause, released=True)
@@ -449,10 +529,10 @@ class Game:
         옮길 수 없으면 처리할 수 없는 효과이므로 발동할 수 없다(정본 3-6 e)"""
         return c.controller == p or (bool(self.free_m(p)) and not self.field_limited(c, p))
 
-    def field_limited(self, c, p):
+    def field_limited(self, c, p, use=False):
         """[지속] 「자신 필드에 「X」 몬스터는 n장밖에 존재할 수 없다」(솔루나 아츠 1번 — rules['field_limit']) — c가 p의 필드에 새로 나올 수 없는가.
         소환(no_special과 같은 판정)뿐 아니라 제외 존에서의 복귀 · 컨트롤 획득에도 적용한다 (사용자 답변 2026-10-20)"""
-        return self.rule('field_limit', c, p)
+        return self.rule('field_limit', c, p, use=use, why='필드에 나올 수 없음')
 
     def change_control(self, c, p):
         """컨트롤 변경. 공유 존은 마커가 가리키는 플레이어의 소유이므로, 공유 존의 몬스터가 상대에게 넘어가면 마커는 그대로 두고
@@ -460,17 +540,17 @@ class Game:
         if c.controller == p: return True
         fr = self.free_m(p)
         if not fr: return False
-        if self.field_limited(c, p): self.L(f'{c} — {self.pname(p)} 필드에 같은 종류가 이미 있어 컨트롤을 옮길 수 없음', 'sys'); return False
+        if self.field_limited(c, p, use=True): self.L(f'{c} — {self.pname(p)} 필드에 같은 종류가 이미 있어 컨트롤을 옮길 수 없음', 'sys'); return False
         if c.zone == 'shared': self.shared = None
         else: self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
         self.p[p].m[fr[0]] = c; c.zone = 'm'; c.controller = p
         return True
 
     # ── 소환 ──
-    def can_special(self, c, p):
+    def can_special(self, c, p, use=False):
         """c를 지금 특수소환할 수 있는가. 규칙상 불가능한 후보는 처리 전에 걸러낸다(처리 중 실패 방지):
         소환 금지 [지속] · 같은 이름 규칙(정본 3-6 f: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음) · 놓을 자리"""
-        if self.rule('no_special', c, p): return False
+        if self.rule('no_special', c, p, use=use, why='특수소환할 수 없음'): return False
         if c.flags.get('ss_by_skill_only') and (self.src is None or self.src.type != '스킬'): return False
         if self.same_name_blocked(c): return False
         return self.can_place(c, p)
@@ -538,7 +618,7 @@ class Game:
 
     def special_summon(self, c, p, pos=None, by=None):
         """pos=None: 표시 형식을 AI가 고른다(summon_pos). 텍스트가 「공격 표시로 · 수비 표시로」를 정한 효과는 pos를 넘긴다"""
-        if not self.can_special(c, p): return False
+        if not self.can_special(c, p, use=True): return False
         if self.same_name_blocked(c):   # can_special이 걸러내므로 여기 오면 후보 선택 쪽 누락 — 안전장치
             self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
         if pos is None: pos = self.summon_pos(c, p, 'special')
@@ -620,8 +700,8 @@ class Game:
         if getattr(self, 'no_damage', {}).get(1 - p, -1) >= self.turn and src != '공유 존 마커' and not src.startswith('자해'):
             self.L(f'{self.pname(1-p)}은(는) 이 턴 대미지를 줄 수 없음 — {amt} 무효', 'sys'); return
         # [지속] 규칙 'no_effect_damage'(p, src): 「자신은 상대의 효과를 받지 않는다」 — 상대의 효과 대미지를 받지 않는다
-        # (데이터버그 버터플라이 2번, 2026-10-12 추가 — 출처 판정은 규칙 쪽. 규칙이 없으면 그대로)
-        if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src):
+        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 예전 데이터버그 버터플라이 2번, 2026-10-22 텍스트 변경으로 지금은 쓰는 카드 없음)
+        if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src, use=True, why='효과 대미지를 받지 않음'):
             self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
         self.L(f'{self.pname(p)} {amt} 대미지 ({src}) → HP {self.p[p].hp}')
@@ -717,7 +797,8 @@ class Game:
     def search_cands(self, p, pred, which=('main', 'upper'), source=None):
         """서치 후보: 덱에서 pred를 만족하고, 서치 효과의 주체 카드와 이름이 다른 카드 (사용자 재정)"""
         src = source or self.src
-        if self.rule('no_deck_to_hand', p): return []   # 덱에서 패에 넣을 수 없다 [지속] — 서치 후보 없음
+        if self.rule('no_deck_to_hand', p, unlimited=True): return []   # 덱에서 패에 넣을 수 없다 [지속](횟수 제한 없음) — 서치 후보가 없어 그 효과는 발동할 수 없다.
+        # (1턴 1번인 금지가 있으면 발동은 막지 않고 처리 때 Game.to_hand가 한 번 막는다 — 지금 그런 카드는 없음)
         ok = self.same_name_ok() and source is None
         return [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
 
@@ -730,8 +811,9 @@ class Game:
         cands = self.search_cands(p, pred, which, source)
         if not cands: self.L(f'{why}: 대상 없음', 'sys'); return None
         c = self.p[p].ai.pick_search(self, p, cands, why)
-        self.L(f'{self.pname(p)} {why}: {c} 패에 넣음')
-        self.to_hand(c); self.shuffle(p); return c
+        self.to_hand(c); self.shuffle(p)
+        if c.zone != 'hand': return None   # [지속]에 막혔다 (Game.to_hand)
+        self.L(f'{self.pname(p)} {why}: {c} 패에 넣음'); return c
 
     def same_name_ok(self):
         """텍스트에 같은 이름 카드를 가져오거나 특수소환한다는 문구 · 예외 조항이 있는 효과 (사용자 재정)"""
@@ -1009,12 +1091,21 @@ class Game:
         """앞면 카드의 효과를 무효로 한다 (「그 카드를 턴 종료 시까지 무효로 한다」 등). 효과 내성에 막히면 False.
         perma: 그 값이 남아 있는 동안 무효(장착 · 「의심」처럼 효과가 끝날 때까지). 무효화 사건(negated, card=c)을 낸다 — 저주 - 강령"""
         src = src if src is not None else self.src
+        if c.zone == 'skill':   # 스킬 카드에 대한 무효는 어떤 무효든 그 턴 종료 시까지만 (사용자 답변 2026-10-22)
+            c.negated = True; self.L(f'{c} 턴 종료 시까지 무효 (스킬)', 'sys')
+            self.emit('negated', link=None, card=c, player=c.controller, by=src); return True
         if not self.on_field(c): return False
         if self.blocked(c, ('effect', src)): return False
         if perma is None: c.negated = True
         else: c.flags['perma_neg'] = perma
         self.emit('negated', link=None, card=c, player=c.controller, by=src)
         return True
+
+    def neg_cands(self, side=None):
+        """카드를 무효로 하는 효과가 고를 수 있는 「필드의 카드」: 필드의 카드 + 스킬 존의 스킬(무효 효과에 한해 대상 — 사용자 답변 2026-10-22).
+        side: 그 플레이어 쪽만 (None이면 양쪽)"""
+        ps = (0, 1) if side is None else (side,)
+        return [x for i in ps for x in self.field_cards(i)] + [self.p[i].skill for i in ps if self.p[i].skill is not None]
 
     def negate(self, link, destroy=False, by=None):
         if getattr(link.eff, 'unnegatable', False) or link.card.flags.get('unnegatable'):
@@ -1137,6 +1228,11 @@ class Game:
         p = a.controller; o = 1 - p
         if not self.can_attack_with(a):   # 뒷면 공격 표시 · 수비 표시는 공격 선언 불가 — AI 후보에서 이미 거르지만 엔진에서도 막는다
             self.L(f'{a}은(는) 공격할 수 없음 (앞면 공격 표시가 아님)', 'sys'); return
+        if a.attacks_made >= 1 + a.extra_attacks:   # 기본 공격 횟수를 넘는 공격: 그 공격을 허락하는 [지속]을 이때 적용(1턴 횟수 — 사용자 답변 2026-10-22)
+            if not (target is not None and self.cont_flag(a, 'attack_all') and self.cont_flag_use(a, 'attack_all', '추가 공격')):
+                self.rule('double_attack', a, use=True, choose=False, why='추가 공격')
+        if target is None and self.blockers(o):   # 상대 몬스터가 있는데 직접공격 — 허락하는 [지속]을 이때 적용
+            self.rule('direct_attack', a, use=True, choose=False, why='직접공격')
         a.attacks_made += 1
         self.L(f'{self.pname(p)} {a}(ATK {self.atk(a)}) → ' + (f'{target}' if target else '직접공격'))
         self.emit('attack', card=a, target=target)
@@ -1147,6 +1243,7 @@ class Game:
         if target is not None and (not self.on_field(target) or target.controller != o or not target.faceup):
             a.attacks_made -= 1
             self.L('공격 대상 소멸 — 공격 종료 (공격하지 않은 것으로 봄)', 'sys'); return
+        self.battle_mods(a, target)   # 1턴 1번 [지속] 공격력 · 수비력 증감은 이 전투에서 쓸지 정한다
         if target is None:
             self.battle_damage(o, self.atk(a), f'{a.name} 직접공격')
             self.emit('direct_hit', card=a)
@@ -1170,6 +1267,7 @@ class Game:
                 if av > tv:   # 수비 표시를 넘어도 HP 피해 없음 (정본 3-3)
                     if self.destroy(target, ('battle', a), battle=True): self.emit('battle_win', card=a, target=target, player=p)
                 elif av < tv: self.battle_damage(p, tv - av, '전투(수비 반사)', pair=(a, target))   # [유희왕] 기준선: 공격 몬스터는 파괴되지 않음
+        self.cont_inuse, self.cont_off = set(), set()
         self.triggers()
         if self.chain: self.resolve_chain()
 
@@ -1187,6 +1285,7 @@ class Game:
         self.turn += 1; self.locked = False
         tp = self.turn_player; pl = self.p[tp]
         for x in self.p: x.opt = {}
+        for c in self.all_field() + [x.skill for x in self.p if x.skill]: c.flags.pop('cont_spent', None)
         pl.normal_summons = 1
         for c in self.battle_cards(0) + self.battle_cards(1):   # 영구 부여된 추가 공격(격투가 세레모니 재정, flags['perm_extra_attacks'])은 매 턴 다시 붙는다
             c.attacks_made = 0; c.extra_attacks = c.flags.get('perm_extra_attacks', 0)
@@ -1204,7 +1303,7 @@ class Game:
         pl.ai.main_phase(self, tp, '진행')
         self.set_phase('전투'); self.open_window()
         for m in self.monsters(tp):   # 「상대 몬스터 전부에 공격」: 공격 횟수 상한은 전투 단계 시작 시의 상대 몬스터 수
-            if self.cont_flag(m, 'attack_all'): m.flags['attack_all_cap'] = (self.turn, len(self.monsters(1 - tp)))
+            if self.cont_flag(m, 'attack_all'): m.flags['attack_all_cap'] = (self.turn, len(self.battle_cards(1 - tp)))   # 몬스터로 취급되는 마법 포함 (사용자 답변 2026-10-22)
         if self.turn > 1 and not pl.flags_no_attack(self):   # 선공 1턴째에는 공격 선언 불가 (§5-3) — 전투 단계 자체는 진행한다
             pl.ai.battle_phase(self, tp)
         self.set_phase('정비'); self.open_window()
@@ -1219,12 +1318,12 @@ class Game:
             if not (f and (self.on_field(c) or c.zone == 'skill')): continue
             order = getattr(c, 'end_order', None)
             if order and order(self, c) == 'after': late.append((c, f)); self.L(f'판단[{self.pname(c.controller)}] {c} 종료 시 처리를 「턴 종료 시」 트리거 뒤에', 'decision'); continue
-            self.deferring_hp(f, self, c)
+            if self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()
         for c, f in late:
-            if self.on_field(c) or c.zone == 'skill': self.deferring_hp(f, self, c)
+            if (self.on_field(c) or c.zone == 'skill') and self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
         # ASSUME(2026-10-11): 종료 단계 a의 「턴 종료 시」 처리 뒤, 잠기기 전에 턴 플레이어부터 우선권을 한 번 준다 —
         # 「(이 효과는 종료 단계에서만 사용할 수 있다)」 [신속](저주인형 - 비비안 · 처키)이 쓰일 자리. 예전에는 트리거가 있을 때만 창이 열렸다
         self.open_window()
@@ -1248,7 +1347,7 @@ class Game:
                     c.flags.pop('return_from_banish')
                     # 돌아갈 몬스터 존 · 공유 존이 없거나 필드에 나올 수 없으면(솔루나 아츠 1번 등 — Game.field_limited) 그대로 제외 존에 남는다
                     # (사용자 답변 2026-10-20 — 예전에는 묘지로 보냈다)
-                    if (not self.free_m(c.owner) and self.shared is not None) or self.field_limited(c, c.owner):
+                    if (not self.free_m(c.owner) and self.shared is not None) or self.field_limited(c, c.owner, use=True):
                         self.L(f'{c} 제외에서 복귀할 수 없음 — 제외 존에 남음', 'sys'); continue
                     self.L(f'{c} 제외에서 복귀', 'sys')
                     x.banish.remove(c); c.zone = None; self.place_monster(c, c.owner)

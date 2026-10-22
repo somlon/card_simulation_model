@@ -132,6 +132,10 @@ class HeuristicAI:
         self._seen = set()
         self.decisions = []      # {'first': k, 'second': k} — 학습된 배분표
 
+    def cont_apply(self, g, p, src, num, why=''):
+        """1턴 1번 [지속]을 지금 적용할지(카드의 주인 p가 고른다 — 사용자 답변 2026-10-22). 기본: 적용한다"""
+        return True
+
     # ── 기록 ──
     def note(self, g, p, what, cands, pick):
         cs = ', '.join(f'{n}={s:.0f}' for n, s in cands[:8])
@@ -509,5 +513,5 @@ class HeuristicAI:
         if g.rule('double_attack', m): n += 1   # 용기의 전사 2번: 「2회 공격할 수 있다」
         if g.cont_flag(m, 'attack_all'):   # [지속] — 무효가 되면 적용하지 않는다 (사용자 답변 2026-10-22)
             t, k = m.flags.get('attack_all_cap', (None, 0))
-            n = max(n, k if t == g.turn else len(g.monsters(1 - m.controller)))
+            n = max(n, k if t == g.turn else len(g.battle_cards(1 - m.controller)))   # 몬스터로 취급되는 마법 포함 (사용자 답변 2026-10-22)
         return n

@@ -64,7 +64,7 @@ def coin_replace_pick(g, c, p):
 def coin_replaced(g, c, p):
     """코인 효과를 바꿨으면 True (메인 덱에서 고른 1장을 묘지로)"""
     x = coin_replace_pick(g, c, p)
-    if x is None: return False
+    if x is None or not g.rule('coin_replace', p, use=True, choose=False, why='코인 효과 변경'): return False   # 2번 [지속] 1턴 1번
     g.L(f'판단[{g.pname(p)}] 행운의 도적: {c}의 효과를 「메인 덱에서 1장 묘지로」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
     g.deck_to_grave(p, x, f'{c.name} (변경)')
     return True
@@ -155,7 +155,7 @@ def _(c):
 @card('지혜의 사서')
 def _(c):
     def cost(g, c, p, l):
-        l.ctx['t'] = field_pick(g, p, 'negate', targets(g, p, [x for x in g.all_field() if x.faceup])); g.L(f'대상: {l.ctx["t"]}')
+        l.ctx['t'] = field_pick(g, p, 'negate', targets(g, p, [x for x in g.neg_cands() if x.faceup]), c); g.L(f'대상: {l.ctx["t"]}')   # 스킬도 (무효 효과)
     def res(g, c, p, l):
         t = l.ctx.get('t')
         if t and g.on_field(t) and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
@@ -186,6 +186,7 @@ def _(c):
         l.ctx['sent'] = pick is not None
         if pick is not None: g.L(f'코스트: {pick} 묘지로'); g.send_grave(pick, ('cost', c))
     c.rules = {'coin_replace': lambda g, src, p: p == src.controller}
+    c.cont_nums = {'rule:coin_replace': 2}   # 2번 [지속] — 1턴 1번 (사용자 답변 2026-10-22)
     c.effects = [Effect(1, 'summon', ('field',), cond=lambda g, c, p, ev: ev_is(ev, 'summon') and ev['card'] is c, cost=cost1,
                         res=lambda g, c, p, l: g.draw(p, 2 if l.ctx.get('sent') else 1), score=lambda *a: 80, threat=300, label='[소환] 드로우'),
                  recycle(3, '행운')]
@@ -223,6 +224,7 @@ def _(c):
         if t and g.on_field(t): g.destroy(t)
         if g.on_field(c): c.mods.append(('atk', 1000, 'turn')); g.L(f'{c} 공격력 +1000 (턴 종료 시까지)')
     c.rules = {'double_attack': lambda g, src, m: m.controller == src.controller and grp(m, '용기') and (m is src or not g.immune(m, src.controller, src))}
+    c.cont_nums = {'rule:double_attack': 2}   # 2번 [지속] — 1턴 1번: 「용기」 몬스터 1장의 2번째 공격 1회 (사용자 답변 2026-10-22)
     c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))), cost=cost1, res=res1,
                         score=lambda g, c, p, ev: 65 if main_ok(g, p) or threat(g, p) >= 800 else 0, threat=1000, label='파괴 · 공격력 +1000'),
                  recycle(3, '용기')]
@@ -261,6 +263,7 @@ def _(c):
 def _(c):
     c.flags.update(ss_by_skill_only=True, effect_only=True,   # 1번 [제약]: 스킬 카드의 효과로만 특수소환 (소환 조건 — 패 · 덱에서도 판정)
                    no_release=True, immune_others=True, also_groups=WISH4)   # 2번 [지속]: 필드의 이 카드
+    c.cont_nums = {'flag:immune_others': 2, 'flag:no_release': 2, 'flag:also_groups': 2}   # 2번 [지속] — 1턴 1번 (사용자 답변 2026-10-22)
     def alive(g, c): return g.atk(c) > 0 and g.df(c) > 0   # 재정: 0에 도달하면 3 · 4번을 더는 발동할 수 없다
     def shrink(g, c):
         if g.on_field(c): c.mods += [('atk', -1000, None), ('def', -1000, None)]; g.L(f'{c} 공격력/수비력 -1000 → {g.atk(c)}/{g.df(c)}')

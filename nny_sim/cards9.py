@@ -481,7 +481,7 @@ def _(c):
     c.rules = {'indestructible': lambda g, src, x, battle: battle and x is src and guarded(g, src)}
     def on_ev(g, src, ev):
         """2번 [지속]: 상대가 몬스터를 소환할 때마다 200 대미지"""
-        if ev['kind'] == 'summon' and ev.get('player') == 1 - src.controller:
+        if ev['kind'] == 'summon' and ev.get('player') == 1 - src.controller and g.cont_use(src, 2, '상대 소환 대미지'):   # 1턴 1번, 주인이 고른다
             g.damage(1 - src.controller, 200, f'{src.name} 2번')
     c.on_event = on_ev
     def ms(g, p): return [x for x in g.deck_cards(p) if mourner(x) and g.can_special(x, p)]
@@ -520,7 +520,7 @@ def _(c):
         # 1번 [지속]: 이 카드가 몬스터와 전투할 때, 상대 플레이어에게 가하는 대미지는 0 (엔진 battle_damage의 pair)
         'no_battle_damage': lambda g, src, p, a, t: p == 1 - src.controller and (a is src or t is src),
         # 2번 [지속]: 상대는 효과로 덱에서 카드를 패에 넣을 수 없다
-        'no_deck_to_hand': lambda g, src, player: player == 1 - src.controller and not g.rule('player_immune', player)}   # 플레이어 내성(데이터버그 버터플라이 2번)이면 받지 않음
+        'no_deck_to_hand': lambda g, src, player: player == 1 - src.controller}
     c.effects = [opp_draw_lastwill(3)]
 
 

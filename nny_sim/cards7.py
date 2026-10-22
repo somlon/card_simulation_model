@@ -319,6 +319,7 @@ def _(c):
     ace_guard(c)
     # 3번 [지속]: 자신 필드에 이 카드 이외의 몬스터가 없으면 상대는 자신에게 직접공격할 수 있다 (x = 공격하는 몬스터)
     c.rules['direct_attack'] = lambda g, src, x: x.controller != src.controller and not any(m is not src for m in g.monsters(src.controller))
+    c.cont_nums = dict(getattr(c, 'cont_nums', None) or {}, **{'rule:direct_attack': 3}); c.cont_forced = {3}   # 1턴 1번, 주인에게 불리 — 고르지 않음
     def cands4(g, p, c): return targets(g, p, [m for m in g.monsters(1 - p) if m.faceup], c)
     def res4(g, c, p, l):
         t = best(g, cands4(g, p, c), p)
@@ -402,7 +403,8 @@ def guard_ss():
 def guard_summon3(res, label, purpose):
     """3번 [소환] 상급 덱에서 「호박옥」 몬스터를 1장 묘지로 보내고 발동 (1턴에 2번까지)"""
     def ups(g, p): return [x for x in g.p[p].upper if AMB_MON(x)]
-    def pool(g, c): return [x for x in g.all_field() if x is not c and (purpose != 'negate' or (x.faceup and not g.is_neg(x)))]
+    def pool(g, c): return [x for x in (g.neg_cands() if purpose == 'negate' else g.all_field())   # 무효 효과는 스킬도 (사용자 답변 2026-10-22)
+                            if x is not c and (purpose != 'negate' or (x.faceup and not g.is_neg(x)))]
     def cost(g, c, p, l):
         x = dump_pick(g, p, ups(g, p)); g.deck_to_grave(p, x, f'{c.name} 3번 코스트')
     def sc(g, c, p, ev):
@@ -664,6 +666,7 @@ def _(c):
         if own_faceup(g, p): put_seals(g, p, 1, why=src.name)
     c.end_process = end1
     c.rules['indestructible'] = lambda g, src, x, battle: battle and x.controller == src.controller and x.is_monster() and seals(x) > 0 and g.on_field(x)
+    c.cont_nums = {'end_process': 1, 'rule:indestructible': 2}   # 1 · 2번 [지속] — 각각 1턴 1번, 주인이 고른다 (사용자 답변 2026-10-22)
     c.effects = [
         Effect(0, 'ignition', ('hand',), spell_act=True,
                score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.name == c.name and g.fieldz.controller == p) else 55, threat=500),
@@ -770,6 +773,7 @@ def _(c):
         g.special_summon(xs[0], p, 'def')
     c.on_event = on_ev
     c.end_process = upkeep(2, 1000); c.end_order = upkeep_order
+    c.cont_nums = {'end_process': 2}; c.cont_forced = {2}   # 2번 [지속] 유지비 — 1턴 1번, 고르지 않음 (사용자 답변 2026-10-22)
     c.rules = {'half_battle_damage': lambda g, src, p: p == src.controller and any(seals(m) > 0 for m in g.monsters(p))}
     c.effects = []
 
@@ -778,6 +782,7 @@ def _(c):
 def _(c):
     c.on_event = annotate
     c.end_process = upkeep(1, 2000); c.end_order = upkeep_order
+    c.cont_nums = {'end_process': 2}; c.cont_forced = {2}   # 2번 [지속] 유지비 — 1턴 1번, 고르지 않음 (사용자 답변 2026-10-22)
     def res1(g, c, p, l):
         xs = [x for x in g.p[p].upper if x.name == NOX and g.can_special(x, p)]
         if xs: g.special_summon(xs[0], p, 'def')
