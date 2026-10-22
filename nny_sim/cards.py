@@ -38,6 +38,8 @@ class Impl:
             if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
                (f'「{c.name}」' in line and _re.search(r'특수소환|패에 넣', line)):
                 e.same_name_ok = True
+            # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
+            if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
             # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
             if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
             e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
@@ -120,6 +122,17 @@ def parse_cost(line):
                         'self': bool(_re_t.search(r'이 카드(를|의)|자신을 포함하는|이 카드를 포함하는', last)),
                         'deck': bool(_re_t.search(r'덱의 위에서부터 카드를 \d+장 제외|덱에서 카드를 \d+장 제외', last))})
     return out
+
+_CARD_ACT = _re_t.compile(r'카드를 발동했을|카드의 발동을 선언')
+
+def opp_card_activation(g, p, c, num):
+    """「상대가 카드를 발동했을 때」 · 「상대가 카드의 발동을 선언했을 때」(c의 num번 문장)에 응할 상대의 발동 — 없으면 None.
+    「카드의 발동」은 카드(마법 · 필드)의 발동만이고 효과의 발동은 들지 않는다 (사용자 답변 2026-10-20 — Effect.spell_act).
+    문장에 그 문구가 없으면 상대의 마지막 발동 그대로(last_opp_link)"""
+    l = last_opp_link(g, p)
+    if l is None: return None
+    if _CARD_ACT.search(eff_text(c, num)) and not getattr(l.eff, 'spell_act', False): return None
+    return l
 
 def moves_off_field(g, link, p):
     """그 발동이 「p의 필드의 카드를 필드에서 벗어나게 하는 효과」인가 — 필드에 있는 카드를 필드가 아닌 위치로 이동시키는 효과

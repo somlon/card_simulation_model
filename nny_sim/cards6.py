@@ -15,12 +15,12 @@ ASSUME:
   체인 위에서 처리를 기다리는 부적의 효과(부적 3번 · 부적 2번으로 바뀐 효과 포함)를 무효로 하는 것이다 — 그런 효과가 없으면 처리할 수 없으므로 발동하지 않는다.
 - 저주 - 위저보드: 서로의 턴 시작 시마다 컨트롤러가 둘 중 하나를 고른다(특수소환이 가능하면 특수소환, 아니면 퇴마 카운터).
 - 저주 - 탐욕: 상대는 부적이 있으면 퇴마 카운터(자신에게 유리), 없으면 패 1장 버리기를 고른다.
-- 희생제 3번 「저주 카운터가 4개 놓였을 때」 = 카운터가 4개 미만에서 4개 이상이 되었을 때.
+- 희생제 3번 「저주 카운터가 4개 놓였을 때」 = 저주 카운터가 정확히 4개가 된 순간만 — 한 번에 5개 이상이 되면 발동하지 않는다(사용자 답변 2026-10-20). 개수는 텍스트에서 읽는다.
 - 저주 - 원한의 굴레: 묘지의 「저주」 · 「저주인형」 카드가 5장 이상일 때만 발동한다.
 """
 import re
 from engine import Effect, GameOver
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, opp_card_activation
 from cards2 import targets
 
 SAC = '희생제'
@@ -253,7 +253,7 @@ def _(c):
         t = l.ctx.get('t')
         if t and g.on_field(t): g.L(f'{t} 묘지로'); g.send_grave(t)
         add_exo(g, p, 1)
-    c.effects = [Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: last_opp_link(g, p) is not None and bool(targets(g, p, opp_cards(g, p))),
+    c.effects = [Effect(1, 'resp', ('hand', 'field'), spell_act=True, cond=lambda g, c, p, ev: opp_card_activation(g, p, c, 1) is not None and bool(targets(g, p, opp_cards(g, p))),   # 「카드를 발동했을 때」 — 카드의 발동만
                         cost=cost, res=res, score=lambda g, c, p, ev: 30 + 15 * max(value(g, x) for x in targets(g, p, opp_cards(g, p))), threat=900)]
 
 @card('저주 - 탐욕')
@@ -335,10 +335,12 @@ def _(c):
     c.on_event = on_ev
     def mains(g, p): return [x for x in g.p[p].main if x.is_monster() and g.can_special(x, p)]
     def uppers(g, p): return [x for x in g.p[p].upper if x.is_monster() and g.can_special(x, p)]
+    m3 = re.search(r'카운터가 (\d+)개 놓였을 때', eff_text(c, 3))
+    need3 = int(m3.group(1)) if m3 else 4
     def cond3(g, c, p, ev):
         if not (ev_is(ev, 'counter') and ev['card'] is c and ev['name'] == CURSE and ev['delta'] > 0): return False
-        n = ev.get('total', c.counters.get(CURSE, 0))   # 사건 당시 개수 — 한 체인에서 여러 개가 쌓여도 4개를 넘는 순간을 놓치지 않는다
-        return n >= 4 > n - ev['delta'] and bool(uppers(g, p))
+        n = ev.get('total', c.counters.get(CURSE, 0))   # 사건 당시 개수 — 한 체인에서 여러 개가 쌓여도 그 순간의 개수로 본다
+        return n == need3 and bool(uppers(g, p))       # 정확히 need3개가 된 순간만 (넘어서 5개 이상이 되면 발동하지 않음 — 사용자 답변 2026-10-20)
     def res4(g, c, p, l):
         n = c.counters.get(CURSE, 0)
         if n <= 0: return
