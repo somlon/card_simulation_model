@@ -279,7 +279,8 @@ class Game:
     # 주인에게 불리한 [지속](유지비 · 제한 · 상대의 직접공격 허용)은 고르지 않고 적용한다(카드 구현의 c.cont_forced).
     # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
-    # 적지 않은 훅은 횟수 없이 예전대로 적용한다.
+    # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
+    # (블러드문 리퍼 3번 「상대 몬스터 전부에 공격 선언을 할 수 있다」 — 한 번의 적용이 상대 몬스터 전부에 대한 공격 허락, 사용자 지시 2026-10-22).
     def cont_limit(self, c, num):
         """c의 num번 효과가 1턴 1번 [지속]이면 1, 아니면 None (카드 텍스트로 판정)"""
         if num is None: return None
@@ -296,12 +297,15 @@ class Game:
     def cont_ready(self, c, num):
         """num번 [지속]을 이 턴에 아직 적용할 수 있는가 (미리 보기 — 횟수를 쓰지 않는다)"""
         lim = self.cont_limit(c, num)
-        return lim is None or self.p[c.owner].opt.get(('cont', c.name, num), 0) < lim
+        return lim is None or self.cont_lasts(c, num) or self.p[c.owner].opt.get(('cont', c.name, num), 0) < lim
+    def cont_lasts(self, c, num):
+        """이 카드가 이 턴에 이미 적용한, 그 턴 동안 이어지는 [지속]인가 (c.cont_lasting)"""
+        return num in (getattr(c, 'cont_lasting', None) or ()) and num in c.flags.get('cont_spent', ())
     def cont_use(self, c, num, why='', choose=None):
         """num번 [지속]을 지금 적용한다. 1턴 1번이면 주인이 적용할지 고르고(choose — 기본은 c.cont_forced에 없으면 고른다) 적용하면 횟수를 쓴다.
         횟수가 없는 [지속]은 언제나 True"""
         lim = self.cont_limit(c, num)
-        if lim is None: return True
+        if lim is None or self.cont_lasts(c, num): return True
         p = c.owner; k = ('cont', c.name, num)
         if self.p[p].opt.get(k, 0) >= lim: return False
         if choose is None: choose = num not in (getattr(c, 'cont_forced', None) or ())
@@ -309,7 +313,8 @@ class Game:
             self.L(f'판단[{self.pname(p)}] {c} {num}번 [지속] 적용 안 함 ({why})', 'decision'); return False
         self.p[p].opt[k] = self.p[p].opt.get(k, 0) + 1
         c.flags.setdefault('cont_spent', set()).add(num)   # 카드 쪽 표시(cards.grp처럼 게임을 모르는 판정용) — 턴 시작 시 지운다
-        self.L(f'{c} {num}번 [지속] 적용 — 이 턴에는 더 적용되지 않음 ({why})', 'sys')
+        last = num in (getattr(c, 'cont_lasting', None) or ())
+        self.L(f'{c} {num}번 [지속] 적용 — ' + ('이 턴 동안 계속 적용' if last else '이 턴에는 더 적용되지 않음') + f' ({why})', 'sys')
         return True
     def mod_on(self, src, hook):
         """src의 공격력 · 수비력 증감(hook)을 지금 계산에 넣는가: 1턴 1번이면 전투 중에는 그 전투에서 정한 대로(Game.battle_mods), 그 밖에는 횟수가 남았을 때"""

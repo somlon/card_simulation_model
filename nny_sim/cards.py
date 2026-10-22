@@ -488,6 +488,7 @@ def _(c):
     effect_only(c)
     c.flags['attack_all'] = True   # 3번 [지속] 상대 몬스터 전부에 공격 선언 (2026-10-22 텍스트에서 번호 +1) — 무효면 적용 안 함(Game.cont_flag)
     c.cont_nums = {'flag:attack_all': 3}   # 1턴 1번 — 기본 횟수를 넘는 공격을 처음 할 때 적용 (Game.attack)
+    c.cont_lasting = {3}   # 한 번 적용하면 그 턴 동안 상대 몬스터 전부에 공격할 수 있다 (사용자 지시 2026-10-22)
     def res3(g, c, p, l):
         t = best(g, targets_of(g, p, opp_cards(g, p)), p)
         if t: g.banish(t); g.L(f'{t} 제외')
