@@ -382,7 +382,7 @@ class LearnedAI(HeuristicAI):
             opts = [('공격 종료', 0, None)]; seen = set()
             for a in attackers:
                 av = g.atk(a)
-                if g.can_direct(a) and not (a.flags.get('attack_all') and g.battle_cards(1 - p)):
+                if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
                     lab = f'{a.name}→직접'
                     if lab not in seen: seen.add(lab); opts.append((lab, av + 500, (a, None)))
                 for t in g.attack_targets(a):

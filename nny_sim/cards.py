@@ -476,7 +476,7 @@ def _(c):
 @card('솔루나 시엘 - 블러드문 리퍼')
 def _(c):
     effect_only(c)
-    c.flags['attack_all'] = True   # 3번 [지속] 상대 몬스터 전부에 공격 선언 (2026-10-22 텍스트에서 번호 +1)
+    c.flags['attack_all'] = True   # 3번 [지속] 상대 몬스터 전부에 공격 선언 (2026-10-22 텍스트에서 번호 +1) — 무효면 적용 안 함(Game.cont_flag)
     def res3(g, c, p, l):
         t = best(g, targets_of(g, p, opp_cards(g, p)), p)
         if t: g.banish(t); g.L(f'{t} 제외')

@@ -460,7 +460,7 @@ class HeuristicAI:
         if g.no_damage.get(p, -1) >= g.turn: return None
         for a in attackers:
             av = g.atk(a)
-            if g.can_direct(a) and not (a.flags.get('attack_all') and g.monsters(o)) and av >= hp: return (a, None)
+            if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.monsters(o)) and av >= hp: return (a, None)
             for t in g.attack_targets(a):
                 if t.pos == 'atk' and av - g.atk(t) >= hp: return (a, t)
         return None
@@ -483,7 +483,7 @@ class HeuristicAI:
             plan = []
             for a in attackers:
                 av = g.atk(a)
-                if g.can_direct(a) and not (a.flags.get('attack_all') and g.battle_cards(1 - p)):
+                if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
                     plan.append((av + 500, a, None))
                 for t in g.attack_targets(a):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
@@ -507,7 +507,7 @@ class HeuristicAI:
     def max_attacks(self, g, m):
         n = 1 + m.extra_attacks
         if g.rule('double_attack', m): n += 1   # 용기의 전사 2번: 「2회 공격할 수 있다」
-        if m.flags.get('attack_all'):
+        if g.cont_flag(m, 'attack_all'):   # [지속] — 무효가 되면 적용하지 않는다 (사용자 답변 2026-10-22)
             t, k = m.flags.get('attack_all_cap', (None, 0))
             n = max(n, k if t == g.turn else len(g.monsters(1 - m.controller)))
         return n
