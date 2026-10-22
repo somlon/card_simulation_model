@@ -13,6 +13,7 @@ if [ "$HOOK_SOURCE" = "compact" ]; then
   echo "① 그동안의 작업을 모두 작업 브랜치에 커밋 · 푸시 ② origin/default 의 workflow.md 「진행 중」 첫 항목 갱신"
   echo "③ 같은 클라우드 환경 · 같은 권한 모드로 새 세션을 만들어 workflow.md 진행 중 첫 항목을 이어서 하고 같은 매시 루틴을 만들라고 지시"
   echo "④ 새 세션이 루틴을 만든 것을 확인하면 이 세션의 옛 루틴을 끈다(update_trigger enabled=false)"
+  echo "⑤ 채팅창에 보내는 출력의 마지막에 새 세션(제목 · ID · 이어서 할 일)을 열었다고 보고한다 (R7)"
   echo
 fi
 
