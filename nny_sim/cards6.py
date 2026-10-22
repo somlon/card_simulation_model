@@ -261,6 +261,7 @@ def _(c):
     def on_ev(g, src, ev):
         p = src.controller; q = 1 - p
         if ev['kind'] != 'phase' or ev['phase'] != '준비' or g.turn_player != q: return
+        if not g.cont_use(src, 1, '턴 시작 시 처리'): return   # 1번 [지속] — 1턴 1번, 주인이 고른다 (사용자 답변 2026-10-22)
         ts = talismans(g, q)
         if ts or not g.p[q].hand:   # 상대가 고른다 — 자기 필드의 부적이 있으면 퇴마 카운터(저주인형 파괴 자원), 없으면 패 1장
             g.L(f'판단[{g.pname(q)}] 저주 - 탐욕: 퇴마 카운터 선택', 'decision')
@@ -307,6 +308,7 @@ def _(c):
 def _(c):
     def on_ev(g, src, ev):
         if ev['kind'] != 'phase' or ev['phase'] != '준비': return
+        if not g.cont_use(src, 1, '턴 시작 시 처리'): return   # 1번 [지속] — 1턴 1번, 주인이 고른다 (사용자 답변 2026-10-22)
         p = src.controller
         cands = [x for x in g.deck_cards(p) if DOLL_MON(x) and g.can_special(x, p)]
         if cands:

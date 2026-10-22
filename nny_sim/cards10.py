@@ -574,6 +574,7 @@ def _(c):
         if x.controller != q or not x.is_monster() or not g.on_field(x) or not x.faceup: return 0
         return 100 * sum(1 for y in g.field_cards(q) if y.faceup and DBC(y))
     c.atk_mod = am
+    c.cont_nums = {'atk_mod': 2}   # 2번 [지속] — 1턴 1번(전투 1회), 주인이 고른다 (Game.battle_mods, 사용자 답변 2026-10-22)
     def sc1(g, c, p, ev):
         ps = pool(g, p)
         xs = cheapest(g, p, ps, 2)
@@ -605,6 +606,8 @@ def _(c):
     c.rules = {'no_effect_damage': no_eff_dmg,
                # 2번 「자신은 상대의 효과를 받지 않는다」를 플레이어 내성으로 — 다른 테마의 플레이어 대상 [지속](데스 칠 드래곤 2번 등)이 확인한다
                'player_immune': lambda g, src, q: q == src.controller and has_db_spell(g, q)}
+    # 2번 [지속] 1턴 1번 (사용자 답변 2026-10-22): 효과 대미지를 막을 때 횟수를 쓴다(Game.damage). 플레이어 대상 [지속](player_immune)은 남아 있는 동안 적용
+    c.cont_nums = {'rule:no_effect_damage': 2, 'rule:player_immune': 2}
     db_mon(c, [negate_resp(1), hand_ss(3)])
 
 

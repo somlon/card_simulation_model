@@ -21,7 +21,14 @@ def grp(x, name):
     「기적의 영웅」처럼 효과로 다른 카드군으로도 취급되는 카드는 flags['also_groups']"""
     gs = x.d.get('groups')
     if gs is None: return name in x.name
-    return name in gs or (name in x.flags.get('also_groups', ()) and x.zone in ('m', 'shared'))   # 「필드의 이 카드는 … 로도 취급」
+    return name in gs or (name in x.flags.get('also_groups', ()) and also_ok(x))   # 「필드의 이 카드는 … 로도 취급」
+
+def also_ok(x):
+    """[지속] 「필드의 이 카드는 … 카드로도 취급한다」가 지금 적용되는가: 앞면으로 필드에 있고 무효가 아니며(사용자 답변 2026-10-22),
+    그 [지속]을 이 턴에 이미 적용하지 않았을 때(Game.cont_use가 남기는 flags['cont_spent'] — 1턴 1번)"""
+    n = (getattr(x, 'cont_nums', None) or {}).get('flag:also_groups')
+    neg = x.negated or bool(x.flags.get('perma_neg')) or any(e.flags.get('negates_host') for e in x.equips)
+    return x.zone in ('m', 'shared') and x.faceup and not neg and n not in x.flags.get('cont_spent', ())
 
 class Impl:
     pool = POOL
@@ -54,6 +61,7 @@ def value(g, c):
     if c.is_monster(): return 1 + g.atk(c) / 1000 + (1.5 if c.level >= 8 else 0)
     if c.type == '필드': return 2.2
     if c.d.get('subtype') == '지속' or c.equip_to: return 1.8
+    if c.type == '스킬': return 2.5   # 무효 효과의 대상 (사용자 답변 2026-10-22 — 그 턴 종료 시까지)
     return 1.2 if c.faceup else 1.5
 def best(g, cands, p, purpose='remove'):
     return g.p[p].ai.pick_target(g, p, cands, purpose) if cands else None
@@ -226,15 +234,15 @@ def _(c):
 
 @card('번성충-넓적배사마귀')
 def _(c):
-    """2026-10-08 텍스트: 1. [신속] 상대 필드의 몬스터 1장을 대상으로 하고 발동. 이 카드를 패에서 특수소환한다.
-    그 카드를 장착카드로 취급하여 이 카드에 장착한다. (맹세 제약 문구 없음)
+    """1. [신속] 상대 필드의 몬스터 1장을 대상으로 하고 발동. 이 카드를 패에서 특수소환한다.
+    그 카드를 장착카드로 취급하여 이 카드에 장착한다. + 다른 번성충과 같은 맹세 제약 (사용자 지시 2026-10-22 텍스트 추가)
     ASSUME: 장착된 상대 몬스터는 자신 마법 존의 장착 카드(장착 마법 취급)가 되고, 이 카드가 필드를 벗어나면 규칙에 따라 묘지(원래 주인)로 간다"""
     bsc_common(c)
     def cands(g, p): return [m for m in g.monsters(1 - p) if not g.immune(m, p)]
     def cost(g, c, p, l):
         cs = cands(g, p)
         if not cs: return False
-        l.ctx['t'] = best(g, cs, p, 'steal'); g.L(f'대상: {l.ctx["t"]}')
+        l.ctx['t'] = best(g, cs, p, 'steal'); g.L(f'대상: {l.ctx["t"]}'); oath(g, p)
     def res(g, c, p, l):
         t = l.ctx.get('t')
         if t is None or c.zone != 'hand' or not g.special_summon(c, p): return
@@ -355,6 +363,7 @@ def _(c):
         pick = g.p[p].ai.breeding_pick(g, p, cands)
         g.L(f'번식지 처리: {pick} 패에 넣음'); g.to_hand(pick); g.shuffle(p)
     c.end_process = end_process
+    c.cont_nums = {'end_process': 1}   # 1번 [지속] — 1턴 1번, 주인이 고른다 (Game.cont_use, 사용자 답변 2026-10-22)
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True,
                         score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.name == c.name and g.fieldz.controller == p) else 50, threat=600)]
 
@@ -366,6 +375,7 @@ def _(c):
         n = sum(1 for y in g.field_cards(p) if y.has('번성충')) + sum(1 for y in g.p[p].grave if y.has('번성충'))
         return 100 * n
     c.atk_mod = mod
+    c.cont_nums = {'atk_mod': 1}   # 1번 [지속] 공격력 증감 — 1턴 1번(전투 1회), 주인이 고른다 (Game.battle_mods)
 
 
 # ═══════════════════════ 공용 ═══════════════════════
@@ -477,6 +487,7 @@ def _(c):
 def _(c):
     effect_only(c)
     c.flags['attack_all'] = True   # 3번 [지속] 상대 몬스터 전부에 공격 선언 (2026-10-22 텍스트에서 번호 +1) — 무효면 적용 안 함(Game.cont_flag)
+    c.cont_nums = {'flag:attack_all': 3}   # 1턴 1번 — 기본 횟수를 넘는 공격을 처음 할 때 적용 (Game.attack)
     def res3(g, c, p, l):
         t = best(g, targets_of(g, p, opp_cards(g, p)), p)
         if t: g.banish(t); g.L(f'{t} 제외')
@@ -639,7 +650,7 @@ def _(c):
         t = l.ctx.get('t')
         if t and g.on_field(t) and t.controller == 1 - p: g.L(f'{t} 덱으로'); g.to_deck(t)
     def res2(g, c, p, l):
-        t = best(g, targets_of(g, p, [x for x in opp_cards(g, p) if x.faceup and not g.is_neg(x)]), p, 'negate')
+        t = best(g, targets_of(g, p, [x for x in g.neg_cands(1 - p) if x.faceup and not g.is_neg(x)]), p, 'negate')   # 상대 스킬도 (무효 효과)
         if t and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
     arts(c, lambda g, c, p, ev: (bool(own_mon(g, p, CIEL)) or g.rule('ciel_cost_free', p, c)) and bool(targets_of(g, p, opp_cards(g, p))), cost1, res1,
          lambda g, c, p: mon(g, SIA, p) and bool(opp_cards(g, p)), res2, sc1=45, sc2=25)
@@ -663,7 +674,7 @@ def _(c):
         cs = [x for x in g.field_cards(p) if x.has('시아') and x.faceup and x is not c]
         m = sorted(cs, key=lambda x: (not x.is_monster(), x.type == '필드', x.flags.get('effect_only', False)))[0]
         g.L(f'코스트: {m} 덱으로'); g.to_deck(m, ('cost', c))
-        l.ctx['t'] = field_pick(g, p, 'negate', targets_of(g, p, [x for x in g.all_field() if x is not c]))   # 「필드의 카드를 1장 대상으로」: 자신 카드 포함
+        l.ctx['t'] = field_pick(g, p, 'negate', targets_of(g, p, [x for x in g.neg_cands() if x is not c]))   # 「필드의 카드를 1장 대상으로」: 자신 카드 · 스킬 포함(무효 효과)
     def res1(g, c, p, l):
         t = l.ctx.get('t')
         if t and g.on_field(t) and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
@@ -818,6 +829,7 @@ def _(c):
             if pred(x) and any(pred(m) for m in g.monsters(p) if m is not x): return True
         return False
     c.rules = {'no_special': lim, 'field_limit': lim}
+    c.cont_nums = {'rule:no_special': 1, 'rule:field_limit': 1}; c.cont_forced = {1}   # 1턴 1번, 주인에게 불리하므로 고르지 않고 적용 (사용자 답변 2026-10-22)
     def res2(g, c, p, l):
         cands = [x for x in g.deck_cards(p) if x.has('아츠') and x.type == '마법']
         if cands and g.free_s(p):

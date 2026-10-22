@@ -484,12 +484,17 @@ def take_control(g, t, p):
 
 def allin_effects():
     """올인 2번 [지속]: 자신 필드의 「포커짐승들」 몬스터가 얻는 [신속] 2개 (부여 효과 번호 21 · 22)"""
-    def holder_ok(g, c, p):
-        return allin(g, p) and c.is_monster() and grp(c, PK) and g.on_field(c) and c.controller == p and c.faceup
+    def holder_ok(g, c, p):   # 올인 2번 [지속] 1턴 1번 — 이 턴에 부여 효과를 이미 발동했으면 더 얻지 않는다 (사용자 답변 2026-10-22)
+        sk = g.p[p].skill
+        return (allin(g, p) and g.cont_ready(sk, g.cont_num(sk, 'grant')) and c.is_monster() and grp(c, PK) and g.on_field(c)
+                and c.controller == p and c.faceup)
+    def use_grant(g, p):
+        sk = g.p[p].skill
+        return g.cont_use(sk, g.cont_num(sk, 'grant'), '부여 효과 발동', choose=False)
     def cond_pair(g, c, p, ev): return holder_ok(g, c, p) and plan(g, c, p, 'pair') is not None
     def cost_pair(g, c, p, l):
         r = plan(g, c, p, 'pair', fresh=True)
-        if r is None: return False
+        if r is None or not use_grant(g, p): return False
         g.L('원페어 완성'); pay(g, c, p, r[1], 'release')
     def res_pair(g, c, p, l):
         ts = steal_cands(g, p)
@@ -502,7 +507,7 @@ def allin_effects():
     def cond_triple(g, c, p, ev): return holder_ok(g, c, p) and plan(g, c, p, 'triple') is not None
     def cost_triple(g, c, p, l):
         r = plan(g, c, p, 'triple', fresh=True)
-        if r is None: return False
+        if r is None or not use_grant(g, p): return False
         g.L('트리플 완성'); pay(g, c, p, r[1], 'release')
     def res_triple(g, c, p, l):
         cs = deck_summons(g, p, (), c)
@@ -956,4 +961,5 @@ def _(c):
 def _(c):
     # 1번: 라운드 시작 시의 패 7장 (engine.setup의 규칙 'hand7'). 2번: 부여 효과는 각 포커짐승들 카드의 allin_effects (자신 필드의 몬스터일 때)
     c.rules = {'hand7': lambda g, src, p: p == src.controller}
+    c.cont_nums = {'grant': 2}   # 2번 [지속] 효과 부여 — 1턴 1번 (allin_effects.holder_ok · use_grant)
     c.effects = []

@@ -481,7 +481,7 @@ def _(c):
     c.rules = {'indestructible': lambda g, src, x, battle: battle and x is src and guarded(g, src)}
     def on_ev(g, src, ev):
         """2번 [지속]: 상대가 몬스터를 소환할 때마다 200 대미지"""
-        if ev['kind'] == 'summon' and ev.get('player') == 1 - src.controller:
+        if ev['kind'] == 'summon' and ev.get('player') == 1 - src.controller and g.cont_use(src, 2, '상대 소환 대미지'):   # 1턴 1번, 주인이 고른다
             g.damage(1 - src.controller, 200, f'{src.name} 2번')
     c.on_event = on_ev
     def ms(g, p): return [x for x in g.deck_cards(p) if mourner(x) and g.can_special(x, p)]
