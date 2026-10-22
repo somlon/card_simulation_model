@@ -261,8 +261,8 @@ class Game:
     def is_neg(self, c): return c.negated or bool(c.flags.get('perma_neg')) or any(e.flags.get('negates_host') for e in c.equips)
     def cont_active(self, c):
         """c 자신의 [지속]이 지금 적용되는가: [지속] 키워드의 적용 범위는 필드에 있을 때다(사용자 답변 2026-10-22) — 앞면으로 필드에 있고 무효가 아닐 때.
-        스킬 존의 스킬은 필드가 아니지만 [지속]이 적용된다(continuous_sources와 같음). 소환 조건(「…로만 소환할 수 있다」 · 「…해야만 특수소환할 수 있다」)은
-        필드 밖에서 판정하는 규칙이라 이것을 쓰지 않는다"""
+        스킬 존의 스킬은 필드가 아니지만 [지속]이 적용된다(continuous_sources와 같음). 몬스터만의 소환 조건은 [제약] 키워드(2026-10-22 텍스트 —
+        「…로만 소환할 수 있다」 · 「…해야만 특수소환할 수 있다」 · 「…하는 것으로 일반소환할 수 있다」)로 [지속]과 나뉘며, 필드 밖에서 판정하므로 이것을 쓰지 않는다"""
         if c.zone == 'skill': return not c.negated
         return self.on_field(c) and c.faceup and not self.is_neg(c)
     def continuous_sources(self):
