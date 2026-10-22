@@ -276,14 +276,16 @@ class Game:
 
     # ── [지속] 1턴 횟수 (사용자 답변 2026-10-22) ──
     # 횟수 이야기가 텍스트에 없는 [지속]은 1턴 1번 적용: 효과가 실제로 적용되는 순간마다 카드의 주인이 적용할지 고르고, 한 번 적용하면 그 턴에는 더 적용되지 않는다.
-    # 주인에게 불리한 [지속](유지비 · 제한 · 상대의 직접공격 허용)은 고르지 않고 적용한다(카드 구현의 c.cont_forced).
+    # 주인에게 불리한 [지속](유지비 · 제한 · 상대의 직접공격 허용 — 카드 구현의 c.cont_forced)은 고르지 않고, 1턴 횟수로 꺼지지도 않는다:
+    # 카드가 무효가 될 때까지 늘 적용된다(사용자 지시 2026-10-22 — 솔루나 아츠 1번처럼 멈추려면 카드를 무효로 하는 효과를 써야 한다).
+    # 체인에 응해 한 효과의 발동을 무효로 해도(Game.negate) 그 카드의 다른 번호 효과는 무효가 되지 않는다.
     # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
     # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
     # (블러드문 리퍼 3번 「상대 몬스터 전부에 공격 선언을 할 수 있다」 — 한 번의 적용이 상대 몬스터 전부에 대한 공격 허락, 사용자 지시 2026-10-22).
     def cont_limit(self, c, num):
         """c의 num번 효과가 1턴 1번 [지속]이면 1, 아니면 None (카드 텍스트로 판정)"""
-        if num is None: return None
+        if num is None or num in (getattr(c, 'cont_forced', None) or ()): return None
         cache = self.__dict__.setdefault('_cont_lim', {})
         k = (c.name, num)
         if k not in cache:
@@ -338,13 +340,15 @@ class Game:
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
         srcs += [self.p[i].skill for i in (0, 1) if self.p[i].skill and not self.p[i].skill.negated]
         return srcs
-    def rule(self, key, *a, use=False, choose=None, why=''):
+    def rule(self, key, *a, use=False, choose=None, why='', unlimited=False):
         """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True. 1턴 1번 [지속](c.cont_nums의 'rule:key')은 이 턴에 남아 있을 때만 본다.
-        use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다)"""
+        use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다).
+        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다)"""
         for src in self.continuous_sources():
             f = getattr(src, 'rules', {}).get(key)
             if not f: continue
             n = self.cont_num(src, 'rule:' + key)
+            if unlimited and self.cont_limit(src, n) is not None: continue
             if not self.cont_ready(src, n): continue
             if f(self, src, *a) and (not use or self.cont_use(src, n, why or key, choose)): return True
         return False
@@ -483,8 +487,8 @@ class Game:
     def to_hand(self, c, cause=None, p=None):
         cause = cause or ('effect', self.src)
         if self.blocked(c, cause): return
-        if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p):
-            self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음', 'sys'); return
+        if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p, use=True, why='덱에서 패에 넣지 못하게 함'):
+            self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음 (그 효과는 무효가 아님 — 횟수는 그대로 소모)', 'sys'); return
         if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
@@ -694,7 +698,7 @@ class Game:
         if getattr(self, 'no_damage', {}).get(1 - p, -1) >= self.turn and src != '공유 존 마커' and not src.startswith('자해'):
             self.L(f'{self.pname(1-p)}은(는) 이 턴 대미지를 줄 수 없음 — {amt} 무효', 'sys'); return
         # [지속] 규칙 'no_effect_damage'(p, src): 「자신은 상대의 효과를 받지 않는다」 — 상대의 효과 대미지를 받지 않는다
-        # (데이터버그 버터플라이 2번, 2026-10-12 추가 — 출처 판정은 규칙 쪽. 규칙이 없으면 그대로)
+        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 예전 데이터버그 버터플라이 2번, 2026-10-22 텍스트 변경으로 지금은 쓰는 카드 없음)
         if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src, use=True, why='효과 대미지를 받지 않음'):
             self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
@@ -791,7 +795,8 @@ class Game:
     def search_cands(self, p, pred, which=('main', 'upper'), source=None):
         """서치 후보: 덱에서 pred를 만족하고, 서치 효과의 주체 카드와 이름이 다른 카드 (사용자 재정)"""
         src = source or self.src
-        if self.rule('no_deck_to_hand', p): return []   # 덱에서 패에 넣을 수 없다 [지속] — 서치 후보 없음
+        if self.rule('no_deck_to_hand', p, unlimited=True): return []   # 덱에서 패에 넣을 수 없다 [지속](횟수 제한 없음) — 서치 후보 없음.
+        # 1턴 1번인 금지(데이터버그 버터플라이 2번)는 발동을 막지 않고 처리 때 Game.to_hand가 한 번 막는다 (사용자 지시 2026-10-22)
         ok = self.same_name_ok() and source is None
         return [c for c in self.deck_cards(p, which) if pred(c) and (ok or not (src is not None and c.name == src.name))]
 
@@ -804,8 +809,9 @@ class Game:
         cands = self.search_cands(p, pred, which, source)
         if not cands: self.L(f'{why}: 대상 없음', 'sys'); return None
         c = self.p[p].ai.pick_search(self, p, cands, why)
-        self.L(f'{self.pname(p)} {why}: {c} 패에 넣음')
-        self.to_hand(c); self.shuffle(p); return c
+        self.to_hand(c); self.shuffle(p)
+        if c.zone != 'hand': return None   # [지속]에 막혔다 (Game.to_hand)
+        self.L(f'{self.pname(p)} {why}: {c} 패에 넣음'); return c
 
     def same_name_ok(self):
         """텍스트에 같은 이름 카드를 가져오거나 특수소환한다는 문구 · 예외 조항이 있는 효과 (사용자 재정)"""
