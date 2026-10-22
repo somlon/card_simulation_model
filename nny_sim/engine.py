@@ -164,8 +164,9 @@ class Game:
     MOD_IMMUNE_KEYS = ('immune_except', 'immune_others', 'immune_except_group', 'immune_all_until', 'immune_opp_until', 'immune_opp_perm',
                        'untargetable_opp', 'immune_opp_untargeted')
     def mod_applies(self, c, src):
-        """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드는 그대로, 내성 플래그가 있으면 Game.immune으로 판정"""
-        if src is c or self.is_neg(c) or not any(k in c.flags for k in self.MOD_IMMUNE_KEYS): return True
+        """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드 · 뒷면 카드(내성 비활성, Q45)는 그대로,
+        내성 플래그가 있으면 Game.immune으로 판정"""
+        if src is c or self.is_neg(c) or not c.faceup or not any(k in c.flags for k in self.MOD_IMMUNE_KEYS): return True
         return not self.immune(c, src.controller, src)
     def atk(self, c):
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
@@ -185,8 +186,11 @@ class Game:
         카드 자신의 [지속]이 정한 내성(무효화되면 사라짐):
           flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
           flags['immune_except_opp'] — immune_except의 예외 카드도 상대(by ≠ 컨트롤러)의 것만 받는다
-          flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다"""
-        if self.on_field(c) and not self.is_neg(c):
+          flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다
+        뒷면 카드는 대상 지정 효과의 대상이 되지 않는다(정본 1-1, 사용자 답변 2026-10-22 Q45) — 자신 · 상대의 효과 모두, 대상을 지정하지 않는 효과는 받는다.
+        뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45)"""
+        if self.on_field(c) and not c.faceup and by is not None and self.targeting(by): return True
+        if self.on_field(c) and c.faceup and not self.is_neg(c):
             ex = c.flags.get('immune_except')
             # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
             if ex is not None and src is not c and not (src is not None and src.name == ex and (not c.flags.get('immune_except_opp') or by != c.controller)): return True
@@ -195,7 +199,7 @@ class Game:
             if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
-        if self.on_field(c) and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
+        if self.on_field(c) and c.faceup and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
             # 발동 판정(Game.probing) 중에는 그 효과 문장의 「대상으로 하고」(Effect.targets_text — cards.Impl.attach)로 대상 지정 여부를 본다.
             # 문장을 모르면(부여 효과 등) 가장 엄격하게 — 대상 지정 효과는 마르모르를 대상으로 할 수 있다 (사용자 답변 2026-10-21)
             probe = getattr(self, 'probing', None) == by
@@ -225,6 +229,14 @@ class Game:
         l = getattr(self, 'costing', None)
         return l is not None and l.player == by
 
+    def targeting(self, by):
+        """by가 지금 대상 지정 효과의 대상을 고르는 중인가: 그 발동의 코스트 단계이거나(Game.costing) 발동 판정 중이고(Game.probing),
+        그 효과 문장에 「대상으로 하고」가 있다(Effect.targets_text — 모르면 대상 지정으로 본다). 「고르고」 효과 · 코스트 지불은 대상 지정이 아니다"""
+        l = getattr(self, 'costing', None)
+        if l is not None and l.player == by: return getattr(l.eff, 'targets_text', None) is not False
+        if getattr(self, 'probing', None) == by: return getattr(getattr(self, 'src_eff', None), 'targets_text', None) is not False
+        return False
+
     def targeted_by(self, c, by):
         """c가 by의 효과의 대상인가: 그 발동의 코스트 단계이거나, 처리 중인 by의 효과가 발동 시 c를 골라 두었다(link_targets)"""
         if self.targeting_now(by): return True
@@ -234,7 +246,7 @@ class Game:
     def stays(self, c, cause, destroyed=False):
         """「파괴 이외의 방법으로 필드를 벗어나지 않는다」(flags['leave_only_destroy'], callable 가능): 효과 · 코스트 · 규칙 처리(공유 존 마커 페널티 등)로
         묘지 · 덱 · 패 · 제외로 옮기려 하면 남는다. 파괴만 막지 않는다 (사용자 답변 2026-10-21 — 마커 페널티도 막는다)"""
-        if destroyed or not self.on_field(c) or self.is_neg(c) or not self.flag(c, 'leave_only_destroy'): return False
+        if destroyed or not self.on_field(c) or not c.faceup or self.is_neg(c) or not self.flag(c, 'leave_only_destroy'): return False   # 뒷면이면 비활성 (Q45)
         self.L(f'{c}은(는) 파괴 이외의 방법으로 필드를 벗어나지 않음', 'sys'); return True
 
     def must_attack(self, m):
@@ -370,8 +382,7 @@ class Game:
         elif z == 'skill': pass
         was_field = z in ('m', 's', 'shared', 'fieldz')
         if was_field:
-            c.counters = {}; c.mods = []; c.negated = False; c.flags.pop('atk_set', None)
-            c.attacks_made = 0; c.extra_attacks = 0
+            self.clear_applied(c); c.attacks_made = 0
             if c.equip_to:
                 if c in c.equip_to.equips: c.equip_to.equips.remove(c)
                 self.on_equip_leave(c)
@@ -384,16 +395,23 @@ class Game:
                     self.L(f'장착 대상 {c} 이탈 → {e} 묘지로', 'sys')
                     self.send_grave(e, cause=('rule', None))
             c.equips = []
-            c.flags.pop('as_spell', None); c.flags.pop('perma_neg', None)
-            for k in ('immune_opp_perm', 'stay', 'negates_host', 'immune_all_until', 'immune_opp_until', 'no_release_until',
-                      'battle_indestr_until', 'no_pos_change_until', 'no_attack_until'): c.flags.pop(k, None)
-            # 필드에 있는 동안만 부여된 특성 되돌리기 (표시목 · 짐승조커 · 올인의 레벨/속성/몬스터 취급, 포커짐승들 2026-10-12 추가):
-            # flags['clear_on_leave'] = {플래그: 부여 전 값(None이면 삭제)} — 이 플래그가 없는 카드는 그대로
-            for k, v in (c.flags.pop('clear_on_leave', None) or {}).items():
-                if v is None: c.flags.pop(k, None)
-                else: c.flags[k] = v
         c.zone = None
         return was_field
+
+    def clear_applied(self, c):
+        """c에 적용되어 있던 효과를 모두 없앤다 — 필드를 벗어날 때(_remove)와 몬스터가 뒷면이 될 때(set_face_down) 공통.
+        뒷면이 되기 전에 적용된 효과는 다시 앞면이 되어도 없던 것이 된다 (사용자 답변 2026-10-22 Q45 — 기적의 영웅 3 · 4번으로 깎인
+        공격력/수비력은 뒷면 → 앞면이면 원래대로). 장착 관계는 _remove만 정리한다(뒷면이 될 때 장착은 그대로 — ASSUME, set_face_down)"""
+        c.counters = {}; c.mods = []; c.negated = False; c.flags.pop('atk_set', None)
+        c.extra_attacks = 0
+        c.flags.pop('as_spell', None); c.flags.pop('perma_neg', None)
+        for k in ('immune_opp_perm', 'stay', 'negates_host', 'immune_all_until', 'immune_opp_until', 'no_release_until',
+                  'battle_indestr_until', 'no_pos_change_until', 'no_attack_until'): c.flags.pop(k, None)
+        # 필드에 있는 동안만 부여된 특성 되돌리기 (표시목 · 짐승조커 · 올인의 레벨/속성/몬스터 취급, 포커짐승들 2026-10-12 추가):
+        # flags['clear_on_leave'] = {플래그: 부여 전 값(None이면 삭제)} — 이 플래그가 없는 카드는 그대로
+        for k, v in (c.flags.pop('clear_on_leave', None) or {}).items():
+            if v is None: c.flags.pop(k, None)
+            else: c.flags[k] = v
 
     def on_equip_leave(self, eq):
         f = getattr(eq, 'on_unequip', None)
@@ -514,7 +532,7 @@ class Game:
 
     def no_release(self, c):
         """[지속] 「릴리스할 수 없다 · 릴리스되지 않는다」(flags['no_release'], callable 가능) — 필드 · 무효 아님 · 1턴 횟수가 남았을 때"""
-        return bool(self.flag(c, 'no_release') and self.on_field(c) and not self.is_neg(c) and self.cont_ready(c, self.cont_num(c, 'flag:no_release')))
+        return bool(self.flag(c, 'no_release') and self.on_field(c) and c.faceup and not self.is_neg(c) and self.cont_ready(c, self.cont_num(c, 'flag:no_release')))
 
     def tribute(self, c, cause=None):
         if not self.releasable(c) and not (self.no_release(c) and c.flags.get('no_release_until', -1) < self.turn
@@ -726,7 +744,12 @@ class Game:
         self.p[p].hp += amt; self.L(f'{self.pname(p)} HP {amt} 회복 → {self.p[p].hp}')
 
     # ── 드로우 / 서치 ──
-    def draw(self, p, n=1, deck=None):
+    def draw(self, p, n=1, deck=None, cause=None):
+        """cause: 기본은 효과(('effect', 주체)) — 턴 시작 드로우 · 시작 패 · 멀리건은 ('rule', None).
+        「효과로 덱에서 패에 넣을 수 없다」([지속] 규칙 'no_deck_to_hand')는 효과로 하는 드로우도 막는다 (사용자 답변 2026-10-22 Q46)"""
+        cause = cause or ('effect', self.src)
+        if cause[0] == 'effect' and self.rule('no_deck_to_hand', p, use=True, why='효과로 덱에서 패에 넣지 못하게 함 (드로우)'):
+            self.L(f'{self.p[p].name}: 효과로 드로우할 수 없음 (덱에서 패에 넣을 수 없다)', 'sys'); return
         pl = self.p[p]
         for _ in range(n):
             if deck == 'main': src = pl.main
@@ -920,6 +943,9 @@ class Game:
         if e.cost: self.probing = p
         try:
             if not self.can_act(p, c, e, ev): return False
+            # 자신이 드로우하는 효과(Effect.self_draw — 텍스트): 「효과로 덱에서 패에 넣을 수 없다」(횟수 제한 없음)면 발동할 수 없다 — 서치와 같음
+            # (Game.search_cands, 사용자 답변 2026-10-22 Q46 · 2026-10-22 버터플라이 2번 지시)
+            if getattr(e, 'self_draw', False) and self.rule('no_deck_to_hand', p, unlimited=True): return False
             if not self.cost_extra_ok(p, c, e): return False   # 두플리카토르로 2배가 된 코스트를 낼 수 없으면 발동 불가
             if not self.transfer_ok(p, c, e): return False     # 델레가토르로 상대가 대신 낼 수 없는 코스트면 발동 불가
         finally:
@@ -1212,11 +1238,12 @@ class Game:
         """「뒷면 표시로 한다」 효과 (사용자 재정 2026-10-06): 표시 형식은 그대로 두고 뒷면으로 — 공격 표시 몬스터는
         뒷면 공격 표시, 수비 표시 몬스터는 뒷면 수비 표시가 된다. 텍스트가 「뒷면 수비 표시로」를 정하면 pos='def'를 넘긴다.
         뒷면 몬스터는 [지속]이 적용되지 않는다(continuous_sources는 앞면만). 뒷면이 되면 놓여 있던 카운터는 전부 사라진다(정본 6-4).
-        장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
+        뒷면 몬스터 자신의 효과는 모두 비활성이고, 뒷면이 되기 전에 적용된 효과(공격력 · 수비력 증감 · 무효 · 부여된 특성 · 내성 등)는
+        다시 앞면이 되어도 없던 것이 된다 — Game.clear_applied (사용자 답변 2026-10-22 Q45). 장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
         cause = cause or ('effect', self.src)
         if not self.on_field(c) or not c.is_monster() or not c.faceup: return False
         if self.blocked(c, cause): return False
-        c.faceup = False; self.clear_counters_facedown(c)
+        c.faceup = False; self.clear_counters_facedown(c); self.clear_applied(c)
         self.L(f'{c} 뒷면 {"공격" if c.pos == "atk" else "수비"} 표시로')
         self.emit('face_down', card=c, cause=cause)
         return True
@@ -1297,7 +1324,7 @@ class Game:
         self.L(f'━━ {self.turn}턴 — {pl.name} ━━ HP {self.p[0].name} {self.p[0].hp} / {self.p[1].name} {self.p[1].hp}', 'turn')
         self.set_phase('준비')
         if not (self.turn == 1):   # 선공 1턴째에만 드로우 생략 (§5-1)
-            self.draw(tp, 1)
+            self.draw(tp, 1, cause=('rule', None))
         self.triggers()
         self.set_phase('진행'); self.open_window()
         pl.ai.main_phase(self, tp, '진행')
@@ -1404,8 +1431,8 @@ class Game:
                 # 다시 뽑을 때 메인 · 상급 배분을 바꿔도 된다 (§4 STEP 6)
                 nm = pl.ai.mulligan_split(self, i, back)
                 nm = max(len(back) - len(pl.upper), min(nm, len(back), len(pl.main))); nu = len(back) - nm
-                for _ in range(nm): self.draw(i, 1, 'main')
-                for _ in range(nu): self.draw(i, 1, 'upper')
+                for _ in range(nm): self.draw(i, 1, 'main', cause=('rule', None))
+                for _ in range(nu): self.draw(i, 1, 'upper', cause=('rule', None))
                 self.L(f'{pl.name} 멀리건 {len(back)}장 ({", ".join(map(str, back))}) → 패: {", ".join(map(str, pl.hand))}', 'decision')
             else: self.L(f'{pl.name} 멀리건 안 함', 'decision')
         self.opening = [[c.name for c in self.p[i].hand] for i in (0, 1)]
