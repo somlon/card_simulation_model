@@ -259,6 +259,12 @@ class Game:
         self.damage(p, amt, src)
 
     def is_neg(self, c): return c.negated or bool(c.flags.get('perma_neg')) or any(e.flags.get('negates_host') for e in c.equips)
+    def cont_active(self, c):
+        """c 자신의 [지속]이 지금 적용되는가: [지속] 키워드의 적용 범위는 필드에 있을 때다(사용자 답변 2026-10-22) — 앞면으로 필드에 있고 무효가 아닐 때.
+        스킬 존의 스킬은 필드가 아니지만 [지속]이 적용된다(continuous_sources와 같음). 소환 조건(「…로만 소환할 수 있다」 · 「…해야만 특수소환할 수 있다」)은
+        필드 밖에서 판정하는 규칙이라 이것을 쓰지 않는다"""
+        if c.zone == 'skill': return not c.negated
+        return self.on_field(c) and c.faceup and not self.is_neg(c)
     def continuous_sources(self):
         srcs = [c for c in self.all_field() if c.faceup and not self.is_neg(c) and not c.flags.get('as_spell')]
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
@@ -366,8 +372,9 @@ class Game:
         prev = c.zone; ctrl = c.controller
         fu = c.faceup   # 사건 키 was_faceup: 묘지로 보내지기 직전 앞면이었는가 (「뒷면 표시의 이 카드가 묘지로 보내졌을 경우」 — 던전마스터 깜짝상자, 2026-10-12 추가)
         redirect = getattr(c, 'grave_redirect', None)
+        redirect = bool(redirect and redirect(self, c))   # 옮기기 전 상태로 판정 — [지속]이면 필드에 있을 때만 적용 (Game.cont_active)
         was_field = self._remove(c)
-        if redirect and redirect(self, c):
+        if redirect:
             self.L(f'{c} 묘지 대신 덱으로 (카드 효과)', 'sys'); self._to_deck_raw(c)
             if was_field: self.emit('leave_field', card=c, prev=prev, ctrl=ctrl, cause=cause, dest='deck', was_faceup=fu)
             return

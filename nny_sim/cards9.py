@@ -60,7 +60,8 @@ ASSUME:
   발동하려면 자신의 덱에 「던전마스터 깜짝상자」가 있고 특수소환할 자리가 있어야 한다.
 - 트랩: 거짓 샘물 「카드를 패에 넣었을 때」 = 덱 · 묘지에서 효과로 패에 넣은 사건(added_to_hand — 드로우 제외, 사기 감지와 같음).
   「카드를 효과로 제거」 = 필드의 카드를 필드에서 벗어나게 함(파괴 · 묘지 · 제외 · 덱 · 패 · 효과에 의한 릴리스) — 코스트는 포함하지 않음.
-- 트랩 리페어 시스템: 「3장까지」는 AI가 최대한(덱으로 되돌릴 가치가 큰 순). 0장이어도 1장 드로우.
+- 트랩 리페어 시스템: 「3장까지」는 1 ~ 3장(최소 1장 — 사용자 답변 2026-10-22, 시골쥐 2번과 같은 규칙), AI가 최대한(덱으로 되돌릴 가치가 큰 순).
+  묘지에 「트랩」 카드가 없으면 발동하지 않는다. 체인 처리 중 묘지에서 사라져 0장이 되어도 1장 드로우(별도 문장).
 - 셔플! 2번은 처리 시 고른다(대상 지정 없음). 셔플! 3번은 레벨 5 이상의 몬스터 1장.
 
 - (검토 2026-10-13) 인페르노 드래곤이 양쪽 필드에 있으면 두 장의 [지속]을 동시에 적용한다(파괴 대상을 모두 모은 뒤 한꺼번에 파괴).
@@ -602,7 +603,7 @@ def _(c):
         for x in xs: g.to_deck(x, ('effect', c))
         if xs: g.shuffle(p); g.L(f'묘지의 「트랩」 카드 {len(xs)}장 덱으로: {", ".join(map(str, xs))}')
         g.draw(p, 1)
-    cond = lambda g, c, p, ev: bool(g.p[p].main or g.p[p].upper)
+    cond = lambda g, c, p, ev: bool(g.p[p].main or g.p[p].upper) and any(grp(x, TRAP) for x in g.p[p].grave)   # 「3장까지」: 최소 1장
     sc = lambda g, c, p, ev: 30 + 8 * min(3, sum(1 for x in g.p[p].grave if grp(x, TRAP)))
     c.effects = [Effect(1, 'ignition', ('hand', 'field'), spell_act=True, cond=cond, res=res, score=sc, threat=200,
                         label='묘지 「트랩」 3장까지 덱으로 · 1장 드로우'),
