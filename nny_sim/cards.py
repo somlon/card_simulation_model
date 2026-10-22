@@ -40,6 +40,8 @@ class Impl:
                 e.same_name_ok = True
             # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
             if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
+            # 대상 지정 효과인가 (발동 판정 중 내성 판정 — engine.Game.immune): 문장에 「대상으로 하고」가 있으면 대상 지정, 없으면 비대상
+            if line: e.targets_text = bool(_re.search(r'대상으로 하', line))
             # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
             if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
             e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)

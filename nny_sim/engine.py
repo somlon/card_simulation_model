@@ -147,6 +147,10 @@ class Game:
         if self.fieldz and self.fieldz.controller == p: out.append(self.fieldz)
         return out
     def field_cards(self, p): return self.monsters(p) + self.spells(p)
+    def battle_cards(self, p):
+        """전투에 참여하는 p의 카드: 몬스터 존 · 공유 존의 몬스터 + 효과로 몬스터로 취급되는 마법 · 필드 존의 앞면 카드(flags['as_monster'] —
+        표시목 · 올인 · 짐승조커). 몬스터로 취급되는 카드는 공격할 수 있고 공격 대상이 된다 (사용자 답변 2026-10-21)"""
+        return self.monsters(p) + [x for x in self.spells(p) if x.faceup and x.flags.get('as_monster') and x.is_monster()]
     def all_field(self): return self.field_cards(0) + self.field_cards(1)
     def on_field(self, c): return c.zone in ('m', 's', 'shared', 'fieldz')
     def exists(self, p_or_none, pred):
@@ -192,8 +196,12 @@ class Game:
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
         if self.on_field(c) and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
-            if self.flag(c, 'untargetable_opp') and (self.targeting_now(by) or getattr(self, 'probing', None) == by): return True   # 「상대 효과의 대상이 되지 않는다」
-            if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
+            # 발동 판정(Game.probing) 중에는 그 효과 문장의 「대상으로 하고」(Effect.targets_text — cards.Impl.attach)로 대상 지정 여부를 본다.
+            # 문장을 모르면(부여 효과 등) 가장 엄격하게 — 대상 지정 효과는 마르모르를 대상으로 할 수 있다 (사용자 답변 2026-10-21)
+            probe = getattr(self, 'probing', None) == by
+            tt = getattr(getattr(self, 'src_eff', None), 'targets_text', None) if probe else None
+            if self.flag(c, 'untargetable_opp') and (self.targeting_now(by) or (probe and tt is not False)): return True   # 「상대 효과의 대상이 되지 않는다」
+            if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by) and not (probe and tt): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
@@ -223,10 +231,9 @@ class Game:
         return l is not None and l.player == by and any(x is c for x in link_targets(l))
 
     def stays(self, c, cause, destroyed=False):
-        """「파괴 이외의 방법으로 필드를 벗어나지 않는다」(flags['leave_only_destroy'], callable 가능): 효과 · 코스트로 묘지 · 덱 · 패 · 제외로
-        옮기려 하면 남는다. 파괴와 규칙 처리(cause 'rule')는 막지 않는다 (ASSUME)"""
+        """「파괴 이외의 방법으로 필드를 벗어나지 않는다」(flags['leave_only_destroy'], callable 가능): 효과 · 코스트 · 규칙 처리(공유 존 마커 페널티 등)로
+        묘지 · 덱 · 패 · 제외로 옮기려 하면 남는다. 파괴만 막지 않는다 (사용자 답변 2026-10-21 — 마커 페널티도 막는다)"""
         if destroyed or not self.on_field(c) or self.is_neg(c) or not self.flag(c, 'leave_only_destroy'): return False
-        if cause and cause[0] == 'rule': return False
         self.L(f'{c}은(는) 파괴 이외의 방법으로 필드를 벗어나지 않음', 'sys'); return True
 
     def must_attack(self, m):
@@ -332,7 +339,9 @@ class Game:
         pl = self.p[old]
         if pl.hand:
             x = self.rng.choice(pl.hand); self.to_deck(x, ('rule', None)); self.L(f'  패 {x} 무작위로 덱으로', 'sys')
-        tgt = self.p[1 - old].ai.pick_target(self, 1 - old, self.field_cards(old), 'bounce')   # 기존 주인의 필드 카드 중에서
+        # 기존 주인의 필드 카드 중에서 — 「파괴 이외의 방법으로 필드를 벗어나지 않는」 카드(Game.stays)는 덱으로 보낼 수 없으므로 고르지 않는다
+        cands = [x for x in self.field_cards(old) if self.is_neg(x) or not self.flag(x, 'leave_only_destroy')]
+        tgt = self.p[1 - old].ai.pick_target(self, 1 - old, cands, 'bounce') if cands else None
         if tgt: self.L(f'  {self.pname(1-old)}가 {tgt} 선택 → 덱으로', 'sys'); self.to_deck(tgt, ('rule', None))
         self.damage(old, 1500, '공유 존 마커')
 
@@ -1087,7 +1096,7 @@ class Game:
     def blockers(self, p):
         """p 필드에서 상대의 직접공격을 막는 몬스터: 앞면 몬스터만. 상대 몬스터가 없거나 뒷면 몬스터뿐이면 직접공격할 수 있다
         (설계도 확정 2026-10-07 — 뒷면 몬스터는 공격 대상이 아니다, 정본 1-1)"""
-        return [m for m in self.monsters(p) if m.faceup]
+        return [m for m in self.battle_cards(p) if m.faceup]
 
     def can_direct(self, c):
         opp = 1 - c.controller
@@ -1111,7 +1120,7 @@ class Game:
         return True
 
     def attack_targets(self, c):
-        return [m for m in self.monsters(1 - c.controller) if m.faceup and not self.rule('no_battle_target', m)]   # 뒷면은 공격 대상 아님(정본 1-1)
+        return [m for m in self.battle_cards(1 - c.controller) if m.faceup and not self.rule('no_battle_target', m)]   # 뒷면은 공격 대상 아님(정본 1-1)
 
     def attack(self, a, target):
         p = a.controller; o = 1 - p
@@ -1168,7 +1177,7 @@ class Game:
         tp = self.turn_player; pl = self.p[tp]
         for x in self.p: x.opt = {}
         pl.normal_summons = 1
-        for c in self.monsters(0) + self.monsters(1):   # 영구 부여된 추가 공격(격투가 세레모니 재정, flags['perm_extra_attacks'])은 매 턴 다시 붙는다
+        for c in self.battle_cards(0) + self.battle_cards(1):   # 영구 부여된 추가 공격(격투가 세레모니 재정, flags['perm_extra_attacks'])은 매 턴 다시 붙는다
             c.attacks_made = 0; c.extra_attacks = c.flags.get('perm_extra_attacks', 0)
         self.snaps.append(dict(turn=self.turn, tp=tp, hp=[x.hp for x in self.p],
             field=[len(self.field_cards(i)) for i in (0, 1)], mons=[len(self.monsters(i)) for i in (0, 1)],
@@ -1191,12 +1200,20 @@ class Game:
         pl.ai.main_phase(self, tp, '정비')
         # 종료 단계 (§5-5): a 「턴 종료 시」 효과 → b 패 7장 → c 「턴 종료 시까지」 해제 → d 턴 종료
         self.set_phase('종료')
-        for c in self.continuous_sources():   # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다)
+        # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다).
+        # 「턴 종료 시」 트리거와의 처리 순서는 그 카드의 플레이어가 정한다(c.end_order(g, c) → 'after'면 트리거 뒤에, 사용자 답변 2026-10-21)
+        late = []
+        for c in self.continuous_sources():
             f = getattr(c, 'end_process', None)
-            if f and (self.on_field(c) or c.zone == 'skill'): self.deferring_hp(f, self, c)
+            if not (f and (self.on_field(c) or c.zone == 'skill')): continue
+            order = getattr(c, 'end_order', None)
+            if order and order(self, c) == 'after': late.append((c, f)); self.L(f'판단[{self.pname(c.controller)}] {c} 종료 시 처리를 「턴 종료 시」 트리거 뒤에', 'decision'); continue
+            self.deferring_hp(f, self, c)
         self.emit('end_phase', player=tp)
         self.triggers()
         if self.chain: self.resolve_chain()
+        for c, f in late:
+            if self.on_field(c) or c.zone == 'skill': self.deferring_hp(f, self, c)
         # ASSUME(2026-10-11): 종료 단계 a의 「턴 종료 시」 처리 뒤, 잠기기 전에 턴 플레이어부터 우선권을 한 번 준다 —
         # 「(이 효과는 종료 단계에서만 사용할 수 있다)」 [신속](저주인형 - 비비안 · 처키)이 쓰일 자리. 예전에는 트리거가 있을 때만 창이 열렸다
         self.open_window()
