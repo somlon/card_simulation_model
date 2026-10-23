@@ -196,7 +196,7 @@ class Game:
             if ex is not None and src is not c and not (src is not None and src.name == ex and (not c.flags.get('immune_except_opp') or by != c.controller)): return True
             if self.cont_flag(c, 'immune_others') and src is not c: return True
             eg = self.flag(c, 'immune_except_group')   # 「「X」 카드 이외의 카드의 효과를 받지 않는다」 (호박옥) — 조건부면 callable 플래그(Game.flag)
-            if eg is not None and src is not c and not (src is not None and eg in (src.d.get('groups') or ())): return True
+            if eg is not None and src is not c and not (src is not None and self.in_group(src, eg)): return True
             if c.flags.get('immune_all_until', -1) >= self.turn and src is not c: return True   # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과
         if by is None or by == c.controller: return False
         if self.on_field(c) and c.faceup and not self.is_neg(c):   # 대상 지정 여부에 따른 내성 (호박옥의 수호자) — 플래그가 없는 카드는 그대로
@@ -210,6 +210,12 @@ class Game:
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
         return self.rule('immune', c, by)
+
+    def in_group(self, x, name):
+        """x가 「name」 카드인가 (내성 「「X」 카드 이외의 카드의 효과를 받지 않는다」 판정): 카드군(groups).
+        스킬 카드는 카드 자료에 카드군이 없으므로 이름으로 본다 — 「호박옥 - 봉인의 계약」은 「호박옥」 카드 (사용자 답변 2026-10-23 PDF Q2)"""
+        gs = x.d.get('groups') or ()
+        return name in gs or (x.type == '스킬' and not gs and name in x.name)
 
     def blocked(self, c, cause):
         if not cause or cause[0] != 'effect' or cause[1] is None or not self.on_field(c): return False
@@ -727,15 +733,25 @@ class Game:
     def counter_blocked(self, c, src):
         """src의 효과로 c에 카운터를 놓을 수 없는가 (미리 보기 — 1턴 횟수를 쓰지 않는다, AI 후보 고르기용)"""
         return src is not None and src is not c and self.on_field(c) and not self.counter_text_ok(c) and self.immune(c, src.controller, src)
+    def counter_remove_blocked(self, c, src):
+        """src의 효과로 c의 카운터를 뗄 수 없는가 (미리 보기 — 1턴 횟수를 쓰지 않는다). 코스트 단계(Game.costing)는 효과가 아니므로 막지 않는다"""
+        return (src is not None and src is not c and self.on_field(c) and getattr(self, 'costing', None) is None
+                and self.immune(c, src.controller, src))
     def clear_counters_facedown(self, c):
         """정본 6-4: 카운터가 놓인 카드가 뒷면 표시가 되면 카운터는 전부 사라진다 (제거 효과가 아니므로 counter 사건을 내지 않는다)"""
         if c.counters:
             self.L(f'{c} 뒷면 — 카운터 소멸 ({", ".join(f"{k} {v}" for k, v in c.counters.items())})', 'sys')
             c.counters = {}; self.state_check()
 
-    def remove_counter(self, c, name, n=1):
+    def remove_counter(self, c, name, n=1, src=None):
+        """src(기본: 처리 중인 효과의 주체 Game.src)의 효과로 c의 카운터를 n개까지 뗀다. 반환: 뗀 개수.
+        c가 그 효과를 받지 않으면 뗄 수 없다 — 예: 임시 봉인 중인 티라누스(「다른 카드의 효과를 받지 않는다」)의 봉인 카운터는
+        봉인의 계약 2번 유지비로 뗄 수 없어 대미지를 받는다 (사용자 답변 2026-10-23 PDF Q2). 코스트로 떼는 것은 효과가 아니므로 막지 않는다(Game.costing)"""
         k = min(n, c.counters.get(name, 0))
         if k <= 0: return 0
+        src = self.src if src is None else src
+        if self.counter_remove_blocked(c, src) and self.blocked(c, ('effect', src)):
+            self.L(f'{c}의 {name} 카운터를 뗄 수 없음 ({src}의 효과를 받지 않음)', 'sys'); return 0
         c.counters[name] -= k
         if c.counters[name] == 0: del c.counters[name]
         self.L(f'{c}의 {name} 카운터 {k}개 제거'); self.emit('counter', card=c, name=name, delta=-k, total=c.counters.get(name, 0))
