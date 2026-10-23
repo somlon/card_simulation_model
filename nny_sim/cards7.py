@@ -34,8 +34,8 @@ ASSUME:
   몬스터인 발동은 문장과 무관하게 해당(「대상이 되었을 때」).
 - 균열 「제거한 개수만큼 필드의 카드를 고르고 파괴한다」: 정확히 그 개수(상대 카드가 모자라면 자신 카드도 — 균열 자신은 제외). AI는 넘치지 않게
   카운터 수를 고른다. 아우렘 4번은 「개수까지」이므로 상대 카드만.
-- 임시 봉인 「다음 턴 종료 시까지」 = 발동한 턴의 다음 턴 종료 시까지. 「다른 카드의 효과를 받지 않는다」는 자신 · 상대 카드 모두(카운터는 내성과
-  무관하게 놓인다 — 엔진 add_counter).
+- 임시 봉인 「다음 턴 종료 시까지」 = 발동한 턴의 다음 턴 종료 시까지. 「다른 카드의 효과를 받지 않는다」는 자신 · 상대 카드 모두(동명의 다른 카드 포함) —
+  다른 카드의 효과로 카운터도 놓을 수 없다(사용자 답변 2026-10-23 Q58, 엔진 add_counter · seal_pick). 「카운터를 쌓는 효과는 적용」이라고 적힌 카드(퇴마의 부적)만 예외.
 - 봉인을 푸는 자 1번: 덱의 「봉인을 푸는 자」 트리거 마법이 3장 미만이면 「3장을 골라 보여 준다」를 처리할 수 없으므로 발동할 수 없다(정본 3-6 e,
   재정 정리 2026-10-17). 같은 이름도 보여 줄 수 있다(서로 다른 이름을 먼저 — 재정 질문 남음). 세트할 빈 마법 존이 없으면 발동하지 않는다.
   2번(공유 존): 2장을 고르게 하고 빈 마법 존만큼 세트.
@@ -125,9 +125,11 @@ def annotate(g, src, ev):
         ev['hp_after'] = g.p[ev['player']].hp
 
 
-def seal_pick(g, p, pool=None):
-    """봉인 카운터를 놓을 몬스터 (AI): 카운터가 없어 보호가 꺼진 에이스 > 수호자 > 녹스(3개 미만) > 에이스 > 「호박옥」 > 그 밖. 상대 몬스터는 마지막"""
-    cands = [m for m in (own_faceup(g, p) if pool is None else pool) if m.faceup and g.on_field(m)]
+def seal_pick(g, p, pool=None, src=None):
+    """봉인 카운터를 놓을 몬스터 (AI): 카운터가 없어 보호가 꺼진 에이스 > 수호자 > 녹스(3개 미만) > 에이스 > 「호박옥」 > 그 밖. 상대 몬스터는 마지막.
+    이 효과를 받지 않는 몬스터(임시 봉인 중인 티라누스 등)에는 놓을 수 없다 (Game.counter_blocked — 사용자 답변 2026-10-23 Q58)"""
+    src = g.src if src is None else src
+    cands = [m for m in (own_faceup(g, p) if pool is None else pool) if m.faceup and g.on_field(m) and not g.counter_blocked(m, src)]
     if not cands: return None
     def key(m):
         s = seals(m); k = 0
@@ -139,10 +141,10 @@ def seal_pick(g, p, pool=None):
     return max(cands, key=key)
 
 
-def put_seals(g, p, n, pool=None, why=''):
-    t = seal_pick(g, p, pool)
+def put_seals(g, p, n, pool=None, why='', src=None):
+    t = seal_pick(g, p, pool, src)
     if t is None: g.L(f'{why}: 봉인 카운터를 놓을 몬스터 없음', 'sys'); return None
-    g.add_counter(t, SEAL, n); return t
+    g.add_counter(t, SEAL, n, src=src); return t
 
 
 def pay_seals(g, p, n, pool=None):
@@ -663,7 +665,7 @@ def _(c):
     def end1(g, src):
         """1번 [지속] 각 턴의 종료 시 처리 — 발동이 아님"""
         p = src.controller
-        if own_faceup(g, p): put_seals(g, p, 1, why=src.name)
+        if own_faceup(g, p): put_seals(g, p, 1, why=src.name, src=src)
     c.end_process = end1
     c.rules['indestructible'] = lambda g, src, x, battle: battle and x.controller == src.controller and x.is_monster() and seals(x) > 0 and g.on_field(x)
     c.cont_nums = {'end_process': 1, 'rule:indestructible': 2}   # 1 · 2번 [지속] — 각각 1턴 1번, 주인이 고른다 (사용자 답변 2026-10-22)

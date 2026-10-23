@@ -55,11 +55,11 @@ def talismans(g, side=None):
     xs = [x for x in g.all_field() if x.name == TALISMAN and x.faceup]
     return xs if side is None else [x for x in xs if x.controller == side]
 
-def add_exo(g, p, n=1):
-    """「필드의 「퇴마의 부적」에 퇴마 카운터를 n개 놓는다」 — 상대 필드의 부적을 먼저"""
+def add_exo(g, p, n=1, src=None):
+    """「필드의 「퇴마의 부적」에 퇴마 카운터를 n개 놓는다」 — 상대 필드의 부적을 먼저. src: 효과의 주체(기본 Game.src — [지속] 훅은 넘긴다)"""
     ts = sorted(talismans(g), key=lambda x: x.controller == p)
     if not ts: g.L('필드에 「퇴마의 부적」 없음 — 퇴마 카운터 없음', 'sys'); return
-    g.add_counter(ts[0], EXO, n)
+    g.add_counter(ts[0], EXO, n, src=src)
 
 def has_chucky(g, p): return any(x.name == '저주인형 - 처키' and x.faceup for x in g.monsters(p))
 
@@ -102,7 +102,6 @@ def _(c):
         remove_curse(g, p, 4); g.L('저주 카운터 4개 제거')   # 처리 문장 (코스트 「~하고 발동」이 아님) — 무효화되면 제거하지 않는다
         g.act_limit[1 - p] = (g.turn + 1, 4); g.L(f'다음 턴 {g.pname(1-p)}가 발동할 수 있는 효과 4회로 제한')
     def sc(g, c, p, ev):
-        if any(l.card.name == SAC and l.eff.num == 4 for l in g.chain): return 50   # 어차피 희생제 4번에 사라질 카운터
         return 55 if own_turn(g, p) else 25
     c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: end_only(g) and curses(g, p) >= 4, res=res, score=sc, threat=700,
                         label='상대 발동 4회 제한'), end_counter(2)]
@@ -132,7 +131,7 @@ def _(c):
     def sc(g, c, p, ev):
         ts = targets(g, p, opp_cards(g, p))
         if not ts: return VETO
-        return 50 + 15 * max(value(g, x) for x in ts) + (20 if any(l.card.name == SAC and l.eff.num == 4 for l in g.chain) else 0)
+        return 50 + 15 * max(value(g, x) for x in ts)
     c.effects = [Effect(1, 'quick', ('field',), opt=None, cond=lambda g, c, p, ev: end_only(g) and curses(g, p) >= 2 and bool(targets(g, p, opp_cards(g, p))),
                         cost=cost, res=res, score=sc, threat=1000, label='저주 카운터 2 → 파괴 + 300'), end_counter(2)]
 
@@ -203,7 +202,9 @@ def _(c):
             t = min(ts, key=lambda x: (g2.p[o].ai.card_pri(g2, o, x), value(g2, x))) if ts else None
             if t: g2.L(f'판단[{g2.pname(o)}] {TALISMAN}: 파괴할 자신의 「저주인형」 카드 — {t}', 'decision'); g2.destroy(t, ('effect', src))
             else: g2.L('상대 필드에 「저주인형」 카드 없음', 'sys')
-        link.replaced = rep; src.flags['replace_pending'] = link
+        # 발동한 카드가 부적의 효과를 받지 않으면 바뀌지 않고, 부적은 그다음 발동을 기다린다 (Game.replace — 사용자 답변 2026-10-23 Q59 · Q60, ASSUME)
+        if not g.replace(link, rep, src): return
+        src.flags['replace_pending'] = link
         g.L(f'{TALISMAN}: {link.card}의 효과는 무효 — 「퇴마 카운터 {rm}개 제거 · 상대가 고른 「저주인형」 카드 1장 파괴」로 변경됨', 'sys')
     c.on_event = on_ev
     c.effects = [
@@ -265,8 +266,8 @@ def _(c):
         ts = talismans(g, q)
         if ts or not g.p[q].hand:   # 상대가 고른다 — 자기 필드의 부적이 있으면 퇴마 카운터(저주인형 파괴 자원), 없으면 패 1장
             g.L(f'판단[{g.pname(q)}] 저주 - 탐욕: 퇴마 카운터 선택', 'decision')
-            if ts: g.add_counter(ts[0], EXO, 1)
-            elif talismans(g): add_exo(g, p, 1)
+            if ts: g.add_counter(ts[0], EXO, 1, src=src)
+            elif talismans(g): add_exo(g, p, 1, src=src)
         else:
             x = g.p[q].ai.pick_discard(g, q, g.p[q].hand)
             g.L(f'판단[{g.pname(q)}] 저주 - 탐욕: 패 {x} 묘지로', 'decision'); g.send_grave(x, ('effect', src))
@@ -317,7 +318,7 @@ def _(c):
             x = aces[0] if aces else g.p[p].ai.pick_search(g, p, cands, '위저보드')
             g.special_summon(x, p); g.shuffle(p)
         elif talismans(g, 1 - p):
-            g.L(f'판단[{g.pname(p)}] 저주 - 위저보드: 특수소환 불가 — 퇴마 카운터', 'decision'); g.add_counter(talismans(g, 1 - p)[0], EXO, 1)
+            g.L(f'판단[{g.pname(p)}] 저주 - 위저보드: 특수소환 불가 — 퇴마 카운터', 'decision'); g.add_counter(talismans(g, 1 - p)[0], EXO, 1, src=src)
     c.on_event = on_ev
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True,
                         score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.name == c.name and g.fieldz.controller == p) else 55, threat=600)]
@@ -343,7 +344,11 @@ def _(c):
         if not (ev_is(ev, 'counter') and ev['card'] is c and ev['name'] == CURSE and ev['delta'] > 0): return False
         n = ev.get('total', c.counters.get(CURSE, 0))   # 사건 당시 개수 — 한 체인에서 여러 개가 쌓여도 그 순간의 개수로 본다
         return n == need3 and bool(uppers(g, p))       # 정확히 need3개가 된 순간만 (넘어서 5개 이상이 되면 발동하지 않음 — 사용자 답변 2026-10-20)
-    def res4(g, c, p, l):
+    def end4(g, c):
+        """4번 [지속] 상대 턴의 종료 시 정산 — 발동하는 효과가 아니다(체인에 오르지 않고, 퇴마의 부적 2번 「다음에 발동하는 효과」 변경 ·
+        「효과가 발동했을 때」 응답의 대상이 아님 — 사용자 답변 2026-10-23 Q56). 「강제로」 = 주인에게 불리한 [지속](cont_forced — 고르지 않고 늘 적용)"""
+        p = c.controller
+        if g.turn_player != 1 - p: return
         n = c.counters.get(CURSE, 0)
         if n <= 0: return
         g.remove_counter(c, CURSE, n)
@@ -353,7 +358,6 @@ def _(c):
         Effect(2, 'ignition', ('skill',), cond=lambda g, c, p, ev: main_ok(g, p) and bool(mains(g, p)),
                res=lambda g, c, p, l: summon_from(g, p, mains(g, p), f'{SAC} 2번'), score=lambda *a: 65, threat=500, label='메인 덱 몬스터 특수소환'),
         Effect(3, 'trigger', ('skill',), cond=cond3, res=lambda g, c, p, l: summon_from(g, p, uppers(g, p), f'{SAC} 3번'),
-               score=lambda *a: 85, threat=700, label='저주 카운터 4개 → 상급 덱 특수소환'),
-        Effect(4, 'trigger', ('skill',), mandatory=True, opt=None,
-               cond=lambda g, c, p, ev: ev_is(ev, 'end_phase') and ev['player'] == 1 - p and c.counters.get(CURSE, 0) > 0, res=res4, threat=0,
-               label='상대 턴 종료 시 카운터 정산')]
+               score=lambda *a: 85, threat=700, label='저주 카운터 4개 → 상급 덱 특수소환')]
+    c.end_process = end4   # 4번 [지속] (engine.play_turn 종료 단계 [지속] 처리 — 스킬 존의 스킬도 적용)
+    c.cont_nums = {'end_process': 4}; c.cont_forced = {4}
