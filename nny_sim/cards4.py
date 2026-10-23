@@ -165,8 +165,9 @@ def _(c):
         return l is not None and moves_off_field(g, l, p)
     def res2(g, c, p, l):
         t = l.ctx['t']; q = t.player
-        t.replaced = lambda g2, tl: g2.mill(q, 5, 'upper', '이탈세로 변경된 효과', fallback=True)
-        g.L(f'{t.card}의 효과를 「덱 위 5장 제외」로 변경'); c.flags['lw_mode'] = None
+        if g.replace(t, lambda g2, tl: g2.mill(q, 5, 'upper', '이탈세로 변경된 효과', fallback=True), c):   # 내성이면 바뀌지 않음 (Game.replace)
+            g.L(f'{t.card}의 효과를 「덱 위 5장 제외」로 변경')
+        c.flags['lw_mode'] = None
     e4 = Effect(4, 'lastwill', ('grave',), cond=lambda g, c, p, ev: ev_is(ev, 'to_grave') and ev['card'] is c,
                 res=lambda g, c, p, l: g.mill(1 - p, 10, None, '이탈세 유언', chooser=p), score=lambda *a: 75, threat=600, label='[유언] 상대 10장 제외')
     e4.no_resp = True

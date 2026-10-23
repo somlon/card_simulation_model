@@ -106,7 +106,9 @@ def gambling_ok(g, p):
 
 
 def grant(g, t, lv, at, src=None):
-    """레벨 · 속성 부여 (필드에 있는 동안). 마법 · 필드 카드는 몬스터로 취급 (공격력 0 / 수비력 0, 표시목 재정)"""
+    """레벨 · 속성 부여 (필드에 있는 동안). 마법 · 필드 카드는 몬스터로 취급 (공격력 0 / 수비력 0, 표시목 재정).
+    뒷면 카드에는 부여할 수 없다 — 대상을 지정하지 않는 효과(원페어 「고르고」)라도 (특수 케이스, 사용자 답변 2026-10-23 Q53)"""
+    if not t.faceup: g.L(f'{t}: 뒷면 카드에는 레벨 · 속성을 부여할 수 없음', 'sys'); return False
     col = t.flags.get('clear_on_leave') or {}
     for k in ('level_set', 'attr_set', 'as_monster'):
         if k not in col: col[k] = t.flags.get(k)
@@ -359,6 +361,7 @@ def steal_cands(g, p, sel=()):
     fs = bool(g.free_s(p)) or any(m.where == 'own_f' and m.card.zone == 's' for m in sel)
     out = []
     for x in targets(g, p, opp_cards(g, p)):
+        if not x.faceup: continue   # 「골라 속성과 레벨을 부여하여」: 뒷면 카드에는 부여할 수 없으므로 고르지 않는다 (사용자 답변 2026-10-23 Q53)
         if x in used or (x.zone in FIELD_M and not fm) or (x.zone == 's' and not fs): continue   # 공유 존의 몬스터도 새 컨트롤러의 빈 몬스터 존이 필요(설계도 확정)
         out.append(x)
     return out

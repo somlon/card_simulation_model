@@ -709,12 +709,24 @@ class Game:
         return 0 if level <= 4 else 1 if level <= 7 else 2 if level <= 9 else 3
 
     # ── 카운터 ──
-    def add_counter(self, c, name, n=1):
-        """카운터는 효과 내성과 무관하게 놓인다(퇴마의 부적 1번 괄호). 스킬 존의 스킬 카드에도 놓을 수 있다(희생제)"""
+    def add_counter(self, c, name, n=1, src=None):
+        """src(기본: 처리 중인 효과의 주체 Game.src)의 효과로 c에 카운터를 놓는다. 스킬 존의 스킬 카드에도 놓을 수 있다(희생제).
+        c가 그 효과를 받지 않으면(「다른 카드의 효과를 받지 않는다」는 동명의 다른 카드 포함) 카운터를 놓을 수 없다 (사용자 답변 2026-10-23 Q58).
+        c의 텍스트가 「카운터를 쌓는 효과는 적용」이라고 정하면 예외 (퇴마의 부적 1번 괄호 — Game.counter_text_ok)"""
         if not (self.on_field(c) or c.zone == 'skill') or not c.faceup: return False
+        src = self.src if src is None else src
+        if src is not None and src is not c and not self.counter_text_ok(c) and self.blocked(c, ('effect', src)):
+            self.L(f'{c}에 카운터를 놓을 수 없음 ({src}의 효과를 받지 않음)', 'sys'); return False
         c.counters[name] = c.counters.get(name, 0) + n
         self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n, total=c.counters[name])
         self.state_check(); return True
+    def counter_text_ok(self, c):
+        """내성이 있어도 카운터는 놓이는 카드인가 — 텍스트의 「카운터를 쌓는(놓는) 효과는 적용」 (퇴마의 부적 1번 괄호)"""
+        import re as _re
+        return bool(_re.search(r'카운터를 (쌓|놓)는 효과는 적용', c.d.get('text') or ''))
+    def counter_blocked(self, c, src):
+        """src의 효과로 c에 카운터를 놓을 수 없는가 (미리 보기 — 1턴 횟수를 쓰지 않는다, AI 후보 고르기용)"""
+        return src is not None and src is not c and self.on_field(c) and not self.counter_text_ok(c) and self.immune(c, src.controller, src)
     def clear_counters_facedown(self, c):
         """정본 6-4: 카운터가 놓인 카드가 뒷면 표시가 되면 카운터는 전부 사라진다 (제거 효과가 아니므로 counter 사건을 내지 않는다)"""
         if c.counters:
@@ -1128,6 +1140,8 @@ class Game:
                 else: self.send_grave(c, ('rule', None))
             if link.negated and e.spell_act and self.on_field(c) and c.type != '마법':
                 pass
+            # [지속] 상태 점검(인페르노 드래곤 · 격투가의 투기장)은 체인 처리가 끝나기를 기다리지 않고 링크마다 바로 적용한다 (사용자 답변 2026-10-23 Q55)
+            self.state_check()
         self.triggers()
 
     def negate_card(self, c, src=None, perma=None):
@@ -1150,9 +1164,26 @@ class Game:
         ps = (0, 1) if side is None else (side,)
         return [x for i in ps for x in self.field_cards(i)] + [self.p[i].skill for i in ps if self.p[i].skill is not None]
 
+    def link_unaffected(self, link, src):
+        """src의 효과가 체인의 발동 link를 무효로 하거나 바꿀 수 없는가: 발동한 카드가 src의 효과를 받지 않는다(Game.blocked).
+        내성은 카드에 적용하는 효과뿐 아니라 그 카드의 효과에 적용하는 효과(발동 무효 · 효과 변경)에도 내성의 범위라면 적용된다
+        (사용자 답변 2026-10-23 Q59 · Q60 — 쿠로하는 저주인형 - 저주인형의 발동을 무효로 할 수 없고, 봉인 카운터가 있는 티라누스의 효과는 깜짝상자가 바꿀 수 없다)"""
+        if src is None or src is link.card: return False
+        return self.blocked(link.card, ('effect', src))
+
+    def replace(self, link, fn, src=None):
+        """체인의 발동 link의 처리를 fn으로 바꾼다(이탈세 · 퇴마의 부적 2번 · 깜짝상자 · 암흑의 율법 · 노린재). 발동한 카드가 src의 효과를 받지 않으면
+        바꾸지 않고 False (Game.link_unaffected)"""
+        src = self.src if src is None else src
+        if self.link_unaffected(link, src):
+            self.L(f'{link.card}의 효과는 바뀌지 않음 ({src}의 효과를 받지 않음)', 'sys'); return False
+        link.replaced = fn; return True
+
     def negate(self, link, destroy=False, by=None):
         if getattr(link.eff, 'unnegatable', False) or link.card.flags.get('unnegatable'):
             self.L(f'{link.card}은(는) 무효화되지 않음', 'sys'); return
+        if self.link_unaffected(link, by if by is not None else self.src):
+            self.L(f'{link.card} {link.eff.num}번 효과는 무효가 되지 않음 (효과를 받지 않음)', 'sys'); return
         link.negated = True
         for k in link.ctx.get('opt_keys', [(link.card.name, link.eff.num)]):   # 무효화된 발동은 사용 횟수를 소모하지 않는다 (§6-5)
             if self.p[link.player].opt.get(k): self.p[link.player].opt[k] -= 1

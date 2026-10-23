@@ -561,7 +561,7 @@ def _(c):
             if x is not b and turnable(g2, x):
                 was_spell = x.zone == 's'
                 if turn_face_down(g2, x, tl2.card) and was_spell: keep_set(g2, x)
-        tl.replaced = rep
+        if not g.replace(tl, rep, c): return   # 발동한 카드가 깜짝상자의 효과를 받지 않으면(봉인 카운터가 있는 티라누스 등) 바뀌지 않는다 (Q59)
         g.L(f'{tl.card}의 효과를 「상대는 덱에서 「{BOX}」를 특수소환한다. 그 후, 그 2장을 뒷면 표시로 한다.」로 변경')
     def sc(g, c, p, ev):
         t = threat(g, p); l = last_opp_link(g, p)
@@ -637,8 +637,8 @@ def _(c):
             x = tl.card
             back_to_deck(g2, x, p)
             g2.search(p, DM_CARD, why=f'{LAW} (변경된 {x.name} [유언])', source=x)
-        link.replaced = rep
-        g.L(f'판단[{g.pname(p)}] {LAW}: {link.card}의 [유언]을 「덱으로 되돌리고 「던전마스터」 카드 서치」로 변경', 'decision')
+        if g.replace(link, rep, src):
+            g.L(f'판단[{g.pname(p)}] {LAW}: {link.card}의 [유언]을 「덱으로 되돌리고 「던전마스터」 카드 서치」로 변경', 'decision')
     c.on_event = on_ev
     def gy(g, p): return [x for x in g.p[p].grave if DM_MON(x) and g.can_special(x, p)]
     def sc(g, c, p, ev):

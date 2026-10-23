@@ -248,8 +248,8 @@ def _(c):
         l.ctx['t'] = g.chain[-1]; g.send_grave(c, ('cost', c)); oath(g, p)
     def res(g, c, p, l):
         t = l.ctx['t']
-        t.replaced = lambda g, tl: g.draw(tl.player, 1)
-        g.L(f'{t.card}의 효과를 「상대는 1장 드로우」로 변경')
+        if g.replace(t, lambda g, tl: g.draw(tl.player, 1), c):   # 그 카드가 이 효과를 받지 않으면 바뀌지 않는다 (Game.replace — Q59 · Q60)
+            g.L(f'{t.card}의 효과를 「상대는 1장 드로우」로 변경')
     c.effects = [Effect(1, 'resp', ('hand',), cond=lambda g, c, p, ev: last_opp_link(g, p) is not None,
         cost=cost, res=res, score=lambda g, c, p, ev: 50 if threat(g, p) >= 800 else 0, threat=700, label='효과 치환')]
 
