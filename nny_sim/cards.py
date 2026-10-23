@@ -54,8 +54,11 @@ class Impl:
             e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
             # 코스트의 「필드」에 상대 필드가 드는가 (cost_opp — 「서로」 · 「상대」가 적혀 있을 때만, 사용자 답변 2026-10-22 Q41)
             e.cost_opp_field = cost_opp_field(line)
-            # 자신이 드로우하는 효과인가 (engine.Game.legal — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다, 사용자 답변 2026-10-22 Q46)
-            e.self_draw = self_draw_text(line)
+            # 제거 효과인가 — 대상(「그 카드 …」)을 파괴 · 묘지로 · 제외 · 패 · 덱으로 옮긴다. 뒷면 마법은 이런 효과의 대상만 될 수 있다
+            # (engine.Game.immune, 사용자 답변 2026-10-23 PDF Q6)
+            if line: e.removal_text = e.targets_text and removal_text(line)
+            # 처리의 첫 단계가 드로우인가('self' / 'opp' — 드로우하는 쪽) — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다 (engine.Game.legal)
+            e.draw_first = draw_first_text(line)
 
 # ───────────── 공통 헬퍼 ─────────────
 def own_turn(g, p): return g.turn_player == p
@@ -148,11 +151,26 @@ def cost_opp(c, num):
     """c의 num번 효과 코스트로 상대 필드의 카드도 쓸 수 있는가 (Effect.cost_opp_field — Impl.attach가 텍스트에서 단다)"""
     return any(e.num == num and getattr(e, 'cost_opp_field', False) for e in c.effects)
 
-def self_draw_text(line):
-    """효과 문장에 발동한 플레이어가 조건 없이 드로우하는 문장이 있는가 — 「상대는 … 드로우한다」(상대가 드로우) ·
-    「…경우, … 드로우한다」(조건부 — 처리 때 Game.draw가 막는다)는 빼고 본다"""
-    return any(_re_t.search(r'드로우한다', x) and not _re_t.search(r'상대(는| 플레이어는)|경우,', x)
-               for x in _re_t.split(r'(?<=\.)\s+', line or ''))
+_DRAW_FIRST = _re_t.compile(r'^(자신은|상대는|상대 플레이어는)?\s*(자신의\s*)?(메인 |상급 )?(덱에서\s*)?(카드를\s*)?\d+장을?\s*드로우')
+
+def draw_first_text(line):
+    """효과 처리의 첫 단계가 드로우인가 — 드로우만 하는 효과 · 「드로우하고 …」. 드로우하는 쪽을 돌려준다('self' / 'opp', 아니면 None).
+    처리 부분 = 「…발동(한다 · 할 수도 있다).」 뒤(없으면 번호 · [종류] 표기 뒤 전체), 첫 문장이 드로우로 시작하는지 본다.
+    「덱으로 되돌리고 1장 드로우」처럼 다른 처리가 먼저면 None — 발동은 되고 드로우만 하지 않는다 (사용자 답변 2026-10-23 PDF Q7 · 후속 답변)"""
+    t = _re_t.sub(r'\([^)]*\)', '', _re_t.sub(r'^\d+\.\s*', '', line or ''))   # 단서 괄호(「(이 효과는 강제로 발동한다.)」)를 먼저 뺀다
+    parts = _re_t.split(r'발동(?:한다|할 수도 있다)?\.', t, maxsplit=1)
+    body = _re_t.sub(r'^\s*(\[[^\]]*\]\s*)+', '', parts[1] if len(parts) > 1 else t).strip()
+    m = _DRAW_FIRST.match(body)
+    if not m: return None
+    return 'opp' if m.group(1) and m.group(1).startswith('상대') else 'self'
+
+def removal_text(line):
+    """효과 문장(그 번호 줄만 — 부여하는 「- …」 하위 효과는 보지 않음)의 처리 부분에서, 발동한 쪽 자신의 카드(「자신 필드 …」 · 「이 카드 …」)를
+    옮기는 구절을 뺀 나머지에 이동 동사(파괴 · 제외 · 묘지로 · 패 · 덱으로)가 있는가 — 대상을 필드에서 제거하는 효과"""
+    t = _re_t.sub(r'^\d+\.\s*', '', line or '')
+    parts = _re_t.split(r'발동(?:한다)?\.', t, maxsplit=1)
+    body = _re_t.sub(r'\([^)]*\)', '', parts[1] if len(parts) > 1 else t)
+    return bool(_LEAVE.search(_SELF_CLAUSE.sub('', body)))
 
 _CARD_ACT = _re_t.compile(r'카드를 발동했을|카드의 발동을 선언')
 
