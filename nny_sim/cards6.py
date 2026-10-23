@@ -202,7 +202,8 @@ def _(c):
             t = min(ts, key=lambda x: (g2.p[o].ai.card_pri(g2, o, x), value(g2, x))) if ts else None
             if t: g2.L(f'판단[{g2.pname(o)}] {TALISMAN}: 파괴할 자신의 「저주인형」 카드 — {t}', 'decision'); g2.destroy(t, ('effect', src))
             else: g2.L('상대 필드에 「저주인형」 카드 없음', 'sys')
-        # 발동한 카드가 부적의 효과를 받지 않으면 바뀌지 않고, 부적은 그다음 발동을 기다린다 (Game.replace — 사용자 답변 2026-10-23 Q59 · Q60, ASSUME)
+        # 발동한 카드가 부적의 효과를 받지 않으면(기적의 영웅 등) 바뀌지 않는다. 2번은 턴 제약이 없는 효과라 같은 턴의 다음 발동에 바로 다시 적용된다
+        # (Game.replace — 사용자 답변 2026-10-23 Q59 · Q60 · PDF Q3)
         if not g.replace(link, rep, src): return
         src.flags['replace_pending'] = link
         g.L(f'{TALISMAN}: {link.card}의 효과는 무효 — 「퇴마 카운터 {rm}개 제거 · 상대가 고른 「저주인형」 카드 1장 파괴」로 변경됨', 'sys')

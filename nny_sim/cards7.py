@@ -36,6 +36,8 @@ ASSUME:
   카운터 수를 고른다. 아우렘 4번은 「개수까지」이므로 상대 카드만.
 - 임시 봉인 「다음 턴 종료 시까지」 = 발동한 턴의 다음 턴 종료 시까지. 「다른 카드의 효과를 받지 않는다」는 자신 · 상대 카드 모두(동명의 다른 카드 포함) —
   다른 카드의 효과로 카운터도 놓을 수 없다(사용자 답변 2026-10-23 Q58, 엔진 add_counter · seal_pick). 「카운터를 쌓는 효과는 적용」이라고 적힌 카드(퇴마의 부적)만 예외.
+  카운터를 떼는 것도 막힌다 — 봉인의 계약 · 몽식의 계약 2번 유지비로 임시 봉인 중인 몬스터의 카운터는 떼지 못해 그만큼 대미지를 받는다
+  (「호박옥」 카드의 효과도 받지 않으므로, 사용자 답변 2026-10-23 PDF Q2 — 엔진 remove_counter · pay_seals). 코스트로 떼는 것은 막지 않는다.
 - 봉인을 푸는 자 1번: 덱의 「봉인을 푸는 자」 트리거 마법이 3장 미만이면 「3장을 골라 보여 준다」를 처리할 수 없으므로 발동할 수 없다(정본 3-6 e,
   재정 정리 2026-10-17). 같은 이름도 보여 줄 수 있다(서로 다른 이름을 먼저 — 재정 질문 남음). 세트할 빈 마법 존이 없으면 발동하지 않는다.
   2번(공유 존): 2장을 고르게 하고 빈 마법 존만큼 세트.
@@ -147,10 +149,12 @@ def put_seals(g, p, n, pool=None, why='', src=None):
     g.add_counter(t, SEAL, n, src=src); return t
 
 
-def pay_seals(g, p, n, pool=None):
+def pay_seals(g, p, n, pool=None, src=None):
     """봉인 카운터를 합계 n개 제거 (나누는 방법은 AI): 보호에 필요한 1개를 남기고도 남는 개수가 많은 몬스터부터, 같으면 가치가 낮은 쪽.
-    반환: 실제로 제거한 개수"""
-    pool = [m for m in (g.monsters(p) if pool is None else pool) if seals(m) > 0]
+    src: 제거하는 효과의 주체(기본 Game.src — [지속] 훅은 넘긴다). 그 효과를 받지 않는 몬스터(임시 봉인 중인 티라누스 등)의 카운터는 뗄 수 없다
+    (Game.counter_remove_blocked — 사용자 답변 2026-10-23 PDF Q2). 반환: 실제로 제거한 개수"""
+    src = g.src if src is None else src
+    pool = [m for m in (g.monsters(p) if pool is None else pool) if seals(m) > 0 and not g.counter_remove_blocked(m, src)]
     left = {m.uid: seals(m) for m in pool}; plan = {}
     for _ in range(n):
         cs = [m for m in pool if left[m.uid] > 0]
@@ -159,7 +163,7 @@ def pay_seals(g, p, n, pool=None):
         left[m.uid] -= 1; plan[m.uid] = plan.get(m.uid, 0) + 1
     got = 0
     for m in pool:
-        if plan.get(m.uid): got += g.remove_counter(m, SEAL, plan[m.uid])
+        if plan.get(m.uid): got += g.remove_counter(m, SEAL, plan[m.uid], src=src)
     return got
 
 
@@ -748,7 +752,7 @@ def upkeep(n, per):
     def end(g, src):
         p = src.controller
         if g.turn_player != p: return
-        got = pay_seals(g, p, n)
+        got = pay_seals(g, p, n, src=src)   # 효과를 받지 않는 몬스터(임시 봉인)의 카운터는 떼지 못해 그만큼 대미지 (PDF Q2)
         g.L(f'{src.name} 2번: 봉인 카운터 {got}/{n}개 제거', 'sys')
         if got < n: g.damage(p, (n - got) * per, f'자해 ({src.name} 2번)')
     return end
