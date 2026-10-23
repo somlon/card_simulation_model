@@ -52,6 +52,10 @@ class Impl:
             # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
             if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
             e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
+            # 코스트의 「필드」에 상대 필드가 드는가 (cost_opp — 「서로」 · 「상대」가 적혀 있을 때만, 사용자 답변 2026-10-22 Q41)
+            e.cost_opp_field = cost_opp_field(line)
+            # 자신이 드로우하는 효과인가 (engine.Game.legal — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다, 사용자 답변 2026-10-22 Q46)
+            e.self_draw = self_draw_text(line)
 
 # ───────────── 공통 헬퍼 ─────────────
 def own_turn(g, p): return g.turn_player == p
@@ -132,6 +136,23 @@ def parse_cost(line):
                         'self': bool(_re_t.search(r'이 카드(를|의)|자신을 포함하는|이 카드를 포함하는', last)),
                         'deck': bool(_re_t.search(r'덱의 위에서부터 카드를 \d+장 제외|덱에서 카드를 \d+장 제외', last))})
     return out
+
+def cost_opp_field(line):
+    """코스트 문장(「…고 발동」 앞)의 「필드」에 상대 필드가 드는가: 「서로」 · 「상대」가 적혀 있을 때만.
+    적혀 있지 않은 「필드의(필드에서) …를 릴리스하고 · 묘지로 보내고 발동」은 자신 필드다 (사용자 답변 2026-10-22 Q41 — 데이터버그 로딩 2번 · 습격,
+    Q21 마르모르 · 카르분쿨루스 「필드의 릴리스 가능한 몬스터」, Q26 족보 재료 cards8.combo_opp_ok와 같은 규칙)"""
+    # 조건 구절(쉼표 뒤) · 대상 지정은 parse_cost가 빼고, 쉼표 없는 조건 구절(「상대가 …했을 때 자신 필드의 …」)은 여기서 뺀다
+    return any(_re_t.search(r'서로|상대', _re_t.split(r'(?:때|경우),?\s+', it['text'])[-1]) for it in parse_cost(line))
+
+def cost_opp(c, num):
+    """c의 num번 효과 코스트로 상대 필드의 카드도 쓸 수 있는가 (Effect.cost_opp_field — Impl.attach가 텍스트에서 단다)"""
+    return any(e.num == num and getattr(e, 'cost_opp_field', False) for e in c.effects)
+
+def self_draw_text(line):
+    """효과 문장에 발동한 플레이어가 조건 없이 드로우하는 문장이 있는가 — 「상대는 … 드로우한다」(상대가 드로우) ·
+    「…경우, … 드로우한다」(조건부 — 처리 때 Game.draw가 막는다)는 빼고 본다"""
+    return any(_re_t.search(r'드로우한다', x) and not _re_t.search(r'상대(는| 플레이어는)|경우,', x)
+               for x in _re_t.split(r'(?<=\.)\s+', line or ''))
 
 _CARD_ACT = _re_t.compile(r'카드를 발동했을|카드의 발동을 선언')
 
@@ -372,7 +393,8 @@ def _(c):
     def mod(g, src, x):
         p = src.controller
         if x.controller != p or not x.is_monster() or not x.has('번성충') or not x.faceup: return 0
-        n = sum(1 for y in g.field_cards(p) if y.has('번성충')) + sum(1 for y in g.p[p].grave if y.has('번성충'))
+        # 자신 필드의 세트(뒷면) 카드는 세지 않는다 (사용자 답변 2026-10-22 Q48 [로그 1])
+        n = sum(1 for y in g.field_cards(p) if y.faceup and y.has('번성충')) + sum(1 for y in g.p[p].grave if y.has('번성충'))
         return 100 * n
     c.atk_mod = mod
     c.cont_nums = {'atk_mod': 1}   # 1번 [지속] 공격력 증감 — 1턴 1번(전투 1회), 주인이 고른다 (Game.battle_mods)
@@ -719,14 +741,17 @@ def _(c):
 
 @card('시아 아츠 - 성광소각')
 def _(c):
+    def pool1(g, c, p):
+        """1번 코스트 「필드의 「시아」 몬스터를 1장 묘지로 보내고」: 자신 필드 — 문장에 「서로」 · 「상대」가 없다 (cost_opp, 사용자 답변 2026-10-22 Q41과 같은 규칙)"""
+        return own_mon(g, p, SIA) + ([x for x in g.monsters(1 - p) if SIA(x) and x.faceup] if cost_opp(c, 1) else [])
     def cost1(g, c, p, l):
-        m = (own_mon(g, p, SIA) or [x for x in g.monsters(1 - p) if SIA(x) and x.faceup])[0]; g.L(f'코스트: {m} 묘지로'); g.send_grave(m, ('cost', c))
+        m = pool1(g, c, p)[0]; g.L(f'코스트: {m} 묘지로'); g.send_grave(m, ('cost', c))
     def res1(g, c, p, l):
         if g.p[1 - p].grave: t = best(g, g.p[1 - p].grave, p, 'banish_grave'); g.banish(t); g.L(f'상대 묘지 {t} 제외')
     def res2(g, c, p, l):
         t = best(g, targets_of(g, p, opp_magic(g, p)), p, 'bounce')
         if t: g.L(f'{t} 덱으로'); g.to_deck(t)
-    arts(c, lambda g, c, p, ev: mon(g, SIA) and bool(g.p[1 - p].grave), cost1, res1,
+    arts(c, lambda g, c, p, ev: bool(pool1(g, c, p)) and bool(g.p[1 - p].grave), cost1, res1,
          lambda g, c, p: mon(g, CIEL, p) and bool(opp_magic(g, p)), res2, sc1=0, sc2=40)
 
 @card('솔루나 아츠 - 이클립스 오버드라이브')
