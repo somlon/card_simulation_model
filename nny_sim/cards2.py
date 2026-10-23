@@ -329,10 +329,10 @@ def _(c):
     # 1번 [지속]: 상대는 몬스터가 있으면 반드시 공격 · 상대 필드의 몬스터는 수비 표시로 존재할 수 없다
     c.rules = {'must_attack': lambda g, src, pl: pl == 1 - src.controller,
                'no_defense': lambda g, src, pl: pl == 1 - src.controller}
-    def state(g, src):   # 이미 수비 표시인 상대 몬스터는 공격 표시가 된다 (ASSUME: 「존재할 수 없다」 = 공격 표시로 전환)
+    def state(g, src):   # 이미 수비 표시인 상대 몬스터는 공격 표시가 된다 — 앞면 수비 → 공격, 뒷면 수비 → 뒷면 공격 (사용자 답변 2026-10-23 PDF Q14)
         for m in g.monsters(1 - src.controller):
-            if m.faceup and m.pos == 'def' and not g.immune(m, src.controller, src):
-                m.pos = 'atk'; g.L(f'{m} 수비 표시로 존재할 수 없음 → 공격 표시 (격투가의 투기장)', 'sys')
+            if m.pos == 'def' and not g.immune(m, src.controller, src):
+                m.pos = 'atk'; g.L(f'{m} 수비 표시로 존재할 수 없음 → {"공격" if m.faceup else "뒷면 공격"} 표시 (격투가의 투기장)', 'sys')
     c.state_check = state
     def res2(g, c, p, l):
         cands = [x for x in g.deck_cards(p) if FGTR_MON(x)]

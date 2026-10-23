@@ -189,7 +189,11 @@ class Game:
           flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다
         뒷면 카드는 대상 지정 효과의 대상이 되지 않는다(정본 1-1, 사용자 답변 2026-10-22 Q45) — 자신 · 상대의 효과 모두, 대상을 지정하지 않는 효과는 받는다.
         뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45)"""
-        if self.on_field(c) and not c.faceup and by is not None and self.targeting(by): return True
+        if self.on_field(c) and not c.faceup and by is not None:
+            # 단 뒷면 마법은 예외적으로 제거 효과(그 카드를 파괴 · 묘지로 · 제외 · 패 · 덱으로)의 대상이 될 수 있다 — 다른 계열의 대상 효과는 불가
+            # (Effect.removal_text — cards.Impl.attach, 사용자 답변 2026-10-23 PDF Q6)
+            te = self.targeting_eff(by)
+            if te is not False and (c.is_monster() or not getattr(te, 'removal_text', False)): return True
         if self.on_field(c) and c.faceup and not self.is_neg(c):
             ex = c.flags.get('immune_except')
             # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
@@ -235,13 +239,19 @@ class Game:
         l = getattr(self, 'costing', None)
         return l is not None and l.player == by
 
-    def targeting(self, by):
-        """by가 지금 대상 지정 효과의 대상을 고르는 중인가: 그 발동의 코스트 단계이거나(Game.costing) 발동 판정 중이고(Game.probing),
-        그 효과 문장에 「대상으로 하고」가 있다(Effect.targets_text — 모르면 대상 지정으로 본다). 「고르고」 효과 · 코스트 지불은 대상 지정이 아니다"""
+    def targeting_eff(self, by):
+        """by가 지금 대상 지정 효과의 대상을 고르는 중이면 그 효과(효과를 모르면 None), 아니면 False:
+        그 발동의 코스트 단계이거나(Game.costing) 발동 판정 중이고(Game.probing), 그 효과 문장에 「대상으로 하고」가 있다
+        (Effect.targets_text — 모르면 대상 지정으로 본다). 「고르고」 효과 · 코스트 지불은 대상 지정이 아니다"""
         l = getattr(self, 'costing', None)
-        if l is not None and l.player == by: return getattr(l.eff, 'targets_text', None) is not False
-        if getattr(self, 'probing', None) == by: return getattr(getattr(self, 'src_eff', None), 'targets_text', None) is not False
+        if l is not None and l.player == by: return l.eff if getattr(l.eff, 'targets_text', None) is not False else False
+        if getattr(self, 'probing', None) == by:
+            e = getattr(self, 'src_eff', None)
+            return e if getattr(e, 'targets_text', None) is not False else False
         return False
+    def targeting(self, by):
+        """by가 지금 대상 지정 효과의 대상을 고르는 중인가 (Game.targeting_eff)"""
+        return self.targeting_eff(by) is not False
 
     def targeted_by(self, c, by):
         """c가 by의 효과의 대상인가: 그 발동의 코스트 단계이거나, 처리 중인 by의 효과가 발동 시 c를 골라 두었다(link_targets)"""
@@ -305,7 +315,9 @@ class Game:
     # (블러드문 리퍼 3번 「상대 몬스터 전부에 공격 선언을 할 수 있다」 — 한 번의 적용이 상대 몬스터 전부에 대한 공격 허락, 사용자 지시 2026-10-22).
     # 공격력 · 수비력 증감 [지속](훅 STAT_HOOKS)은 텍스트에 턴 제한(「1턴에 N번」)이 적혀 있을 때만 횟수를 센다 — 적혀 있지 않으면 제한 없이
     # 늘 적용된다(사용자 지시 2026-10-22 — 번성충-대발생 1번 · 데이터버그 유니온 마스터 2번, Game.cont_num).
-    STAT_HOOKS = ('atk_mod', 'def_mod')
+    # 효과를 부여하는 [지속](훅 'grant' — 올인 2번)도 같다: 부여받은 효과는 카드마다 따로 횟수를 세므로 부여하는 쪽은 1턴 횟수가 없다
+    # (사용자 답변 2026-10-23 PDF Q10 — 몬스터 A가 원페어, B가 트리플을 같은 턴에 쓸 수 있다).
+    STAT_HOOKS = ('atk_mod', 'def_mod', 'grant')
     def cont_limit(self, c, num):
         """c의 num번 효과가 1턴 1번 [지속]이면 1, 아니면 None (카드 텍스트로 판정)"""
         if num is None or num in (getattr(c, 'cont_forced', None) or ()): return None
@@ -314,12 +326,13 @@ class Game:
         if k not in cache:
             import re as _re
             line = next((l for l in (c.d.get('text') or '').split('\n') if l.startswith(f'{num}.')), '')
-            free = _re.search(r'1턴에 1번 제약을 받지 않는다|1턴에 \d+번까지|상대는 [^.]*수 없다', line)
+            # 「…할 때마다」는 횟수 표기 — 그때마다 적용 (사용자 답변 2026-10-23 PDF Q9: 던전마스터 헬 2번 3번 소환이면 600)
+            free = _re.search(r'1턴에 1번 제약을 받지 않는다|1턴에 \d+번까지|상대는 [^.]*수 없다|때마다', line)
             cache[k] = 1 if ('[지속]' in line and not free) else None
         return cache[k]
     def cont_num(self, c, hook):
         """c의 [지속] 훅(hook)이 1턴 횟수를 세는 효과 번호 — 없으면 None(횟수 없이 적용).
-        공격력 · 수비력 증감(STAT_HOOKS)은 그 번호 문장에 턴 제한이 적혀 있을 때만 번호를 돌려준다 (사용자 지시 2026-10-22)"""
+        공격력 · 수비력 증감 · 효과 부여(STAT_HOOKS)는 그 번호 문장에 턴 제한이 적혀 있을 때만 번호를 돌려준다 (사용자 지시 2026-10-22 · PDF Q10)"""
         n = (getattr(c, 'cont_nums', None) or {}).get(hook)
         if n is not None and hook in self.STAT_HOOKS and not self.turn_limit_text(c, n): return None
         return n
@@ -791,7 +804,8 @@ class Game:
     # ── 드로우 / 서치 ──
     def draw(self, p, n=1, deck=None, cause=None):
         """cause: 기본은 효과(('effect', 주체)) — 턴 시작 드로우 · 시작 패 · 멀리건은 ('rule', None).
-        「효과로 덱에서 패에 넣을 수 없다」([지속] 규칙 'no_deck_to_hand')는 효과로 하는 드로우도 막는다 (사용자 답변 2026-10-22 Q46)"""
+        「효과로 덱에서 패에 넣을 수 없다」([지속] 규칙 'no_deck_to_hand')는 효과로 하는 드로우도 막는다 (사용자 답변 2026-10-22 Q46).
+        드로우가 든 효과의 발동은 막지 않는다 — 나머지(덱으로 되돌리기 · 묘지로 보내기)는 처리하고 드로우만 하지 않는다 (PDF 2026-10-23 Q7)"""
         cause = cause or ('effect', self.src)
         if cause[0] == 'effect' and self.rule('no_deck_to_hand', p, use=True, why='효과로 덱에서 패에 넣지 못하게 함 (드로우)'):
             self.L(f'{self.p[p].name}: 효과로 드로우할 수 없음 (덱에서 패에 넣을 수 없다)', 'sys'); return
@@ -988,9 +1002,6 @@ class Game:
         if e.cost: self.probing = p
         try:
             if not self.can_act(p, c, e, ev): return False
-            # 자신이 드로우하는 효과(Effect.self_draw — 텍스트): 「효과로 덱에서 패에 넣을 수 없다」(횟수 제한 없음)면 발동할 수 없다 — 서치와 같음
-            # (Game.search_cands, 사용자 답변 2026-10-22 Q46 · 2026-10-22 버터플라이 2번 지시)
-            if getattr(e, 'self_draw', False) and self.rule('no_deck_to_hand', p, unlimited=True): return False
             if not self.cost_extra_ok(p, c, e): return False   # 두플리카토르로 2배가 된 코스트를 낼 수 없으면 발동 불가
             if not self.transfer_ok(p, c, e): return False     # 델레가토르로 상대가 대신 낼 수 없는 코스트면 발동 불가
         finally:
@@ -1303,12 +1314,28 @@ class Game:
         뒷면 공격 표시, 수비 표시 몬스터는 뒷면 수비 표시가 된다. 텍스트가 「뒷면 수비 표시로」를 정하면 pos='def'를 넘긴다.
         뒷면 몬스터는 [지속]이 적용되지 않는다(continuous_sources는 앞면만). 뒷면이 되면 놓여 있던 카운터는 전부 사라진다(정본 6-4).
         뒷면 몬스터 자신의 효과는 모두 비활성이고, 뒷면이 되기 전에 적용된 효과(공격력 · 수비력 증감 · 무효 · 부여된 특성 · 내성 등)는
-        다시 앞면이 되어도 없던 것이 된다 — Game.clear_applied (사용자 답변 2026-10-22 Q45). 장착 처리는 규칙 미확정 — 그대로 둔다(ASSUME)"""
+        다시 앞면이 되어도 없던 것이 된다 — Game.clear_applied (사용자 답변 2026-10-22 Q45). 장착 카드는 묘지로 간다(PDF 2026-10-23 Q12).
+        마법 존 · 필드 존의 카드는 Game.set_spell_face_down"""
         cause = cause or ('effect', self.src)
         if not self.on_field(c) or not c.is_monster() or not c.faceup: return False
         if self.blocked(c, cause): return False
         c.faceup = False; self.clear_counters_facedown(c); self.clear_applied(c)
         self.L(f'{c} 뒷면 {"공격" if c.pos == "atk" else "수비"} 표시로')
+        for e in list(c.equips):   # 장착된 대상이 사라지므로 장착 카드는 묘지로 (사용자 답변 2026-10-23 PDF Q12 — 장착 대상이 필드를 벗어난 것은 아니다)
+            self.L(f'장착 대상 {c} 뒷면 → {e} 묘지로', 'sys'); self.send_grave(e, ('rule', None))
+        self.emit('face_down', card=c, cause=cause)
+        return True
+
+    def set_spell_face_down(self, c, cause=None):
+        """마법 · 필드 카드를 「뒷면 표시로 한다」: 마법 존의 카드는 세트 상태로(이 턴에 세트한 것으로 본다).
+        필드 존의 카드는 뒷면이 되면 자동으로 묘지로 간다 (사용자 지시 2026-10-23). 반환: 뒷면이 되었는가(필드 존이면 묘지로 갔는가)"""
+        cause = cause or ('effect', self.src)
+        if not self.on_field(c) or not c.faceup or self.blocked(c, cause): return False
+        c.faceup = False; c.set_turn = self.turn; c.flags.pop('act_this_turn', None)
+        self.clear_counters_facedown(c)
+        if c.zone == 'fieldz':
+            self.L(f'{c} 뒷면 — 필드 존의 카드는 뒷면이 되면 묘지로', 'sys'); self.send_grave(c, ('rule', None)); return True
+        self.L(f'{c} 뒷면(세트) 표시로')
         self.emit('face_down', card=c, cause=cause)
         return True
 

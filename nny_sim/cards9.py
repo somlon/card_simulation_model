@@ -112,9 +112,11 @@ def pri(g, p, x): return g.p[p].ai.card_pri(g, p, x)
 
 # ═══════════════════════ 공통: 뒷면 · 앞면 · 재배치 ═══════════════════════
 def turnable(g, x):
-    """「뒷면 표시로 한다」를 받을 수 있는 앞면 카드: 몬스터 존(공유 존 포함)의 몬스터, 마법 존의 마법 카드(장착 · 몬스터 취급 제외). 필드 존 제외"""
+    """「뒷면 표시로 한다」를 받을 수 있는 앞면 카드: 몬스터 존(공유 존 포함)의 몬스터, 마법 존의 마법 카드(장착 · 몬스터 취급 제외),
+    필드 존의 카드(뒷면이 되면 자동으로 묘지로 — 사용자 지시 2026-10-23, engine.Game.set_spell_face_down)"""
     if not g.on_field(x) or not x.faceup: return False
     if x.zone in FIELD_M: return x.is_monster()
+    if x.zone == 'fieldz': return True
     if x.zone == 's':
         return x.type == '마법' and x.equip_to is None and not x.equips and not x.flags.get('as_spell') and not x.flags.get('as_monster')
     return False
@@ -125,11 +127,7 @@ def turn_face_down(g, x, src):
     if not turnable(g, x): return False
     cause = ('effect', src)
     if x.zone in FIELD_M: return g.set_face_down(x, cause)
-    if g.blocked(x, cause): return False
-    x.faceup = False; x.set_turn = g.turn; x.flags.pop('act_this_turn', None)
-    g.L(f'{x} 뒷면(세트) 표시로'); g.clear_counters_facedown(x)
-    g.emit('face_down', card=x, cause=cause)
-    return True
+    return g.set_spell_face_down(x, cause)   # 필드 존의 카드는 묘지로
 
 
 def keep_set(g, x):
