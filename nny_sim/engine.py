@@ -805,7 +805,8 @@ class Game:
     def draw(self, p, n=1, deck=None, cause=None):
         """cause: 기본은 효과(('effect', 주체)) — 턴 시작 드로우 · 시작 패 · 멀리건은 ('rule', None).
         「효과로 덱에서 패에 넣을 수 없다」([지속] 규칙 'no_deck_to_hand')는 효과로 하는 드로우도 막는다 (사용자 답변 2026-10-22 Q46).
-        드로우가 든 효과의 발동은 막지 않는다 — 나머지(덱으로 되돌리기 · 묘지로 보내기)는 처리하고 드로우만 하지 않는다 (PDF 2026-10-23 Q7)"""
+        처리의 첫 단계가 드로우인 효과는 발동할 수 없고(Game.legal · Effect.draw_first), 다른 처리가 먼저인 효과(영웅의 조건 · 조커)는
+        발동해서 나머지를 처리하고 드로우만 하지 않는다 (PDF 2026-10-23 Q7 · 후속 답변)"""
         cause = cause or ('effect', self.src)
         if cause[0] == 'effect' and self.rule('no_deck_to_hand', p, use=True, why='효과로 덱에서 패에 넣지 못하게 함 (드로우)'):
             self.L(f'{self.p[p].name}: 효과로 드로우할 수 없음 (덱에서 패에 넣을 수 없다)', 'sys'); return
@@ -1002,6 +1003,11 @@ class Game:
         if e.cost: self.probing = p
         try:
             if not self.can_act(p, c, e, ev): return False
+            # 처리의 첫 단계가 드로우인 효과(드로우만 · 「드로우하고 …」 — Effect.draw_first)는 드로우하는 쪽이 「효과로 덱에서 패에 넣을 수 없다」면
+            # 발동할 수 없다(처리 가능해야 선언 · 앞→뒤 처리). 다른 처리가 먼저인 효과는 발동하고 드로우만 하지 않는다(Game.draw)
+            # (사용자 답변 2026-10-23 PDF Q7 · 후속 답변 — 서치 효과와 같음, Game.search_cands)
+            dw = getattr(e, 'draw_first', None)
+            if dw and self.rule('no_deck_to_hand', p if dw == 'self' else 1 - p, unlimited=True): return False
             if not self.cost_extra_ok(p, c, e): return False   # 두플리카토르로 2배가 된 코스트를 낼 수 없으면 발동 불가
             if not self.transfer_ok(p, c, e): return False     # 델레가토르로 상대가 대신 낼 수 없는 코스트면 발동 불가
         finally:
