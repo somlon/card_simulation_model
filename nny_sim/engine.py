@@ -162,7 +162,7 @@ class Game:
 
     # 효과 내성 플래그 — [지속] 공격력 · 수비력 증감도 받지 않는다 (2026-10-13: 예전에는 immune_others · immune_except만 보았다)
     MOD_IMMUNE_KEYS = ('immune_except', 'immune_others', 'immune_except_group', 'immune_all_until', 'immune_opp_until', 'immune_opp_perm',
-                       'untargetable_opp', 'immune_opp_untargeted')
+                       'untargetable_opp', 'immune_opp_untargeted', 'immune_opp')
     def mod_applies(self, c, src):
         """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드 · 뒷면 카드(내성 비활성, Q45)는 그대로,
         내성 플래그가 있으면 Game.immune으로 판정"""
@@ -187,6 +187,7 @@ class Game:
           flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
           flags['immune_except_opp'] — immune_except의 예외 카드도 상대(by ≠ 컨트롤러)의 것만 받는다
           flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다
+          flags['immune_opp'] — 「이 카드는 상대의 효과를 받지 않는다」 [지속] (조건부면 callable — Game.flag). 발동하는 효과 · 아닌 효과([지속]) 모두
         뒷면 카드는 대상 지정 효과의 대상이 되지 않는다(정본 1-1, 사용자 답변 2026-10-22 Q45) — 자신 · 상대의 효과 모두, 대상을 지정하지 않는 효과는 받는다.
         뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45)"""
         if self.on_field(c) and not c.faceup and by is not None:
@@ -210,6 +211,7 @@ class Game:
             tt = getattr(getattr(self, 'src_eff', None), 'targets_text', None) if probe else None
             if self.flag(c, 'untargetable_opp') and (self.targeting_now(by) or (probe and tt is not False)): return True   # 「상대 효과의 대상이 되지 않는다」
             if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by) and not (probe and tt): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
+            if self.cont_flag(c, 'immune_opp') is not None and self.flag(c, 'immune_opp'): return True   # 「상대의 효과를 받지 않는다」 [지속] (버터플라이 2번, 2026-10-25)
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
@@ -225,6 +227,8 @@ class Game:
         if not cause or cause[0] != 'effect' or cause[1] is None or not self.on_field(c): return False
         if self.immune(c, cause[1].controller, cause[1]):
             if c.flags.get('immune_others') and not self.cont_flag_use(c, 'immune_others', '다른 카드의 효과를 받지 않음'): return False
+            if c.flags.get('immune_opp') is not None and cause[1].controller != c.controller and self.flag(c, 'immune_opp') \
+               and not self.cont_flag_use(c, 'immune_opp', '상대의 효과를 받지 않음'): return False
             self.L(f'{c}은(는) 상대의 효과를 받지 않음', 'sys'); return True
         return False
 
@@ -390,24 +394,13 @@ class Game:
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
         srcs += [self.p[i].skill for i in (0, 1) if self.p[i].skill and not self.p[i].skill.negated]
         return srcs
-    # 플레이어에게 거는 [지속] 규칙 → 그 플레이어 인자의 위치 (덱→패 금지 · 트리거 마법 발동 금지 · 코스트 2배 · 특수소환 금지)
-    PLAYER_RULES = {'no_deck_to_hand': 0, 'no_trigger_spell': 0, 'cost_double': 0, 'no_special': 1}
-    def player_unaffected(self, p, src=None):
-        """플레이어 p가 상대(src의 컨트롤러)의 효과를 받지 않는가 — [지속] 규칙 'player_immune'(p): 「자신은 상대의 효과를 받지 않는다」
-        (데이터버그 버터플라이 2번, 사용자 지시 2026-10-25). 플레이어에 대한 내성이다 — p의 필드 · 패의 카드에 대한 내성은 아니다"""
-        if src is not None and src.controller == p: return False
-        return self.rule('player_immune', p)
     def rule(self, key, *a, use=False, choose=None, why='', unlimited=False):
         """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True. 1턴 1번 [지속](c.cont_nums의 'rule:key')은 이 턴에 남아 있을 때만 본다.
         use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다).
-        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다).
-        플레이어에게 거는 [지속](PLAYER_RULES)은 그 플레이어가 상대의 효과를 받지 않으면(Game.player_unaffected) 상대 카드의 것을 보지 않는다"""
-        pi = self.PLAYER_RULES.get(key)
-        pl = a[pi] if pi is not None and len(a) > pi else None
+        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다)"""
         for src in self.continuous_sources():
             f = getattr(src, 'rules', {}).get(key)
             if not f: continue
-            if pl is not None and src.controller != pl and self.player_unaffected(pl, src): continue
             n = self.cont_num(src, 'rule:' + key)
             if unlimited and self.cont_limit(src, n) is not None: continue
             if not self.cont_ready(src, n): continue
@@ -787,7 +780,7 @@ class Game:
         if getattr(self, 'no_damage', {}).get(1 - p, -1) >= self.turn and src != '공유 존 마커' and not src.startswith('자해'):
             self.L(f'{self.pname(1-p)}은(는) 이 턴 대미지를 줄 수 없음 — {amt} 무효', 'sys'); return
         # [지속] 규칙 'no_effect_damage'(p, src): 「자신은 상대의 효과를 받지 않는다」 — 상대의 효과 대미지를 받지 않는다
-        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 데이터버그 버터플라이 2번, 2026-10-25 텍스트)
+        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 예전 데이터버그 버터플라이 2번, 2026-10-22 텍스트 변경으로 지금은 쓰는 카드 없음)
         if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src, use=True, why='효과 대미지를 받지 않음'):
             self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
