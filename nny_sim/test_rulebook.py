@@ -6,6 +6,17 @@ from test_new_mechanics import make, card, on_field, eff, Idle
 
 
 class EngineRulingTest(unittest.TestCase):
+    def test_face_down_spell_ignores_negation(self):
+        # 사용자 지시 2026-10-25: 뒷면 마법 카드는 대상 · 비대상 무효 효과를 전부 받지 않는다
+        g = make('세제', '세제')
+        s = card(g, '취득세', 1, None); g.place_spell(s, 1, False)
+        self.assertFalse(g.negate_card(s, None))
+        self.assertFalse(g.is_neg(s))
+        s.faceup = True
+        self.assertTrue(g.negate_card(s, None))
+        g.set_spell_face_down(s)                                 # 앞면일 때 받은 무효도 뒷면이 되면 사라진다
+        self.assertFalse(g.is_neg(s))
+
     def test_face_down_clears_counters(self):
         # 정본 6-4: 카운터가 놓인 카드가 뒷면 표시가 되면 카운터는 전부 사라진다
         g = make('세제', '세제')
@@ -117,16 +128,17 @@ class MatchRulingTest(unittest.TestCase):
 
 class DuplicatorTest(unittest.TestCase):
     """세리 - 두플리카토르: 서로의 카드 코스트 매수 2배 (재정 정리 2026-10-17, 정본 3-6 f)"""
-    def test_self_cost_needs_one_more_card(self):
+    def test_self_only_cost_not_doubled(self):
+        # 룰지 f 개정(사용자 지시 2026-10-25): 코스트가 「이 카드」만이면 2배가 되지 않는다
         g = make('던전마스터 셔플!', '세제')
         on_field(g, '세리 - 두플리카토르', 1)
         sac = card(g, '던전마스터 새크리파이스', 0, 'hand')
-        g.p[0].hand[:] = [sac]                                  # 패에 이 카드뿐 → 「이 카드」 + 1장을 낼 수 없다
-        self.assertFalse(g.legal(0, sac, eff(sac, 1)))
         other = card(g, '던전마스터 망령', 0, 'hand')
+        g.p[0].hand[:] = [sac]                                  # 패에 이 카드뿐이어도 발동할 수 있다
         self.assertTrue(g.legal(0, sac, eff(sac, 1)))
+        g.p[0].hand.append(other)
         g.activate(0, sac, eff(sac, 1))
-        self.assertEqual((sac.zone, other.zone), ('grave', 'grave'))
+        self.assertEqual((sac.zone, other.zone), ('grave', 'hand'))
 
     def test_counted_cost_doubles(self):
         g = make('데이터버그 패키지 프로그램', '세제')

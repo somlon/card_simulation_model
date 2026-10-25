@@ -300,6 +300,24 @@ class BossTest(unittest.TestCase):
         mon(g, D.BUTTER, 1); spell(g, D.LOADING, 1)                    # 버터플라이 2번: 그 플레이어는 받지 않는다
         self.assertEqual(g.search_cands(1, lambda x: True), [f])
 
+    def test_butterfly_player_immunity_needs_databug_spell(self):
+        # 버터플라이 2번 (2026-10-25 텍스트): 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 자신은 상대의 효과를 받지 않는다
+        g = make()
+        bt = mon(g, D.BUTTER, 1); dw = mon(g, D.DWORM, 0)
+        g.src = dw; hp = g.p[1].hp
+        g.damage(1, 500, dw.name)
+        self.assertEqual(g.p[1].hp, hp - 500)                           # 「데이터버그」 마법이 없으면 받는다
+        self.assertFalse(g.player_unaffected(1, dw))
+        spell(g, D.LOADING, 1, faceup=False)
+        self.assertFalse(g.player_unaffected(1, dw))                    # 뒷면 마법은 세지 않는다
+        spell(g, D.LOADING, 1)
+        self.assertTrue(g.player_unaffected(1, dw))
+        self.assertFalse(g.player_unaffected(1, bt))                    # 자신의 효과는 받는다
+        g.damage(1, 500, dw.name)
+        self.assertEqual(g.p[1].hp, hp - 500)                           # 상대의 효과 대미지를 받지 않는다
+        self.assertFalse(g.player_unaffected(0, bt))                    # 상대 플레이어는 그대로
+        g.src = None
+
 
 # ═══════════════════════ 마법 ═══════════════════════
 class SpellTest(unittest.TestCase):

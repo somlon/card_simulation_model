@@ -308,7 +308,7 @@ class Game:
     # 카드가 무효가 될 때까지 늘 적용된다(사용자 지시 2026-10-22 — 솔루나 아츠 1번처럼 멈추려면 카드를 무효로 하는 효과를 써야 한다).
     # 체인에 응해 한 효과의 발동을 무효로 해도(Game.negate) 그 카드의 다른 번호 효과는 무효가 되지 않는다.
     # 상대 플레이어에게 거는 금지(「상대는 … 수 없다」)는 1턴 1번이어도 상대의 모든 행동에 작용하므로 사실상 횟수 제한이 없다
-    # (사용자 지시 2026-10-22 — 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
+    # (사용자 지시 2026-10-22 — 그때의 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
     # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
     # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
@@ -390,13 +390,24 @@ class Game:
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
         srcs += [self.p[i].skill for i in (0, 1) if self.p[i].skill and not self.p[i].skill.negated]
         return srcs
+    # 플레이어에게 거는 [지속] 규칙 → 그 플레이어 인자의 위치 (덱→패 금지 · 트리거 마법 발동 금지 · 코스트 2배 · 특수소환 금지)
+    PLAYER_RULES = {'no_deck_to_hand': 0, 'no_trigger_spell': 0, 'cost_double': 0, 'no_special': 1}
+    def player_unaffected(self, p, src=None):
+        """플레이어 p가 상대(src의 컨트롤러)의 효과를 받지 않는가 — [지속] 규칙 'player_immune'(p): 「자신은 상대의 효과를 받지 않는다」
+        (데이터버그 버터플라이 2번, 사용자 지시 2026-10-25). 플레이어에 대한 내성이다 — p의 필드 · 패의 카드에 대한 내성은 아니다"""
+        if src is not None and src.controller == p: return False
+        return self.rule('player_immune', p)
     def rule(self, key, *a, use=False, choose=None, why='', unlimited=False):
         """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True. 1턴 1번 [지속](c.cont_nums의 'rule:key')은 이 턴에 남아 있을 때만 본다.
         use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다).
-        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다)"""
+        unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다).
+        플레이어에게 거는 [지속](PLAYER_RULES)은 그 플레이어가 상대의 효과를 받지 않으면(Game.player_unaffected) 상대 카드의 것을 보지 않는다"""
+        pi = self.PLAYER_RULES.get(key)
+        pl = a[pi] if pi is not None and len(a) > pi else None
         for src in self.continuous_sources():
             f = getattr(src, 'rules', {}).get(key)
             if not f: continue
+            if pl is not None and src.controller != pl and self.player_unaffected(pl, src): continue
             n = self.cont_num(src, 'rule:' + key)
             if unlimited and self.cont_limit(src, n) is not None: continue
             if not self.cont_ready(src, n): continue
@@ -776,7 +787,7 @@ class Game:
         if getattr(self, 'no_damage', {}).get(1 - p, -1) >= self.turn and src != '공유 존 마커' and not src.startswith('자해'):
             self.L(f'{self.pname(1-p)}은(는) 이 턴 대미지를 줄 수 없음 — {amt} 무효', 'sys'); return
         # [지속] 규칙 'no_effect_damage'(p, src): 「자신은 상대의 효과를 받지 않는다」 — 상대의 효과 대미지를 받지 않는다
-        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 예전 데이터버그 버터플라이 2번, 2026-10-22 텍스트 변경으로 지금은 쓰는 카드 없음)
+        # (출처 판정은 규칙 쪽. 규칙이 없으면 그대로 — 데이터버그 버터플라이 2번, 2026-10-25 텍스트)
         if src != '공유 존 마커' and not str(src).startswith('자해') and self.rule('no_effect_damage', p, src, use=True, why='효과 대미지를 받지 않음'):
             self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
@@ -1052,9 +1063,9 @@ class Game:
         return k
 
     # ── 두플리카토르 (세리 - 두플리카토르 1번 [지속]: 서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배) ──
-    # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수 또는 None, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
-    # 정본 3-6 f 재정: 코스트가 「이 카드」만이면 「이 카드 1장」으로 보아 2배(이 카드 + 같은 곳의 카드 1장 — 후보 None),
-    # 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 세리의 덱 위 제외 · 제외 존→덱 코스트는 cards4가 직접 2배로 한다.
+    # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
+    # 정본 3-6 f 재정: 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 코스트가 「이 카드」만이면 2배가 되지 않는다
+    # (룰지 f 개정 — 「이 카드 1장」으로 보아 2배로 하던 문장 삭제, 사용자 지시 2026-10-25). 세리의 덱 위 제외 · 제외 존→덱 코스트는 cards4가 직접 2배로 한다.
     COST_ACTIONS = {'grave': 'send_grave', 'release': 'tribute', 'banish': 'banish', 'deck': 'to_deck', 'hand': 'to_hand'}
 
     def cost_specs(self, p, c, e):
@@ -1063,18 +1074,9 @@ class Game:
         if not specs or not self.rule('cost_double', p): return []
         return [s for s in specs if len(s) < 5 or s[4](self, c, p)]
 
-    def cost_extra_pool(self, p, c, s, zone=None):
-        """두플리카토르로 더 내야 하는 카드의 후보. 후보 함수가 없으면(「이 카드」 코스트) 이 카드가 있는 곳의 다른 카드"""
-        act, pool = s[0], s[1]
-        if pool is not None: return list(pool(self, c, p))   # 후보 함수가 정한 범위 그대로 (이 카드를 포함할 수 있는 코스트 — 재정 질문 데이터버그 12)
-        z = zone or c.zone; pl = self.p[p]
-        if z == 'hand': xs = list(pl.hand)
-        elif z == 'grave': xs = list(pl.grave)
-        elif z in ('m', 'shared'): xs = [x for x in self.monsters(p) if x.is_monster()]
-        else: xs = self.field_cards(p)
-        xs = [x for x in xs if x is not c]
-        if act == 'release': xs = [x for x in xs if self.releasable(x)]
-        return xs
+    def cost_extra_pool(self, p, c, s):
+        """두플리카토르로 더 내야 하는 카드의 후보: 후보 함수가 정한 범위 그대로 (이 카드를 포함할 수 있는 코스트 — 재정 질문 데이터버그 12)"""
+        return list(s[1](self, c, p))
 
     def cost_extra_ok(self, p, c, e):
         return all(len(self.cost_extra_pool(p, c, s)) >= s[2] + s[3] for s in self.cost_specs(p, c, e))
@@ -1082,7 +1084,7 @@ class Game:
     def pay_cost_extra(self, p, c, specs, link):
         for s in specs:
             # 자신의 카드는 덜 아끼는 것부터, 상대의 카드(상대 카드를 코스트로 쓰는 효과)는 상대가 아끼는 것부터
-            xs = sorted(self.cost_extra_pool(p, c, s, link.ctx.get('from_zone')),
+            xs = sorted(self.cost_extra_pool(p, c, s),
                         key=lambda x: self.p[x.controller].ai.card_pri(self, x.controller, x) * (1 if x.controller == p else -1))[:s[3]]
             self.L(f'두플리카토르: 코스트 {s[3]}장 더 지불 — {", ".join(map(str, xs)) or "없음"}', 'sys')
             for x in xs:
@@ -1185,6 +1187,8 @@ class Game:
             c.negated = True; self.L(f'{c} 턴 종료 시까지 무효 (스킬)', 'sys')
             self.emit('negated', link=None, card=c, player=c.controller, by=src); return True
         if not self.on_field(c): return False
+        if not c.faceup and not c.is_monster():   # 뒷면 마법은 대상 · 비대상 무효 효과를 전부 받지 않는다 (사용자 지시 2026-10-25)
+            self.L(f'{c}은(는) 뒷면 마법 — 무효 효과를 받지 않음', 'sys'); return False
         if self.blocked(c, ('effect', src)): return False
         if perma is None: c.negated = True
         else: c.flags['perma_neg'] = perma
@@ -1338,6 +1342,7 @@ class Game:
         cause = cause or ('effect', self.src)
         if not self.on_field(c) or not c.faceup or self.blocked(c, cause): return False
         c.faceup = False; c.set_turn = self.turn; c.flags.pop('act_this_turn', None)
+        c.negated = False; c.flags.pop('perma_neg', None)   # 뒷면 마법은 무효 효과를 받지 않는다 — 앞면일 때 받은 무효도 사라진다 (사용자 지시 2026-10-25)
         self.clear_counters_facedown(c)
         if c.zone == 'fieldz':
             self.L(f'{c} 뒷면 — 필드 존의 카드는 뒷면이 되면 묘지로', 'sys'); self.send_grave(c, ('rule', None)); return True

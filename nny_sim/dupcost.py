@@ -1,8 +1,9 @@
 """두플리카토르 코스트 표 — 세리 - 두플리카토르 1번 [지속] 「서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배가 된다」
 (정본 3-6 f 재정 · 재정 정리 2026-10-17: 세리식 코스트만이 아니라 카드 매수로 지불하는 모든 코스트).
+룰지 f 개정(사용자 지시 2026-10-25): 「이 카드」만을 지정한 코스트를 「이 카드 1장」으로 보아 2배로 하던 문장이 삭제됨 — 그런 코스트는 2배가 되지 않는다.
+「이 카드를 포함한 n장」은 「이 카드」를 제외한 나머지 매수만 2배.
 
-카드 이름 → {효과 번호: [코스트 명세, …]}. 명세 = (동작, 후보 함수 또는 None, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수[, 적용 조건]).
-  - 후보 None: 코스트가 「이 카드」뿐 → 「이 카드 1장」으로 보아 2배 = 이 카드 + 이 카드가 있던 곳의 다른 카드 1장 (Game.cost_extra_pool)
+카드 이름 → {효과 번호: [코스트 명세, …]}. 명세 = (동작, 후보 함수, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수[, 적용 조건]).
   - 후보 함수 (g, c, p) → 그 코스트로 낼 수 있는 카드 목록: 원래 n장 → 2n장 (n장 더)
   - 적용 조건 (g, c, p) → False면 이번 발동에는 카드 코스트가 없다(면제 · 카운터로 대신 내는 경우)
 동작: grave(묘지로) · release(릴리스) · banish(제외) · deck(덱으로) · hand(패로) · hand_opp(상대 패로) · deck_grave(덱에서 묘지로).
@@ -15,6 +16,7 @@
   - 더 바이러스 · 더 딜리트 1번: 소환 절차이므로 「카드의 발동」이 아니다
   - 「보여주고 발동」(공개)은 지불이 아니다. 봉인 · 저주 카운터는 카드가 아니다(정본 6)
   - 행운의 도적 1번(「보내고 발동할 수도 있다」 — 임의 코스트): 넣지 않음
+  - 「이 카드」만을 지정한 코스트(패 · 필드의 이 카드를 묘지로 · 릴리스, 묘지의 이 카드를 제외 등)와 코스트 중 「이 카드」 부분: 2배가 되지 않는다(룰지 f 개정, 2026-10-25)
 """
 
 
@@ -33,23 +35,15 @@ def table():
     SOL = lambda x: x.has('솔루나') and x.is_monster()
     CIEL = lambda x: grp(x, '시엘') and x.is_monster()
     SIA = lambda x: grp(x, '시아') and x.is_monster()
-    SELF_HAND = [('grave', None, 0, 1)]
-    SELF_REL = [('release', None, 0, 1)]
-    SELF_BANISH = [('banish', None, 0, 1)]
-    SELF_GRAVE = [('grave', None, 0, 1)]
     ciel_paid = lambda g, c, p: not g.rule('ciel_cost_free', p, c)
     t = {
-        # ── 공용 ──
-        '명계의 징벌': {2: SELF_BANISH},
         # ── 번성충 ──
         '번성충-시체송장벌레': {1: [('banish', lambda g, c, p: list(g.p[1 - p].grave), 1, 1)]},
-        '번성충-먹이바구미': {1: SELF_HAND}, '번성충-노린재': {1: SELF_HAND}, '번성충-주기매미': {1: SELF_HAND},
-        '번성충-병정흰개미': {1: SELF_HAND}, '번성충-하루살이대군': {1: SELF_HAND},
         '번성충-메뚜기여왕': {1: [('release', lambda g, c, p: [x for x in g.field_cards(1 - p) if g.releasable(x)], 1, 1)]},
         '번성충-장수말벌여왕': {1: [('release', lambda g, c, p: [x for x in g.spells(1 - p) if g.releasable(x)], 1, 1)]},
         # ── 솔루나 ──
         '솔루나 아츠 - 여명과 황혼의 궤적': {1: [('hand', _own_mons(SOL), 1, 1)]},
-        '솔루나 아츠 - 천체정렬': {2: [('grave', lambda g, c, p: [x for x in g.p[p].hand if x.name == c.name], 1, 1), ('banish', _own_grave(lambda x: True), 0, 1)]},
+        '솔루나 아츠 - 천체정렬': {2: [('grave', lambda g, c, p: [x for x in g.p[p].hand if x.name == c.name], 1, 1)]},   # 묘지의 이 카드 제외는 그대로
         '시엘 아츠 - 월영침식': {1: [('banish', _own_mons(CIEL), 1, 1, ciel_paid)]},
         '시엘 아츠 - 잔월의 유산': {1: [('grave', _own_mons(CIEL), 1, 1, ciel_paid)]},
         '시엘 아츠 - 월영암수': {1: [('hand_opp', _own_mons(CIEL), 1, 1, ciel_paid)]},
@@ -57,21 +51,11 @@ def table():
         '시아 아츠 - 성광난무': {1: [('hand', _own_mons(SIA), 1, 1)]},
         '시아 아츠 - 일광지로': {1: [('deck', _own_mons(SIA), 1, 1)]},
         '시아 아츠 - 성광소각': {1: [('grave', lambda g, c, p: [m for m in g.monsters(0) + g.monsters(1) if SIA(m) and m.faceup], 1, 1)]},
-        # ── 격투가 ──
-        '격투가 입장': {2: SELF_BANISH},
         # ── 소원의 분수 ──
         '지혜의 원천 - 마도서': {1: [('grave', lambda g, c, p: [x for x in g.field_cards(p) if x is not c], 1, 1)]},
-        '희생의 성녀': {2: SELF_GRAVE},
         # ── 호박옥 ──
-        '호박옥 - 결정충': {2: SELF_GRAVE},
         '호박옥 - 반혼체': {1: [('deck', _own_grave(C7.AMB), 2, 2)]},
-        '호박옥 - 태고의 수해': {3: SELF_BANISH},
-        # ── 던전마스터 ──
-        '던전마스터 새크리파이스': {1: SELF_HAND, 2: SELF_HAND, 3: SELF_HAND},
-        '던전마스터 망령': {1: SELF_REL}, '던전마스터 다크나이트': {1: SELF_REL}, '던전마스터 다크엘프 어새신': {2: SELF_REL},
         # ── 데이터버그 ──
-        '데이터버그 캐터필러': {1: SELF_REL}, '데이터버그 코쿤': {1: SELF_REL},
-        '데이터버그 앤트': {1: SELF_HAND}, '데이터버그 웜': {1: SELF_HAND},
         '데이터버그 에볼루션 마스터': {1: [('release', lambda g, c, p: rel_pool(g, p), 2, 2)]},
         '데이터버그 퀸 비': {2: [('release', lambda g, c, p: rel_pool(g, p), 2, 2)]},
         '데이터버그 유니온 마스터': {1: [('release', lambda g, c, p: rel_pool(g, p), 2, 2)]},
