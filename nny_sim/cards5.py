@@ -127,7 +127,7 @@ def _(c):
 
 @card('희생의 의사')
 def _(c):
-    c.effects = [lastwill(2, lambda g, c, p, l: revive_best(g, p, low_mon_grave(g, p)), 75,
+    c.effects = [lastwill(1, lambda g, c, p, l: revive_best(g, p, low_mon_grave(g, p)), 75,
                           cond=lambda g, c, p, ev: bool(low_mon_grave(g, p)), label='[유언] 레벨 4 이하 소생')]
 
 @card('코인 - 용기의 검')
@@ -142,7 +142,7 @@ def _(c):
     def res(g, c, p, l):
         t = l.ctx.get('t')
         if t and g.on_field(t): g.destroy(t)
-    c.effects = [lastwill(2, res, lambda g, c, p, ev: 75 if targets(g, p, opp_cards(g, p)) else VETO,
+    c.effects = [lastwill(1, res, lambda g, c, p, ev: 75 if targets(g, p, opp_cards(g, p)) else VETO,
                           cond=lambda g, c, p, ev: bool(targets(g, p, g.all_field())), cost=cost, label='[유언] 파괴', threat=900)]
 
 @card('코인 - 지혜의 서')
@@ -159,7 +159,7 @@ def _(c):
     def res(g, c, p, l):
         t = l.ctx.get('t')
         if t and g.on_field(t) and g.negate_card(t, c): g.L(f'{t} 턴 종료 시까지 무효')
-    c.effects = [lastwill(2, res, lambda g, c, p, ev: 40 if targets(g, p, [x for x in opp_cards(g, p) if x.faceup]) else VETO,
+    c.effects = [lastwill(1, res, lambda g, c, p, ev: 40 if targets(g, p, [x for x in opp_cards(g, p) if x.faceup]) else VETO,
                           cond=lambda g, c, p, ev: bool(targets(g, p, [x for x in g.all_field() if x.faceup])), cost=cost, label='[유언] 무효', threat=600)]
 
 @card('코인 - 행운의 네잎클로버')
@@ -170,7 +170,7 @@ def _(c):
 @card('행운의 도박사')
 def _(c):
     LUCK = lambda x: grp(x, '행운')
-    c.effects = [lastwill(2, lambda g, c, p, l: g.search(p, LUCK, why='행운의 도박사'), 75,
+    c.effects = [lastwill(1, lambda g, c, p, l: g.search(p, LUCK, why='행운의 도박사'), 75,
                           cond=lambda g, c, p, ev: g.can_search(p, LUCK, source=c), label='[유언] 행운 서치')]
 
 @card('행운의 도적')
