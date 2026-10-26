@@ -172,6 +172,8 @@ class UpperTest(unittest.TestCase):
         on_field(g, KILLER, 1)
         g.act(0, tr, eff(tr, 2))
         self.assertEqual(rep.zone, 's'); self.assertFalse(rep.faceup)
+        self.assertFalse(g.legal(0, rep, eff(rep, 1)))       # 묘지에 「트랩」이 없다 — 「3장까지」는 최소 1장 (사용자 답변 2026-10-22 남은 재정 5차)
+        card(g, NEEDLE, 0, 'grave')
         self.assertTrue(g.legal(0, rep, eff(rep, 1)))        # 세트 상태 → 자신 턴에 다시 발동할 수 있다
 
     def test_forced_last_will_opponent_draws(self):
@@ -267,7 +269,14 @@ class UpperTest(unittest.TestCase):
         self.assertEqual(len(g.p[0].hand), n + 1)
         nh = len(g.p[1].hand)
         g.destroy(ct, ('effect', None)); run_triggers(g)
-        self.assertEqual(ct.zone, 'upper'); self.assertEqual(len(g.p[1].hand), nh + 1)
+        # 1번으로 데스 칠 드래곤을 불렀으면 2번 「상대는 효과로 덱에서 카드를 패에 넣을 수 없다」가 [유언]의 「상대는 1장 드로우」도 막는다
+        # (효과로 하는 드로우도 막는다 — 사용자 답변 2026-10-22 Q46)
+        lock = any(m.name == DEATHCHILL for m in g.monsters(0))
+        self.assertEqual(ct.zone, 'upper'); self.assertEqual(len(g.p[1].hand), nh + (0 if lock else 1))
+        g2 = make()                                          # 덱→패 금지가 없으면 상대는 1장 드로우
+        ct2 = on_field(g2, CONTROLLER, 0); nh2 = len(g2.p[1].hand)
+        g2.destroy(ct2, ('effect', None)); run_triggers(g2)
+        self.assertEqual(ct2.zone, 'upper'); self.assertEqual(len(g2.p[1].hand), nh2 + 1)
 
     def test_death_chill_battle_damage_and_search_lock(self):
         g = make()

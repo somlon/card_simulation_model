@@ -38,27 +38,35 @@ class Impl:
         if f: f(c)
         else: c.flags['unimplemented'] = True
         import dupcost; dupcost.apply(c)   # 두플리카토르 코스트 명세 (Effect.cost_spec)
-        # 같은 이름 예외 자동 표시: 해당 번호 효과 문장에 「동명」 허용 문구나 자기 카드명이 가져오기 · 특수소환 대상으로 적힌 경우
-        import re as _re
         for e in c.effects:
             line = next((l for l in c.d['text'].split('\n') if l.startswith(f'{e.num}.')), c.d['text'] if len(c.effects) == 1 else '')
-            if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
-               (f'「{c.name}」' in line and _re.search(r'특수소환|패에 넣', line)):
-                e.same_name_ok = True
-            # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
-            if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
-            # 대상 지정 효과인가 (발동 판정 중 내성 판정 — engine.Game.immune): 문장에 「대상으로 하고」가 있으면 대상 지정, 없으면 비대상
-            if line: e.targets_text = bool(_re.search(r'대상으로 하', line))
-            # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
-            if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
-            e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
-            # 코스트의 「필드」에 상대 필드가 드는가 (cost_opp — 「서로」 · 「상대」가 적혀 있을 때만, 사용자 답변 2026-10-22 Q41)
-            e.cost_opp_field = cost_opp_field(line)
-            # 제거 효과인가 — 대상(「그 카드 …」)을 파괴 · 묘지로 · 제외 · 패 · 덱으로 옮긴다. 뒷면 마법은 이런 효과의 대상만 될 수 있다
-            # (engine.Game.immune, 사용자 답변 2026-10-23 PDF Q6)
-            if line: e.removal_text = e.targets_text and removal_text(line)
-            # 처리의 첫 단계가 드로우인가('self' / 'opp' — 드로우하는 쪽) — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다 (engine.Game.legal)
-            e.draw_first = draw_first_text(line)
+            text_attrs(e, line, c.name)
+
+def text_attrs(e, line, name):
+    """효과 문장 line(카드 name의 그 번호 줄, 부여 효과는 부여하는 카드의 「-」 항목)에서 Effect의 성질을 단다 — Impl.attach · 부여 효과(cards2.cer_effect) 공통"""
+    import re as _re
+    # 같은 이름 예외 자동 표시: 해당 번호 효과 문장에 「동명」 허용 문구나 자기 카드명이 가져오기 · 특수소환 대상으로 적힌 경우
+    if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
+       (f'「{name}」' in line and _re.search(r'특수소환|패에 넣', line)):
+        e.same_name_ok = True
+    # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
+    if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
+    # 대상 지정 효과인가 (발동 판정 중 내성 판정 — engine.Game.immune): 문장에 「대상으로 하고」가 있으면 대상 지정, 없으면 비대상
+    if line: e.targets_text = bool(_re.search(r'대상으로 하', line))
+    # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
+    if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
+    e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
+    # 코스트의 「필드」에 상대 필드가 드는가 (cost_opp — 「서로」 · 「상대」가 적혀 있을 때만, 사용자 답변 2026-10-22 Q41)
+    e.cost_opp_field = cost_opp_field(line)
+    # 제거 효과인가 — 대상(「그 카드 …」)을 파괴 · 묘지로 · 제외 · 패 · 덱으로 옮긴다. 뒷면 마법은 이런 효과의 대상만 될 수 있다
+    # (engine.Game.immune, 사용자 답변 2026-10-23 PDF Q6)
+    if line: e.removal_text = e.targets_text and removal_text(line)
+    # 처리의 첫 단계가 드로우인가('self' / 'opp' — 드로우하는 쪽) — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다 (engine.Game.legal)
+    e.draw_first = draw_first_text(line)
+
+def granted_lines(d):
+    """카드 자료 d의 텍스트에서 부여하는 효과의 「-」 항목들 (앞의 「-」는 뗀다)"""
+    return [l.strip()[1:].strip() for l in (d.get('text') or '').split('\n') if l.strip().startswith('-')]
 
 # ───────────── 공통 헬퍼 ─────────────
 def own_turn(g, p): return g.turn_player == p

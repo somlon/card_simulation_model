@@ -244,11 +244,21 @@ class SpellTest(unittest.TestCase):
 
     def test_eclipse_on_sum_reaching_five(self):
         g = make(ai=Yes)
-        m = mon(g, A.AUREM, 0, 'def', seals=4)
+        m = mon(g, A.RESINA, 0, 'def', seals=4)
         ec = spell(g, '월식', 0, faceup=False); ec.set_turn = 1
         t = mon(g, '솔루나 시아', 1)
         g.events = []; g.add_counter(m, A.SEAL, 1); run(g)
         self.assertFalse(t.faceup); self.assertEqual(A.seals(m), 0)
+
+    def test_eclipse_cannot_remove_counters_from_immune_aurem(self):
+        # 아우렘 2번 「「호박옥」 카드 이외의 카드의 효과를 받지 않는다」: 월식(카드군 「봉인을 푸는 자」)은 그 카운터를 뗄 수 없다 —
+        # 효과를 받지 않는 카드의 카운터는 그 효과로 떼지 못한다 (사용자 답변 2026-10-23 PDF Q2). 뒷면 수비 처리는 따로 한다
+        g = make(ai=Yes)
+        m = mon(g, A.AUREM, 0, 'def', seals=4)
+        ec = spell(g, '월식', 0, faceup=False); ec.set_turn = 1
+        t = mon(g, '솔루나 시아', 1)
+        g.events = []; g.add_counter(m, A.SEAL, 1); run(g)
+        self.assertFalse(t.faceup); self.assertEqual(A.seals(m), 5)
 
     def test_eclipse_not_when_already_five(self):
         g = make(ai=Yes)

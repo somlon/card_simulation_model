@@ -59,8 +59,9 @@ class SkillEndPhaseTest(unittest.TestCase):
             self.assertTrue(new[0].has('아츠') and not new[0].faceup)  # 덱의 「아츠」 마법이 세트(뒷면)로
             self.assertEqual(len(g.deck_cards(0)), deck0 - 1)    # 1턴(선공)은 드로우 없음, 2턴은 상대 턴
 
-    def test_sacrifice_settlement_is_an_activation_on_the_chain(self):
-        # 희생제 4번: 「상대 턴의 종료 시」 저주 카운터를 전부 제거하고 제거한 수 × 300 대미지 (강제) — 체인에 올라가는 발동
+    def test_sacrifice_settlement_is_not_an_activation(self):
+        # 희생제 4번: 「상대 턴의 종료 시」 저주 카운터를 전부 제거하고 제거한 수 × 300 대미지 (강제) —
+        # 발동하는 효과가 아니라 [지속] 종료 시 처리라 체인에 오르지 않는다 (사용자 답변 2026-10-23 Q56)
         g = make('희생제', '소원의 분수')
         sk = g.p[0].skill
         g.add_counter(sk, '저주', 3)                              # 3개: 희생제 3번(4개가 되었을 때)은 유발되지 않는다
@@ -74,13 +75,15 @@ class SkillEndPhaseTest(unittest.TestCase):
                 self.assertEqual(acts, [])
                 self.assertEqual(sk.counters.get('저주'), 3)
                 self.assertEqual(g.p[0].hp, hp0)
-            else:                                                # 상대 턴의 종료 시: 3개 제거 · 900 대미지
-                self.assertEqual(len(acts), 1, acts)
+            else:                                                # 상대 턴의 종료 시: 3개 제거 · 900 대미지 (발동 없이)
+                self.assertEqual(acts, [])
+                self.assertTrue(any(e['m'] == '「희생제」의 저주 카운터 3개 제거' for e in g.log[n0:]))
                 self.assertFalse(sk.counters.get('저주'))
                 self.assertEqual(g.p[0].hp, hp0 - 300 * 3)
 
-    def test_chucky_responds_to_settlement_on_the_chain(self):
-        # 희생제 4번 발동에 처키 1번(종료 단계에서만)으로 체인 — 처키가 먼저 처리되어 카운터 2개를 쓰고, 정산은 남은 카운터로만
+    def test_chucky_cannot_respond_to_settlement(self):
+        # 희생제 4번 정산은 체인에 오르지 않으므로 처키 1번(종료 단계에서만)으로 응답할 수 없다 (사용자 답변 2026-10-23 Q56).
+        # 종료 단계가 되었을 때의 트리거(처키 2번 — 희생제에 저주 카운터 1개) 뒤에 정산이 그때의 카운터를 전부 제거한다
         g = make('희생제', '소원의 분수')
         sk = g.p[0].skill
         chucky = on_field(g, '저주인형 - 처키', 0)
@@ -102,14 +105,17 @@ class SkillEndPhaseTest(unittest.TestCase):
         g.play_turn()
         ms = [e['m'] for e in g.log[n0:]]
         idx = lambda s: next(i for i, m in enumerate(ms) if s in m)
-        n = g.p[0].ai.seen
-        self.assertIsNotNone(n)                                  # 체인에 희생제 4번이 있을 때 처키를 발동할 수 있었다
-        self.assertLess(idx('「희생제」 4번 효과 발동'), idx('「저주인형 - 처키」 1번 효과 발동'))
-        self.assertLess(idx('「저주인형 - 처키」 1번 처리'), idx('「희생제」 4번 처리'))   # 체인 역순 처리
-        self.assertTrue(any(m == f'{target} 파괴' for m in ms[idx('「저주인형 - 처키」 1번 처리'):]))   # 처키가 대상을 파괴 (상대가 이후 되살릴 수 있어 위치 대신 기록으로 확인)
-        self.assertEqual(g.p[1].hp, hp1 - 300)
+        self.assertIsNone(g.p[0].ai.seen)                        # 체인에 희생제 4번이 올라온 적이 없다
+        self.assertFalse(any('「희생제」 4번 효과 발동' in m for m in ms))
+        self.assertFalse(any('「저주인형 - 처키」 1번 효과 발동' in m for m in ms))
+        rm = [m for m in ms if m.startswith('「희생제」의 저주 카운터') and m.endswith('개 제거')]
+        self.assertEqual(len(rm), 1, rm)
+        n = int(rm[0].split('카운터 ')[1].split('개')[0])
+        self.assertGreaterEqual(n, 4)                            # 직접 놓은 4개 (+ 종료 단계가 되었을 때 처키 2번이 놓은 것)
+        self.assertLess(max((i for i, m in enumerate(ms) if '「저주인형 - 처키」 2번 처리' in m), default=-1), idx(rm[0]))
         self.assertFalse(sk.counters.get('저주'))
-        self.assertEqual(g.p[0].hp, hp0 - 300 * (n - 2))          # 처키 코스트 2개를 뺀 나머지만 정산
+        self.assertEqual(g.p[0].hp, hp0 - 300 * n)
+        self.assertEqual(g.p[1].hp, hp1); self.assertTrue(g.on_field(target))   # 처키 1번은 쓰이지 않았다
 
 
 @unittest.skipUnless('데쿠마' in cards.POOL and '아나보케' in cards.POOL, RETIRED_MSG)

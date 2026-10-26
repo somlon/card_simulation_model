@@ -4,7 +4,7 @@
 import random, unittest
 import season as SE
 from ai import HeuristicAI
-from cards import Impl
+from cards import Impl, granted_lines
 from engine import Game, Card
 import cards2 as F
 
@@ -189,7 +189,9 @@ class SpellTest(unittest.TestCase):
 
     def test_two_targeting_battle_effects_pick_different_cards(self):
         g = make(ai=Yes)
-        r = mon(g, RHINO, 0); r.flags['ceremony'] = 1; r.effects.append(F.cer_effect(1))
+        r = mon(g, RHINO, 0); r.flags['ceremony'] = 1
+        cer = Impl.pool[CER]
+        r.effects.append(F.cer_effect(1, granted_lines(cer)[0], cer['name']))   # 세레모니 「-」 항목 문장으로 성질을 단다 — 제거 효과라 뒷면 마법도 대상 (PDF Q6)
         o = mon(g, '솔루나 시아', 1); a = mon(g, '솔루나 시엘', 1); b = spell(g, '태양과 달의 마력', 1, False)
         win(g, r, o); run(g)
         self.assertEqual(sum(1 for x in (a, b) if x.zone == 'grave'), 2)   # 라이노 2번 · 부여 [전투]가 서로 다른 카드 (검토 F2)

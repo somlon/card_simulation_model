@@ -305,7 +305,7 @@ class BossTest(unittest.TestCase):
 
 # ═══════════════════════ 마법 ═══════════════════════
 class SpellTest(unittest.TestCase):
-    def test_loading_search_once_per_turn_and_release_from_both_fields(self):
+    def test_loading_search_once_per_turn_and_release_from_own_field(self):
         g = make()
         put(g, D.HERC, 0, 'upper'); put(g, D.ANT, 0, 'upper')
         l1 = put(g, D.LOADING, 0, 'hand'); l2 = put(g, D.LOADING, 0, 'hand')
@@ -321,9 +321,12 @@ class SpellTest(unittest.TestCase):
         g.act(0, l3, eff(l3, 0))
         self.assertEqual(names([x for x in g.p[0].hand]), sorted([D.ANT, D.HERC]))
         put(g, D.LITTLE, 0, 'main')
+        # 2번 「필드에서 「데이터버그」 몬스터를 2장 릴리스하고 발동」: 코스트의 「필드」는 자신 필드만 (사용자 답변 2026-10-22 Q41 — 「서로」 · 「상대」가 없다)
         o1 = mon(g, D.FLY, 1); o2 = mon(g, D.CATER, 1); own = mon(g, D.FLY, 0)
+        self.assertFalse(g.legal(0, l1, eff(l1, 2)))                    # 자신 필드에 1장뿐 — 상대 「데이터버그」는 쓸 수 없다
+        own2 = mon(g, D.CATER, 0)
         g.act(0, l1, eff(l1, 2))
-        self.assertEqual((o1.zone, o2.zone), ('grave', 'grave')); self.assertTrue(g.on_field(own))   # 상대 데이터버그부터 릴리스
+        self.assertEqual((own.zone, own2.zone), ('grave', 'grave')); self.assertTrue(g.on_field(o1) and g.on_field(o2))
         self.assertIn(D.LITTLE, names(g.p[0].hand))
 
     def test_backup_resummons_and_fetches_same_name(self):
@@ -363,13 +366,15 @@ class SpellTest(unittest.TestCase):
         g.act(0, r, eff(r, 1))
         self.assertEqual(k.zone, 'grave')
         self.assertTrue(g.on_field(h)); self.assertEqual(len(g.monsters(0)), 2)
-        g2 = make()   # 서로의 필드: 상대 「데이터버그」도 코스트 — 단 파괴할 상대 카드 1장은 남긴다
-        own = mon(g2, D.FLY, 0); mon(g2, D.CATER, 0); o1 = mon(g2, D.LITTLE, 1); o2 = mon(g2, D.FLY, 1); r2 = put(g2, D.RAID, 0, 'hand')
+        # 코스트 「필드의 「데이터버그」 몬스터를 2장」은 자신 필드만 (사용자 답변 2026-10-22 Q41 — 「서로」 · 「상대」가 없다)
+        g2 = make()
+        own = mon(g2, D.FLY, 0); own2 = mon(g2, D.CATER, 0); o1 = mon(g2, D.LITTLE, 1); o2 = mon(g2, D.FLY, 1); r2 = put(g2, D.RAID, 0, 'hand')
         g2.act(0, r2, eff(r2, 1))
-        self.assertEqual((o1.zone, o2.zone), ('grave', 'grave'))         # o1 코스트 · o2 파괴 (또는 반대)
+        self.assertEqual(sum(x.zone == 'grave' for x in (o1, o2)), 1)     # 상대 「데이터버그」는 코스트가 아니라 파괴 대상 1장만
+        self.assertTrue(g2.on_field(own) and g2.on_field(own2))           # 코스트로 보낸 자신의 2장을 「그 후」 묘지에서 특수소환
         g3 = make()
-        mon(g3, D.FLY, 0); o3 = mon(g3, D.LITTLE, 1); r3 = put(g3, D.RAID, 0, 'hand')
-        self.assertFalse(g3.legal(0, r3, eff(r3, 1)))                     # 상대의 유일한 카드를 코스트로 쓰면 파괴할 카드가 없다
+        mon(g3, D.FLY, 0); mon(g3, D.LITTLE, 1); mon(g3, D.FLY, 1); r3 = put(g3, D.RAID, 0, 'hand')
+        self.assertFalse(g3.legal(0, r3, eff(r3, 1)))                     # 자신 필드에 1장뿐 — 상대 「데이터버그」로 채울 수 없다
 
     def test_revenge_on_opponent_effect(self):
         g = make(Yes)

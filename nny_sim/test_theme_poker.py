@@ -87,13 +87,16 @@ class ComboTest(unittest.TestCase):
         r = mon(g, RAB, 0); mon(g, WOLF_F, 0); mon(g, CAT, 0)   # 1 · 2 · 4
         self.assertFalse(g.legal(0, r, eff(r, 2)))
 
-    def test_straight_can_use_opponent_monster(self):
+    def test_straight_cannot_use_opponent_monster(self):
+        # 스트레이트 2번 「이 카드를 포함하는 패와 필드의 …」: 코스트 문장에 「서로의」 · 「상대」가 없으므로 상대 필드의 몬스터는 재료가 아니다 (사용자 답변 2026-10-21)
         g = make(); filler(g, 0); up = put(g, K.RABBIT_UP, 0, 'upper')
         r = mon(g, RAB, 0); mon(g, WOLF, 0)
         opp3 = mon(g, DOG_F, 1)   # 상대 필드의 레벨 3
+        self.assertFalse(g.legal(0, r, eff(r, 2)))
+        own3 = mon(g, DOG_F, 0)   # 자신 필드의 레벨 3
         self.assertTrue(g.legal(0, r, eff(r, 2)))
         g.act(0, r, eff(r, 2))
-        self.assertEqual(opp3.zone, 'grave'); self.assertIn(opp3, g.p[1].grave); self.assertEqual(up.zone, 'm')
+        self.assertEqual(own3.zone, 'grave'); self.assertTrue(g.on_field(opp3)); self.assertEqual(up.zone, 'm')
 
     def test_rabbit_effect_not_from_hand_without_gambling_hall(self):
         g = make(); put(g, K.RABBIT_UP, 0, 'upper')
@@ -107,7 +110,7 @@ class ComboTest(unittest.TestCase):
         g = make(); filler(g, 0)
         f = put(g, K.GAMBLE, 0, None); g.place_field(f, 0)
         put(g, K.RABBIT_UP, 0, 'upper'); put(g, K.WOLF_UP, 0, 'upper'); put(g, K.WOLF_UP, 0, 'upper')
-        r = put(g, RAB, 0, 'hand'); mon(g, WOLF_F, 1); mon(g, DOG_F, 1)        # 1 (패) · 2 · 3 (상대 필드)
+        r = put(g, RAB, 0, 'hand'); mon(g, WOLF_F, 0); mon(g, DOG_F, 0)        # 1 (패) · 2 · 3 (자신 필드 — 스트레이트는 상대 필드를 쓸 수 없다, 사용자 답변 2026-10-21)
         self.assertTrue(g.legal(0, r, eff(r, 2))); g.act(0, r, eff(r, 2))
         w = put(g, WOLF, 0, 'hand'); mon(g, WOLF, 1); mon(g, WOLF_F, 1)       # 다이아 3장 (패 1 + 상대 필드 2)
         self.assertTrue(g.legal(0, w, eff(w, 2))); g.act(0, w, eff(w, 2))
