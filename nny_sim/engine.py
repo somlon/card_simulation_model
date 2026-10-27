@@ -162,7 +162,7 @@ class Game:
 
     # 효과 내성 플래그 — [지속] 공격력 · 수비력 증감도 받지 않는다 (2026-10-13: 예전에는 immune_others · immune_except만 보았다)
     MOD_IMMUNE_KEYS = ('immune_except', 'immune_others', 'immune_except_group', 'immune_all_until', 'immune_opp_until', 'immune_opp_perm',
-                       'untargetable_opp', 'immune_opp_untargeted')
+                       'untargetable_opp', 'immune_opp_untargeted', 'immune_opp')
     def mod_applies(self, c, src):
         """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드 · 뒷면 카드(내성 비활성, Q45)는 그대로,
         내성 플래그가 있으면 Game.immune으로 판정"""
@@ -187,6 +187,7 @@ class Game:
           flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
           flags['immune_except_opp'] — immune_except의 예외 카드도 상대(by ≠ 컨트롤러)의 것만 받는다
           flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다
+          flags['immune_opp'] — 「이 카드는 상대의 효과를 받지 않는다」 [지속] (조건부면 callable — Game.flag). 발동하는 효과 · 아닌 효과([지속]) 모두
         뒷면 카드는 대상 지정 효과의 대상이 되지 않는다(정본 1-1, 사용자 답변 2026-10-22 Q45) — 자신 · 상대의 효과 모두, 대상을 지정하지 않는 효과는 받는다.
         뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45)"""
         if self.on_field(c) and not c.faceup and by is not None:
@@ -210,6 +211,7 @@ class Game:
             tt = getattr(getattr(self, 'src_eff', None), 'targets_text', None) if probe else None
             if self.flag(c, 'untargetable_opp') and (self.targeting_now(by) or (probe and tt is not False)): return True   # 「상대 효과의 대상이 되지 않는다」
             if self.flag(c, 'immune_opp_untargeted') and not self.targeted_by(c, by) and not (probe and tt): return True   # 「상대 카드의 대상을 지정하지 않는 효과를 받지 않는다」
+            if self.cont_flag(c, 'immune_opp') is not None and self.flag(c, 'immune_opp'): return True   # 「상대의 효과를 받지 않는다」 [지속] (버터플라이 2번, 2026-10-25)
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
@@ -225,6 +227,8 @@ class Game:
         if not cause or cause[0] != 'effect' or cause[1] is None or not self.on_field(c): return False
         if self.immune(c, cause[1].controller, cause[1]):
             if c.flags.get('immune_others') and not self.cont_flag_use(c, 'immune_others', '다른 카드의 효과를 받지 않음'): return False
+            if c.flags.get('immune_opp') is not None and cause[1].controller != c.controller and self.flag(c, 'immune_opp') \
+               and not self.cont_flag_use(c, 'immune_opp', '상대의 효과를 받지 않음'): return False
             self.L(f'{c}은(는) 상대의 효과를 받지 않음', 'sys'); return True
         return False
 
@@ -308,7 +312,7 @@ class Game:
     # 카드가 무효가 될 때까지 늘 적용된다(사용자 지시 2026-10-22 — 솔루나 아츠 1번처럼 멈추려면 카드를 무효로 하는 효과를 써야 한다).
     # 체인에 응해 한 효과의 발동을 무효로 해도(Game.negate) 그 카드의 다른 번호 효과는 무효가 되지 않는다.
     # 상대 플레이어에게 거는 금지(「상대는 … 수 없다」)는 1턴 1번이어도 상대의 모든 행동에 작용하므로 사실상 횟수 제한이 없다
-    # (사용자 지시 2026-10-22 — 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
+    # (사용자 지시 2026-10-22 — 그때의 데이터버그 버터플라이 2번: 카드가 무효화되지 않는 한 상대는 덱에서 패에 넣는 효과를 발동할 수 없다).
     # 「(이 효과는 1턴에 1번 제약을 받지 않는다.)」는 횟수 없음, 「1턴에 N번까지」는 그 카드 구현이 직접 센다.
     # 카드 구현은 [지속] 훅이 몇 번 효과인지 c.cont_nums에 적는다 — {'atk_mod': 2, 'rule:indestructible': 2, 'flag:attack_all': 3, 'end_process': 1, 'grant': 2, …}.
     # 적지 않은 훅은 횟수 없이 예전대로 적용한다. c.cont_lasting의 번호는 한 번 적용하면 그 턴 동안 계속 적용된다
@@ -1052,9 +1056,9 @@ class Game:
         return k
 
     # ── 두플리카토르 (세리 - 두플리카토르 1번 [지속]: 서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배) ──
-    # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수 또는 None, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
-    # 정본 3-6 f 재정: 코스트가 「이 카드」만이면 「이 카드 1장」으로 보아 2배(이 카드 + 같은 곳의 카드 1장 — 후보 None),
-    # 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 세리의 덱 위 제외 · 제외 존→덱 코스트는 cards4가 직접 2배로 한다.
+    # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
+    # 정본 3-6 f 재정: 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 코스트가 「이 카드」만이면 2배가 되지 않는다
+    # (룰지 f 개정 — 「이 카드 1장」으로 보아 2배로 하던 문장 삭제, 사용자 지시 2026-10-25). 세리의 덱 위 제외 · 제외 존→덱 코스트는 cards4가 직접 2배로 한다.
     COST_ACTIONS = {'grave': 'send_grave', 'release': 'tribute', 'banish': 'banish', 'deck': 'to_deck', 'hand': 'to_hand'}
 
     def cost_specs(self, p, c, e):
@@ -1063,18 +1067,9 @@ class Game:
         if not specs or not self.rule('cost_double', p): return []
         return [s for s in specs if len(s) < 5 or s[4](self, c, p)]
 
-    def cost_extra_pool(self, p, c, s, zone=None):
-        """두플리카토르로 더 내야 하는 카드의 후보. 후보 함수가 없으면(「이 카드」 코스트) 이 카드가 있는 곳의 다른 카드"""
-        act, pool = s[0], s[1]
-        if pool is not None: return list(pool(self, c, p))   # 후보 함수가 정한 범위 그대로 (이 카드를 포함할 수 있는 코스트 — 재정 질문 데이터버그 12)
-        z = zone or c.zone; pl = self.p[p]
-        if z == 'hand': xs = list(pl.hand)
-        elif z == 'grave': xs = list(pl.grave)
-        elif z in ('m', 'shared'): xs = [x for x in self.monsters(p) if x.is_monster()]
-        else: xs = self.field_cards(p)
-        xs = [x for x in xs if x is not c]
-        if act == 'release': xs = [x for x in xs if self.releasable(x)]
-        return xs
+    def cost_extra_pool(self, p, c, s):
+        """두플리카토르로 더 내야 하는 카드의 후보: 후보 함수가 정한 범위 그대로 (이 카드를 포함할 수 있는 코스트 — 재정 질문 데이터버그 12)"""
+        return list(s[1](self, c, p))
 
     def cost_extra_ok(self, p, c, e):
         return all(len(self.cost_extra_pool(p, c, s)) >= s[2] + s[3] for s in self.cost_specs(p, c, e))
@@ -1082,7 +1077,7 @@ class Game:
     def pay_cost_extra(self, p, c, specs, link):
         for s in specs:
             # 자신의 카드는 덜 아끼는 것부터, 상대의 카드(상대 카드를 코스트로 쓰는 효과)는 상대가 아끼는 것부터
-            xs = sorted(self.cost_extra_pool(p, c, s, link.ctx.get('from_zone')),
+            xs = sorted(self.cost_extra_pool(p, c, s),
                         key=lambda x: self.p[x.controller].ai.card_pri(self, x.controller, x) * (1 if x.controller == p else -1))[:s[3]]
             self.L(f'두플리카토르: 코스트 {s[3]}장 더 지불 — {", ".join(map(str, xs)) or "없음"}', 'sys')
             for x in xs:
@@ -1185,6 +1180,8 @@ class Game:
             c.negated = True; self.L(f'{c} 턴 종료 시까지 무효 (스킬)', 'sys')
             self.emit('negated', link=None, card=c, player=c.controller, by=src); return True
         if not self.on_field(c): return False
+        if not c.faceup and not c.is_monster():   # 뒷면 마법은 대상 · 비대상 무효 효과를 전부 받지 않는다 (사용자 지시 2026-10-25)
+            self.L(f'{c}은(는) 뒷면 마법 — 무효 효과를 받지 않음', 'sys'); return False
         if self.blocked(c, ('effect', src)): return False
         if perma is None: c.negated = True
         else: c.flags['perma_neg'] = perma
@@ -1338,6 +1335,7 @@ class Game:
         cause = cause or ('effect', self.src)
         if not self.on_field(c) or not c.faceup or self.blocked(c, cause): return False
         c.faceup = False; c.set_turn = self.turn; c.flags.pop('act_this_turn', None)
+        c.negated = False; c.flags.pop('perma_neg', None)   # 뒷면 마법은 무효 효과를 받지 않는다 — 앞면일 때 받은 무효도 사라진다 (사용자 지시 2026-10-25)
         self.clear_counters_facedown(c)
         if c.zone == 'fieldz':
             self.L(f'{c} 뒷면 — 필드 존의 카드는 뒷면이 되면 묘지로', 'sys'); self.send_grave(c, ('rule', None)); return True

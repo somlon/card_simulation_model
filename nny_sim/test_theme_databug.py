@@ -7,6 +7,7 @@ from ai import HeuristicAI
 from cards import Impl
 from engine import Game, Card
 import cards10 as D
+from cards2 import targets
 
 DECKS = SE.load_decks()
 ME = '데이터버그 패키지 프로그램'
@@ -219,20 +220,9 @@ class BattleRespTest(unittest.TestCase):
         self.assertEqual(g.p[1].hp, 5000 - 2500 - 1000)
         self.assertEqual(h.extra_attacks, 1)
 
-    def test_butterfly_negates_and_blocks_opponent_effect_damage(self):
+    def test_butterfly_negates_opponent_effect(self):
         g = make()
         b = mon(g, D.BUTTER, 0); dw = mon(g, D.DWORM, 1)
-        g.src = dw; g.damage(0, 500, dw.name); g.src = None
-        self.assertEqual(g.p[0].hp, 4500)                      # 「데이터버그」 마법이 없으면 받는다
-        spell(g, D.LOADING, 0)
-        g.src = dw; g.damage(0, 500, dw.name); g.src = None
-        self.assertEqual(g.p[0].hp, 4500)                      # 상대의 효과 대미지를 받지 않음
-        g.damage(0, 300, dw.name)                              # 처리 중인 효과 없음 · 출처가 상대 카드 이름
-        self.assertEqual(g.p[0].hp, 4500)
-        g.battle_damage(0, 300, '전투')
-        self.assertEqual(g.p[0].hp, 4200)                      # 전투 대미지는 받는다
-        g.src = b; g.damage(0, 100, b.name); g.src = None
-        self.assertEqual(g.p[0].hp, 4100)                      # 자신의 효과
         g.turn_player = 1
         l = g.activate(1, dw, eff(dw, 1))
         self.assertTrue(g.legal(0, b, eff(b, 1), g.chain))
@@ -297,8 +287,20 @@ class BossTest(unittest.TestCase):
         f = put(g, D.FLY, 1, 'main')
         self.assertEqual(g.search_cands(1, lambda x: True), [])
         g.to_hand(f); self.assertEqual(f.zone, 'main')                 # 상대는 효과로 덱에서 패에 넣을 수 없다
-        mon(g, D.BUTTER, 1); spell(g, D.LOADING, 1)                    # 버터플라이 2번: 그 플레이어는 받지 않는다
-        self.assertEqual(g.search_cands(1, lambda x: True), [f])
+
+    def test_butterfly_unaffected_by_opponent_while_databug_spell(self):
+        # 버터플라이 2번 (2026-10-25 텍스트 · 사용자 답변): 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 이 카드는 상대의 효과를 받지 않는다
+        g = make()
+        bt = mon(g, D.BUTTER, 1); dw = mon(g, D.DWORM, 0)
+        self.assertFalse(g.immune(bt, 0, dw))                           # 「데이터버그」 마법이 없으면 받는다
+        spell(g, D.LOADING, 1, faceup=False)
+        self.assertFalse(g.immune(bt, 0, dw))                           # 뒷면 마법은 세지 않는다
+        spell(g, D.LOADING, 1)
+        self.assertTrue(g.immune(bt, 0, dw))
+        self.assertFalse(g.immune(bt, 1, bt))                           # 자신의 효과는 받는다
+        self.assertEqual(targets(g, 0, [bt]), [])                       # 상대 효과의 대상 후보에서 빠진다
+        g.src = dw; g.destroy(bt, ('effect', dw)); g.src = None
+        self.assertTrue(g.on_field(bt))                                 # 상대 효과의 파괴를 받지 않는다
 
 
 # ═══════════════════════ 마법 ═══════════════════════
