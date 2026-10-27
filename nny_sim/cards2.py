@@ -1,7 +1,7 @@
 """카드 구현 2차: 공용 8종 · 격투가 11종 (격투가는 2026-10-08 카드 자료로 갱신 — 아래 격투가 절 머리말).
 번성충 기생 축 6종은 사용자 지시(2026-10-13)로 카드 풀에서 삭제되어 구현도 지움 (git 기록에 남아 있음)."""
 from engine import Effect, link_targets
-from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO
+from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO, text_attrs, granted_lines
 
 
 def targets(g, p, cands, src=None):
@@ -250,8 +250,10 @@ def _(c):
 
 CER_BASE = 30   # 세레모니 부여 [전투]의 효과 번호: 31, 32, … (k번째 부여분 — 각각 1턴 1번, 재정)
 
-def cer_effect(k):
-    """세레모니 k번째 부여 [전투]: 필드의 카드 1장을 대상으로 하고 발동 → 상대에게 1000 대미지, 그 카드를 파괴"""
+def cer_effect(k, line='', name=''):
+    """세레모니 k번째 부여 [전투]: 필드의 카드 1장을 대상으로 하고 발동 → 상대에게 1000 대미지, 그 카드를 파괴.
+    line = 부여하는 카드(세레모니)의 「-」 항목 — 대상 지정 · 제거 효과 등의 성질을 그 문장에서 단다(cards.text_attrs). 제거 효과라 뒷면 마법도 대상으로 할 수 있다
+    (사용자 답변 2026-10-23 PDF Q6 — 부여 효과는 카드에 붙을 때가 아니라 게임 중에 생기므로 Impl.attach를 거치지 않는다)"""
     def pool(g, p): return targets(g, p, g.all_field())
     def opp_pool(g, p):
         """대상으로 고를 수 있는 상대 카드 — 「상대 효과의 대상이 되지 않는다」를 반영(발동 판정과 같은 엄격한 관점, Game.probing)"""
@@ -275,6 +277,7 @@ def cer_effect(k):
         return 1000 if g.p[1 - p].hp <= 1000 else VETO   # 자신 카드를 파괴하게 되면 결착일 때만
     e = battle(res, sc, num=CER_BASE + k, cond=cond, cost=cost, label=f'[전투] (세레모니 부여 {k}) 1000 대미지 + 대상 파괴')
     e.opt_per_card = True   # 부여받은 효과 — 부여마다 별개의 1턴 1번(같은 이름 몬스터 2장이 각각 받아도 각각 1번, 사용자 답변 2026-10-17)
+    text_attrs(e, line, name)
     return e
 
 @card('격투가 세레모니')
@@ -294,7 +297,7 @@ def _(c):
         m.flags['clear_on_leave'] = col
         m.flags['ceremony'] = k; m.flags['perm_extra_attacks'] = m.flags.get('perm_extra_attacks', 0) + 1
         m.extra_attacks += 1
-        if not any(e.num == CER_BASE + k for e in m.effects): m.effects.append(cer_effect(k))
+        if not any(e.num == CER_BASE + k for e in m.effects): m.effects.append(cer_effect(k, (granted_lines(c.d) or [''])[0], c.name))
         g.L(f'{m}: 1회 더 공격 + [전투] 부여 (영구, {k}중첩)')
     c.effects = [Effect(1, 'trigger', ('hand', 'field'), spell_act=True,
         cond=lambda g, c, p, ev: ev_is(ev, 'battle_win') and ev['player'] == p and bool(mons(g, c, p)),

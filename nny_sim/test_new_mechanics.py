@@ -147,13 +147,19 @@ class DollTest(unittest.TestCase):
         self.assertEqual(len(g.p[0].upper), up0 - 1)
 
     def test_sacrifice_4_settles_at_opponent_turn_end(self):
+        # 희생제 4번은 발동하는 효과가 아니라 [지속] 종료 시 처리(end_process) — 「턴 종료 시」 사건의 트리거로는 처리되지 않는다 (사용자 답변 2026-10-23 Q56)
         g = make('희생제', '세제')
         sk = g.p[0].skill; sk.counters['저주'] = 3
         hp0 = g.p[0].hp
         g.turn_player = 1; g.phase = '종료'
         g.emit('end_phase', player=1); run_triggers(g)
+        self.assertEqual(g.p[0].hp, hp0); self.assertEqual(sk.counters.get('저주'), 3)
+        sk.end_process(g, sk)                                   # engine.play_turn 종료 단계의 [지속] 처리
         self.assertEqual(g.p[0].hp, hp0 - 900)
         self.assertFalse(sk.counters.get('저주'))
+        g.turn_player = 0; sk.counters['저주'] = 2
+        sk.end_process(g, sk)                                   # 자신 턴의 종료 시에는 정산하지 않는다
+        self.assertEqual(sk.counters.get('저주'), 2)
 
     def test_talisman_replaces_next_effect_and_can_destroy_ace(self):
         g = make('희생제', '세제')
