@@ -2,6 +2,7 @@
 ASSUME 주석 = 규칙명세/재정 목록의 【가정】.
 """
 import json, os
+from collections import namedtuple
 from engine import Effect, Game
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,33 +41,62 @@ class Impl:
         import dupcost; dupcost.apply(c)   # 두플리카토르 코스트 명세 (Effect.cost_spec)
         tax = action_taxes(c.d)            # [지속] 행동 세금 (engine.Game.taxes)
         if tax: c.action_tax = tax
-        for e in c.effects:
-            line = next((l for l in c.d['text'].split('\n') if l.startswith(f'{e.num}.')), c.d['text'] if len(c.effects) == 1 else '')
-            text_attrs(e, line, c.name)
+        one = len(c.effects) == 1
+        for e in c.effects: text_attrs(e, *effect_line(c.d, e, one))
+
+# 효과 문장 → 성질은 판마다 · 카드마다 다시 읽지 않고 프로세스에서 문장마다 한 번만 만든다 (카드 텍스트는 판 중에 바뀌지 않는다).
+# 성질표의 값은 모두 바꾸지 않는 값(bool · tuple · frozenset)이라 같은 문장의 모든 효과가 같은 객체를 함께 쓴다.
+_LINES = {}    # (카드 텍스트, 효과 번호, 효과가 1개뿐인가) 또는 Effect.grant_of → (문장, 그 문장을 가진 카드 이름)
+_SHEETS = {}   # (문장, 카드 이름) → 문장 성질표 (text_sheet)
+
+def effect_line(d, e, one=False):
+    """효과 e의 문장과 그 문장을 가진 카드의 이름. 부여 효과(Effect.grant_of = (부여하는 카드 이름, 「-」 항목 순서) — 블록 A22 효과 부여)는
+    부여하는 카드의 「-」 항목, 나머지는 카드 자료 d의 그 번호 줄(효과가 1개뿐이고 번호 줄이 없으면 텍스트 전체)"""
+    src = getattr(e, 'grant_of', None)
+    k = src or (d['text'], e.num, one)
+    r = _LINES.get(k)
+    if r is None:
+        if src:
+            items = granted_lines(POOL.get(src[0], {}))
+            r = (items[src[1]] if src[1] < len(items) else '', src[0])
+        else:
+            r = (next((l for l in d['text'].split('\n') if l.startswith(f'{e.num}.')), d['text'] if one else ''), d['name'])
+        _LINES[k] = r
+    return r
 
 def text_attrs(e, line, name):
     """효과 문장 line(카드 name의 그 번호 줄, 부여 효과는 부여하는 카드의 「-」 항목)에서 Effect의 성질을 단다 — Impl.attach · 부여 효과(cards2.cer_effect) 공통"""
+    s = _SHEETS.get((line, name))
+    if s is None: s = _SHEETS[(line, name)] = text_sheet(line, name)
+    e.__dict__.update(s)
+    if not e.num: e.sure_acts = frozenset()   # 0번 = 카드를 놓기만 하는 발동 (텍스트는 [지속] 문장)
+
+def text_sheet(line, name):
+    """문장 성질표 {Effect 속성: 값} — 효과 문장 line(카드 name)에서 읽는다. 문장에 근거가 없는 성질은 넣지 않는다(카드 구현이 단 값을 덮지 않도록)"""
     import re as _re
+    s = {'text_line': line}   # 이 효과가 연결된 문장 — 번호가 있는 효과는 반드시 있다(부여 효과 포함, test_cost_slot)
     # 같은 이름 예외 자동 표시: 해당 번호 효과 문장에 「동명」 허용 문구나 자기 카드명이 가져오기 · 특수소환 대상으로 적힌 경우
     if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
        (f'「{name}」' in line and _re.search(r'특수소환|패에 넣', line)):
-        e.same_name_ok = True
+        s['same_name_ok'] = True
     # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
-    if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
+    if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): s['self_ok'] = True
     # 대상 지정 효과인가 (발동 판정 중 내성 판정 — engine.Game.immune): 문장에 「대상으로 하고」가 있으면 대상 지정, 없으면 비대상
-    if line: e.targets_text = bool(_re.search(r'대상으로 하', line))
+    if line: s['targets_text'] = bool(_re.search(r'대상으로 하', line))
     # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
-    if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): e.either_player = True
-    e.cost_items = parse_cost(line)   # 코스트 문장 (델레가토르 — engine.Game.transfer_ok)
+    if _re.match(r'^\d+\.\s*서로가 [^.]*고 발동\.', line): s['either_player'] = True
+    # 코스트 칸: 코스트 항목(CostItem) — 지불자(델레가토르 — engine.Game.transfer_ok) · 코스트 범위가 읽는다
+    s['cost_items'] = cost = parse_cost(line)
     # 코스트의 「필드」에 상대 필드가 드는가 (cost_opp — 「서로」 · 「상대」가 적혀 있을 때만, 사용자 답변 2026-10-22 Q41)
-    e.cost_opp_field = cost_opp_field(line)
+    s['cost_opp_field'] = any(i.opp for i in cost)
     # 제거 효과인가 — 대상(「그 카드 …」)을 파괴 · 묘지로 · 제외 · 패 · 덱으로 옮긴다. 뒷면 마법은 이런 효과의 대상만 될 수 있다
     # (engine.Game.immune, 사용자 답변 2026-10-23 PDF Q6)
-    if line: e.removal_text = e.targets_text and removal_text(line)
+    if line: s['removal_text'] = s['targets_text'] and removal_text(line)
     # 처리의 첫 단계가 드로우인가('self' / 'opp' — 드로우하는 쪽) — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다 (engine.Game.legal)
-    e.draw_first = draw_first_text(line)
+    s['draw_first'] = draw_first_text(line)
     # 처리에서 발동한 플레이어가 반드시 하는 행동 — 행동 세금을 발동할 때 코스트로 낸다 (engine.Game.pay_tax, 사용자 답변 2026-10-28)
-    e.sure_acts = sure_acts(line) if e.num else frozenset()   # 0번 = 카드를 놓기만 하는 발동 (텍스트는 [지속] 문장)
+    s['sure_acts'] = sure_acts(line)
+    return s
 
 def granted_lines(d):
     """카드 자료 d의 텍스트에서 부여하는 효과의 「-」 항목들 (앞의 「-」는 뗀다)"""
@@ -141,11 +171,18 @@ def effect_body(c, num):
 _COND_END = _re_t.compile(r'(경우|때|상태에서|1턴에 \d+번)$')
 _NOT_PAY = _re_t.compile(r'(대상으로 하|보여주|지정하|고르)$')
 
+CostItem = namedtuple('CostItem', 'text this_card deck opp')
+CostItem.__doc__ = """효과의 코스트 칸 항목 하나 — 블록으로는 이동 · 릴리스 · 카운터 등 처리 블록의 코스트 모드(옛 K01 ~ K09). 문장 성질표가 문장마다 한 번 만들어 공유한다.
+    text: 코스트 구절
+    this_card: 「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」 — 이 카드 자신으로 낸다(델레가토르로 상대가 대신 낼 수 없다)
+    deck: 「덱의 위에서부터 카드를 n장 제외」 · 「덱에서 카드를 n장 제외」 — 덱으로 낸다(상대 덱에서 대신 낼 수 있다)
+    opp: 코스트의 「필드」에 상대 필드가 드는가 — 「서로」 · 「상대」가 적혀 있을 때만. 적혀 있지 않은 「필드의(필드에서) …를 릴리스하고 · 묘지로 보내고 발동」은
+         자신 필드다 (사용자 답변 2026-10-22 Q41 — 데이터버그 로딩 2번 · 습격, Q21 마르모르 · 카르분쿨루스 「필드의 릴리스 가능한 몬스터」,
+         Q26 족보 재료 cards8.combo_opp_ok와 같은 규칙)"""
+
 def parse_cost(line):
-    """효과 문장의 코스트(「…하고 발동」 · 「…고 발동한다」)를 항목으로: [{'text', 'self', 'deck'}]. 대상 지정(「대상으로 하고 발동」)과
-    공개(「보여주고 발동」)는 지불이 아니므로 뺀다(「지정하고」 · 「고르고」도 대상 지정). 조건 구절(「…경우, 」 · 「…때, 」 · 「1턴에 1번, 」)은 뺀다.
-    self: 「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」 — 이 카드 자신으로 내는 코스트
-    deck: 「덱의 위에서부터 카드를 n장 제외」 · 「덱에서 카드를 n장 제외」 — 덱으로 내는 코스트"""
+    """효과 문장의 코스트(「…하고 발동」 · 「…고 발동한다」)를 항목(CostItem)의 tuple로. 대상 지정(「대상으로 하고 발동」)과
+    공개(「보여주고 발동」)는 지불이 아니므로 뺀다(「지정하고」 · 「고르고」도 대상 지정). 조건 구절(「…경우, 」 · 「…때, 」 · 「1턴에 1번, 」)은 뺀다."""
     t = _re_t.sub(r'^\d+\.\s*', '', line or '')
     out = []
     for m in _re_t.finditer(r'([^.]*?)고 발동', t):
@@ -154,17 +191,12 @@ def parse_cost(line):
             start = max([i + 1 for i, x in enumerate(parts) if _COND_END.search(x.strip())] or [0])
             last = ','.join(parts[start:]).strip()
             if not last or _NOT_PAY.search(last): continue
-            out.append({'text': last,
-                        'self': bool(_re_t.search(r'이 카드(를|의)|자신을 포함하는|이 카드를 포함하는', last)),
-                        'deck': bool(_re_t.search(r'덱의 위에서부터 카드를 \d+장 제외|덱에서 카드를 \d+장 제외', last))})
-    return out
-
-def cost_opp_field(line):
-    """코스트 문장(「…고 발동」 앞)의 「필드」에 상대 필드가 드는가: 「서로」 · 「상대」가 적혀 있을 때만.
-    적혀 있지 않은 「필드의(필드에서) …를 릴리스하고 · 묘지로 보내고 발동」은 자신 필드다 (사용자 답변 2026-10-22 Q41 — 데이터버그 로딩 2번 · 습격,
-    Q21 마르모르 · 카르분쿨루스 「필드의 릴리스 가능한 몬스터」, Q26 족보 재료 cards8.combo_opp_ok와 같은 규칙)"""
-    # 조건 구절(쉼표 뒤) · 대상 지정은 parse_cost가 빼고, 쉼표 없는 조건 구절(「상대가 …했을 때 자신 필드의 …」)은 여기서 뺀다
-    return any(_re_t.search(r'서로|상대', _re_t.split(r'(?:때|경우),?\s+', it['text'])[-1]) for it in parse_cost(line))
+            out.append(CostItem(last,
+                                bool(_re_t.search(r'이 카드(를|의)|자신을 포함하는|이 카드를 포함하는', last)),
+                                bool(_re_t.search(r'덱의 위에서부터 카드를 \d+장 제외|덱에서 카드를 \d+장 제외', last)),
+                                # 쉼표 없는 조건 구절(「상대가 …했을 때 자신 필드의 …」)은 「상대」를 보기 전에 뺀다
+                                bool(_re_t.search(r'서로|상대', _re_t.split(r'(?:때|경우),?\s+', last)[-1]))))
+    return tuple(out)
 
 def cost_opp(c, num):
     """c의 num번 효과 코스트로 상대 필드의 카드도 쓸 수 있는가 (Effect.cost_opp_field — Impl.attach가 텍스트에서 단다)"""

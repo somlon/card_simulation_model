@@ -1076,8 +1076,8 @@ class Game:
     # ── 코스트 지불자 (세리 - 델레가토르 1번 [지속]: 자신이 카드의 발동을 위해 지불해야 하는 코스트는 상대가 대신 지불한다) ──
     # 사용자 답변(2026-10-20): 상대가 대신 낼 수 있는 모든 코스트에 적용한다. 상대가 대신 낼 수 없으면 그 효과는 발동할 수 없다.
     # 단 덱 코스트는 상대 덱이 모자라도 발동할 수 있고, 대신 지불하다 덱이 모자라면(덱이 음수) 상대가 룰상 패배한다.
-    # 코스트의 종류는 카드 텍스트의 코스트 문장(「…고 발동」)에서 읽는다 — Effect.cost_items (cards.parse_cost):
-    #   self(「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」) — 상대가 대신 낼 수 없다 → 발동 불가
+    # 코스트의 종류는 카드 텍스트의 코스트 문장(「…고 발동」)에서 읽는다 — Effect.cost_items (코스트 칸 — cards.CostItem · parse_cost):
+    #   this_card(「이 카드를 …」 · 「이 카드의 …」 · 「자신을 포함하는 …」) — 상대가 대신 낼 수 없다 → 발동 불가
     #   deck(「덱의 위에서부터 카드를 n장 제외」 · 「덱에서 카드를 n장 제외」) — 상대 덱에서 (Game.pay_deck_cost)
     #   그 밖 — 지불자를 받는 코스트 함수(Effect.cost_payable(g, c, p, 지불자) — 그 지불자가 낼 수 있는가)가 있을 때만 상대가 대신 낸다.
     #           cost_payable이 없는 코스트는 활성 플레이어 자신의 자원으로만 구현되어 있으므로 상대가 대신 낼 수 없는 것으로 본다 (ASSUME)
@@ -1090,10 +1090,10 @@ class Game:
         if q == p: return True
         items = getattr(e, 'cost_items', None)
         if not items: return True                       # 텍스트에 코스트가 없다 (코스트 함수는 대상 · 기록만)
-        if any(i['self'] for i in items): return False  # 「이 카드」 코스트는 상대가 대신 낼 수 없다
+        if any(i.this_card for i in items): return False  # 「이 카드」 코스트는 상대가 대신 낼 수 없다
         pay_ok = getattr(e, 'cost_payable', None)
         if pay_ok is not None: return bool(pay_ok(self, c, p, q))
-        return all(i['deck'] for i in items)
+        return all(i.deck for i in items)
 
     def pay_deck_cost(self, p, n, deck, why):
         """「덱의 위에서부터 카드를 n장 제외하고 발동」 코스트 (부족분은 다른 덱에서 — 세리 카드 문구). 델레가토르면 상대 덱에서 대신 내고,

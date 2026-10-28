@@ -61,7 +61,7 @@ ASSUME:
 import re
 from collections import namedtuple
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, per_card_self, hand_add
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, per_card_self, hand_add, granted_lines
 from cards2 import targets
 
 PK = '포커짐승들'
@@ -298,10 +298,10 @@ _SIZES = {}
 def combo_text(g, c, p, kind):
     """족보 효과의 원문: 올인이 준 효과(원페어 · 트리플)는 스킬 텍스트의 「-」 항목(부여 효과 번호 21 · 22 순서), 나머지는 그 카드의 효과 문장"""
     e = next((x for x in c.effects if getattr(x, 'pk_kind', None) == kind), None)
-    if e is not None and getattr(e, 'pk_granted', None) is not None:
+    if e is not None and getattr(e, 'grant_of', None):
         sk = g.p[p].skill
-        items = [l.strip() for l in (sk.d.get('text') or '').split('\n') if l.strip().startswith('-')] if sk else []
-        return items[e.pk_granted] if e.pk_granted < len(items) else ''
+        items = granted_lines(sk.d) if sk else []
+        return items[e.grant_of[1]] if e.grant_of[1] < len(items) else ''
     return eff_text(c, e.num if e is not None else 2)
 
 
@@ -529,7 +529,8 @@ def allin_effects():
     e2 = Effect(22, 'quick', ('field',), cond=cond_triple, cost=cost_triple, res=res_triple, score=sc('triple'), threat=700,
                 label='[올인] 트리플 → 덱에서 소환')
     e1.pk_kind = 'pair'; e2.pk_kind = 'triple'
-    e1.pk_granted, e2.pk_granted = 0, 1   # 스킬 텍스트의 「-」 항목 순서 (combo_text)
+    # 부여 효과의 문장 = 올인 텍스트의 「-」 항목(순서대로) — 대상 지정 여부 · 코스트 칸 등 문장 성질을 거기서 읽는다(cards.effect_line, combo_text)
+    e1.grant_of, e2.grant_of = (SKILL, 0), (SKILL, 1)
     e1.opt_per_card = e2.opt_per_card = True   # 부여받은 효과 — 몬스터마다 별개의 1턴 1번 (사용자 답변 2026-10-17, Game.opt_key)
     return [e1, e2]
 

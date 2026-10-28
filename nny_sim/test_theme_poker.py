@@ -193,6 +193,27 @@ class AllInTest(unittest.TestCase):
         a.flags['immune_all_until'] = g.turn   # 고대의 봉인이 남기는 표시: 턴 종료 시까지 다른 카드의 효과를 받지 않는다
         self.assertFalse(g.legal(0, a, eff(a, 21)))
 
+    def test_pair_takes_sealed_carbunculus(self):
+        # 원페어 「상대 필드의 카드 1장을 골라」는 대상 지정이 아니다 — 봉인 카운터가 놓인 카르분쿨루스(상대 효과의 대상이 되지 않는다)만 있어도 발동해 빼앗는다.
+        # 부여 효과가 올인 텍스트의 「-」 항목에 연결되어 발동 판정 · 처리가 같은 문장 성질을 쓴다(Effect.grant_of)
+        g = make()
+        a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand')
+        k = mon(g, '호박옥의 수호자 - 카르분쿨루스', 1); k.counters['봉인'] = 3
+        e = eff(a, 21)
+        self.assertTrue(g.legal(0, a, e))
+        g.act(0, a, e)
+        self.assertEqual(k.controller, 0)
+
+    def test_delegator_blocks_pair_and_triple(self):
+        # 델레가토르를 조종하면 코스트는 상대가 대신 낸다 — 원페어(「자신을 포함하는」 2장) · 트리플(자신 몬스터 포함 3장 릴리스)은
+        # 상대가 대신 낼 수 없는 코스트라 발동할 수 없다 (사용자 답변 2026-10-20). 코스트 칸은 올인 텍스트의 「-」 항목에서 읽는다
+        g = make(); put(g, '스트플을 원하는 도시쥐', 0, 'upper')
+        a = mon(g, DOG, 0); put(g, DOG_F, 0, 'hand'); mon(g, DOG_F, 1); mon(g, '솔루나 시아', 1)
+        self.assertTrue(g.legal(0, a, eff(a, 21))); self.assertTrue(g.legal(0, a, eff(a, 22)))
+        d = put(g, '세리 - 델레가토르', 1, None); g.place_monster(d, 0, 'atk', allow_shared=False)   # 원페어로 빼앗아 온 델레가토르
+        self.assertEqual(g.cost_payer(0), 1)
+        self.assertFalse(g.legal(0, a, eff(a, 21))); self.assertFalse(g.legal(0, a, eff(a, 22)))
+
     def test_pair_needs_skill(self):
         g = make()
         a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand'); mon(g, '솔루나 시아', 1)
