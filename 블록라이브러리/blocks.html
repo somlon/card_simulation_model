@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>블록 라이브러리 목록</title>
+<style>
+@page { size: A4 landscape; margin: 11mm 11mm 12mm 11mm; }
+:root { --ink:#1d2330; --mute:#5b6475; --line:#d0d6e0; --acc:#2f5fb3; --acc2:#b4532a; }
+body { font-family:"WenQuanYi Zen Hei", sans-serif; color:var(--ink); font-size:8.6pt; line-height:1.45; background:#fff; margin:0; }
+h1 { font-size:17pt; margin:0 0 1mm; }
+h2 { font-size:12pt; margin:5mm 0 1.6mm; padding-bottom:0.8mm; border-bottom:2px solid var(--acc); page-break-after:avoid; }
+p { margin:1mm 0; }
+.sub { color:var(--mute); font-size:8.6pt; }
+table { border-collapse:collapse; width:100%; margin:1mm 0 2mm; }
+th, td { border:1px solid var(--line); padding:0.9mm 1.5mm; vertical-align:top; text-align:left; }
+th { background:#e8edf6; font-size:8.4pt; }
+thead { display:table-header-group; }
+tr { page-break-inside:avoid; }
+td.id { white-space:nowrap; color:var(--mute); width:7mm; }
+td.b { white-space:nowrap; font-weight:bold; width:36mm; }
+td.b .en { display:block; font-weight:normal; font-family:"WenQuanYi Zen Hei Mono", monospace; font-size:7.6pt; color:var(--acc); }
+td.v { width:58mm; }
+td.ex { width:72mm; }
+td.im { width:30mm; font-family:"WenQuanYi Zen Hei Mono", monospace; font-size:7.6pt; color:var(--mute); }
+.star { color:var(--acc2); font-weight:bold; }
+.box { background:#f3f5f9; border-left:4px solid var(--acc); padding:2mm 3mm; margin:2mm 0; }
+.sum td, .sum th { text-align:center; }
+.pb { page-break-before:always; }
+</style></head><body>
+
+<h1>블록 라이브러리 목록 (안)</h1>
+<div class="sub">2026-10-25 · 카드 200장(데이터 <span style="font-family:monospace">data/main</span> fb5598d)의 번호 붙은 효과 문장 415줄을 모두 읽고 뽑은 목록 · 지금 코드 기준 <span style="font-family:monospace">claude/loving-faraday-ekyq7w</span> 1ce6642</div>
+
+<div class="box">
+<b>보는 법</b> — 한 행이 블록 하나입니다. <b>값</b>은 조립표에 적는 매개변수, <b>쓰는 카드 예</b>는 카드 코드-효과 번호(대표만), <b>지금 구현</b>은 지금 그 동작이 들어 있는 곳
+(<span style="font-family:monospace">E:</span> engine.py 함수 — 블록이 감싸서 씀 / <span style="font-family:monospace">C:</span> 카드 함수 안에 따로 짜여 있어 블록으로 옮겨야 함).
+<span class="star">★</span> = 지금 카드 1장만 쓰는 전용 블록(그래도 카드 이름이 아니라 기능 이름으로 둠).
+블록은 모두 같은 모양(발동 가능 판정 · 처리 · 성질 — 대상 지정 여부 · 제거 효과 여부 등)을 가집니다. AI 점수를 블록에 둘지는 아직 결정 전이라 이 목록에는 넣지 않았습니다.
+</div>
+
+<table class="sum" style="width:auto">
+<tr><th>분류</th><th>0 효과 틀<br>(블록 아님)</th><th>1 발동 시점</th><th>2 조건</th><th>3 수량</th><th>4 코스트</th><th>5 대상 · 고르기</th><th>6 처리</th><th>7 [지속]</th><th>8 [제약] · 제약</th><th>9 연결</th><th>합계(블록)</th></tr>
+<tr><td>개수</td><td>12</td><td>16</td><td>7</td><td>8</td><td>9</td><td>6</td><td>36</td><td>31</td><td>5</td><td>6</td><td><b>124</b></td></tr>
+<tr><td>★ 전용</td><td>—</td><td>3</td><td>0</td><td>1</td><td>1</td><td>1</td><td>6</td><td>10</td><td>1</td><td>0</td><td><b>23</b></td></tr>
+</table>
+<p class="sub">앞선 계획서의 「약 100개」는 대략치였고, 문장을 하나씩 대조하니 124개가 되었습니다(수량 표현 · 연결을 블록으로 센 것 포함). 마지막 장에 모든 블록이 함께 쓰는 공통 값(필터 · 장소 · 기간)을 정리했습니다.</p>
+
+<h2>0. 효과 틀 속성 — 블록이 아니라 효과마다 적는 값</h2>
+<table>
+<thead><tr><th>ID</th><th>속성</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">F01</td><td class="b">키워드<span class="en">speed</span></td><td>효과의 종류</td><td class="v">기동(표기 없음) · 신속 · 트리거 · 유언 · 소환 · 전투 · 지속 · 제약 · 규칙(키워드 없는 상시 문장) · 부속</td><td class="ex">트리거 89 · 표기 없음 77 · 신속 76 · 지속 69 · 유언 61 · 소환 27 · 전투 10 · 제약 6줄</td><td class="im">E: Effect.kind</td></tr>
+<tr><td class="id">F02</td><td class="b">발동 위치<span class="en">zones</span></td><td>어디에 있을 때 발동하는가</td><td class="v">패 · 필드 · 묘지 · 스킬 존 · 「패에서도 발동할 수 있다」</td><td class="ex">COMN-002-1 모스키토 · SLNA-005-1 인카운터 · PKBS-004-2 포카드를 보는 고양이</td><td class="im">E: Effect.zones</td></tr>
+<tr><td class="id">F03</td><td class="b">1턴 횟수<span class="en">opt</span></td><td>같은 이름 × 번호의 1턴 사용 횟수</td><td class="v">1(기본) · n번까지 · 제한 없음(「계속해서 사용할 수 있다」 · 「1턴에 1번 제약을 받지 않는다」)</td><td class="ex">DGMS-006-1 어새신(3번까지) · DTBG-005-1 에볼루션(계속) · CRSD-005-1 처키(제약 없음)</td><td class="im">E: Effect.opt</td></tr>
+<tr><td class="id">F04</td><td class="b">[지속] 1턴 횟수<span class="en">cont_limit</span></td><td>[지속]이 1턴에 1번만 적용되는가</td><td class="v">1(단서 없음) · 없음(단서 있음) · n번까지</td><td class="ex">DTBG-011-2 버터플라이(1) · TAXM-002-1 두플리카토르(없음) · PKBS-015-1 도박장(2번까지)</td><td class="im">E: cont_limit (지금은 텍스트로 판정)</td></tr>
+<tr><td class="id">F05</td><td class="b">사용 뒤 쉼<span class="en">cooldown</span></td><td>사용 후 다음 턴까지 사용 불가</td><td class="v">기간</td><td class="ex">WSFT-011-2 지혜의 마법사</td><td class="im">C: cards5</td></tr>
+<tr><td class="id">F06</td><td class="b">강제 발동<span class="en">mandatory</span></td><td>「(이 효과는 강제로 발동한다.)」</td><td class="v">예/아니오</td><td class="ex">COMN-005-3 킬러 · DGMS-005-3 트랩퍼 · UNSL-002 월식</td><td class="im">E: Effect.mandatory</td></tr>
+<tr><td class="id">F07</td><td class="b">체인 금지<span class="en">no_chain</span></td><td>이 발동에 상대는 효과를 발동할 수 없음</td><td class="v">예/아니오</td><td class="ex">COMN-003 태양과 달의 마력 · COMN-009-1 명계의 징벌 · SLNA-021 이클립스 하모니 · TAXM-008-4 이탈세</td><td class="im">E: Effect.no_resp</td></tr>
+<tr><td class="id">F08</td><td class="b">무효화 불가<span class="en">unnegatable</span></td><td>「이 카드는 무효화되지 않으며」</td><td class="v">예/아니오</td><td class="ex">COMN-003 태양과 달의 마력</td><td class="im">E: Effect.unnegatable</td></tr>
+<tr><td class="id">F09</td><td class="b">발동 단계 제한<span class="en">phase_only</span></td><td>특정 단계 · 상태에서만 발동</td><td class="v">종료 단계에서만 · 뒷면일 때만</td><td class="ex">CRSD-002-1 비비안 · CRSD-005-1 처키 · DGMS-001-1 깜짝상자(뒷면일 때만)</td><td class="im">C: cards6 · cards9</td></tr>
+<tr><td class="id">F10</td><td class="b">선언자 제한<span class="en">owner_only</span></td><td>원래 주인만 선언할 수 있다</td><td class="v">예/아니오</td><td class="ex">DGMS-001-1 깜짝상자</td><td class="im">E: Effect.owner_only</td></tr>
+<tr><td class="id">F11</td><td class="b">동시 발동 금지<span class="en">exclusive</span></td><td>같은 카드의 지정한 번호들을 동시에 발동할 수 없음</td><td class="v">번호 목록</td><td class="ex">TAXM-008-1 이탈세(3 · 4번)</td><td class="im">C: flags exclusive_nums</td></tr>
+<tr><td class="id">F12</td><td class="b">부속<span class="en">attached_to</span></td><td>다른 번호 효과의 처리에 딸린 효과(별도 발동 없음)</td><td class="v">본 효과 번호 · 처리 시점(처리 시 · 발동했을 때)</td><td class="ex">아츠 2번 10장(SLNA-010-2 외) · SLNA-005-2 인카운터 · DTBG-016-1 로딩</td><td class="im">C: cards3 arts · cards10</td></tr>
+</table>
+
+<h2>1. 발동 시점 <span style="font-family:monospace;font-size:10pt">when</span> — 「…했을 때 발동」</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">W01</td><td class="b">소환되었을 때<span class="en">summoned</span></td><td>몬스터가 소환되었을 때</td><td class="v">누가(자신/상대/누구든) · 어느 필드 · 일반/특수 · 어디서(덱 · 묘지) · 필터</td><td class="ex">데이터버그 손패 트리거 11장(DTBG-001-2 외) · DGMS-003-1 다크나이트 · DGMS-013 가시바늘 · WSFT-025-1 기적의 전조 · PKBS-013 쇠망치</td><td class="im">E: 사건 summon</td></tr>
+<tr><td class="id">W02</td><td class="b">이 카드 소환<span class="en">self_summoned</span></td><td>[소환] 이 카드가 소환되었을 때</td><td class="v">일반/특수 · 「소환에 성공했을 경우」</td><td class="ex">DTBG-003-1 리틀버그 · AMBR-006-1 녹스(특수소환되었을 경우) · PKBS-007-2 스트레이트 토끼</td><td class="im">E: 사건 summon</td></tr>
+<tr><td class="id">W03</td><td class="b">발동했을 때<span class="en">activated</span></td><td>효과 · 카드가 발동(선언)되었을 때</td><td class="v">누가 · 무엇(효과/카드의 발동/마법 카드/트리거 마법/묘지의 카드의 효과) · 성질(카드를 파괴하는/필드에서 벗어나게 하는) · 「자신의 「X」 효과에 이어」</td><td class="ex">DTBG-011-1 버터플라이 · TAXM-007-1 인지세(선언했을 때) · TAXM-008-2 이탈세 · WSFT-011-2 지혜의 마법사 · COMN-006-1 용사 · COMN-010 명계의 규율 · SLNA-022-1 일광</td><td class="im">E: 사건 activate · C: moves_off_field</td></tr>
+<tr><td class="id">W04</td><td class="b">파괴되었을 때<span class="en">destroyed</span></td><td>카드가 파괴되었을 때</td><td class="v">누구의 · 필터 · 원인(효과/전투/상대에 의해) · 동시에</td><td class="ex">FGTR-010-3 투기장 · FGTR-008-2 입장 · DTBG-014-2 더 딜리트 · PKBS-005-3 시골쥐 · SLNA-020 이클립스 오버드라이브(동시에) · UNSL-003 몽마의 도래(상대가 전투로)</td><td class="im">E: 사건 destroyed</td></tr>
+<tr><td class="id">W05</td><td class="b">묘지로 보내졌을 때<span class="en">sent_to_grave</span></td><td>카드가 묘지로 보내졌을 때</td><td class="v">누구의 · 어디서(필드/덱) · 누구에 의해(상대 몬스터 카드 등) · 필터</td><td class="ex">WSFT-002-1 희생의 펜던트 · WSFT-013-2 성녀 · WSFT-018-1 펜던트 · WSFT-001-2 꿈이 가득한 아이(덱에서) · SWRM-016 사충보복 · SLNA-006-2 여명과 황혼</td><td class="im">E: 사건 to_grave · milled</td></tr>
+<tr><td class="id">W06</td><td class="b">필드를 벗어났을 때<span class="en">left_field</span></td><td>카드가 필드를 벗어났을 때</td><td class="v">누구의 · 필터 · 원인(상대의 효과/상대에 의해)</td><td class="ex">DTBG-021 리벤지 · SLNA-003-3 코로나 · SLNA-018-1 일광정화 · AMBR-012-2 황금봉랍 · UNSL-005 꿈의 파열</td><td class="im">E: 사건 leave_field</td></tr>
+<tr><td class="id">W07</td><td class="b">패에 넣어졌을 때<span class="en">added_to_hand</span></td><td>카드가 패에 넣어졌을 때</td><td class="v">누가 · 어디서(덱/묘지) · 이 카드</td><td class="ex">COMN-001 사기 감지 · COMN-009 명계의 징벌(묘지에서) · DGMS-015 거짓 샘물 · WSFT-024 염원 · DTBG-002-1 플라이(이 카드)</td><td class="im">E: 사건 added_to_hand</td></tr>
+<tr><td class="id">W08</td><td class="b">유언<span class="en">last_will</span></td><td>[유언] 이 카드가 묘지로 보내졌을 때</td><td class="v">예외: 상대에 의해서만 · 덱에서면 안 됨 · 필드에서면 안 됨 · 자신 효과의 코스트면 안 됨 · 뒷면이었을 때 추가 처리</td><td class="ex">세리 유언 4장(TAXM-001-2 외) · TAXM-006-2 소환세 · WSFT-002-2 코인 · WSFT-019-2 영웅의 조건 · WSFT-015-2 조커 · DGMS-001-2 깜짝상자</td><td class="im">E: 사건 to_grave</td></tr>
+<tr><td class="id">W09</td><td class="b">릴리스되었을 때<span class="en">released</span></td><td>이 카드가 릴리스되었을 때</td><td class="v">—</td><td class="ex">PKBS-011-2 표시목 · PKBS-014-2 짐승조커</td><td class="im">E: 사건 to_grave(원인)</td></tr>
+<tr><td class="id">W10</td><td class="b">전투<span class="en">battle</span></td><td>[전투] 전투 시점</td><td class="v">—</td><td class="ex">격투가 2번 · DTBG-007-1 헤라클레스 · SLNA-004-4 리퍼 · FGTR-007 세레모니 · FGTR-011-1 투기장의 규칙</td><td class="im">E: 사건 battle_win</td></tr>
+<tr><td class="id">W11</td><td class="b">턴 · 단계 시점<span class="en">phase_time</span></td><td>종료 단계가 되었을 때 · 턴 종료 시 · 턴 시작 시</td><td class="v">시점 · 누구의 턴(자신/상대/각)</td><td class="ex">저주인형 2번 6장(CRSD-001-2 외) · COMN-005-3 킬러 · COMN-006-3 용사 · AMBR-006-4 녹스 · SLNA-024-2 솔루나 아츠</td><td class="im">E: 사건 end_phase · phase</td></tr>
+<tr><td class="id">W12</td><td class="b">라운드 시작<span class="en">round_start</span></td><td>라운드 시작 시</td><td class="v">—</td><td class="ex">CRSD-018-1 희생제 · AMBR-017-1 봉인의 계약 · AMBR-018-1 몽식의 계약</td><td class="im">E: 사건 game_start</td></tr>
+<tr><td class="id">W13</td><td class="b">카운터 도달<span class="en">counter_reached</span></td><td>카운터가 n개 놓였을 때 · 합계 n 이상이 되었을 때</td><td class="v">카운터 이름 · n · 어디(이 카드/자신 「X」 합계)</td><td class="ex">CRSD-018-3 희생제 · UNSL-002 월식</td><td class="im">E: 사건 counter</td></tr>
+<tr><td class="id">W14</td><td class="b">무효화되었을 때<span class="en">negated</span> <span class="star">★</span></td><td>자신 카드의 효과가 무효화되었을 때</td><td class="v">누구의</td><td class="ex">CRSD-014 강령</td><td class="im">E: 사건 negated</td></tr>
+<tr><td class="id">W15</td><td class="b">대상이 되었을 때<span class="en">targeted</span> <span class="star">★</span></td><td>자신 필드의 몬스터가 상대 효과의 대상이 되었을 때</td><td class="v">—</td><td class="ex">AMBR-013 각성의 태동</td><td class="im">C: cards7</td></tr>
+<tr><td class="id">W16</td><td class="b">HP 기준<span class="en">hp_threshold</span> <span class="star">★</span></td><td>자신의 HP가 n 이하가 되었을 때</td><td class="v">n</td><td class="ex">UNSL-004 깨어남의 종</td><td class="im">E: 사건 damage</td></tr>
+</table>
+
+<h2>2. 조건 <span style="font-family:monospace;font-size:10pt">if · while</span> — 「…할 경우 · …하는 한」</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">C01</td><td class="b">존재<span class="en">exists</span></td><td>어디에 무엇이 있는가 · 없는가</td><td class="v">장소 · 필터 · 앞면만 · 수량(n 이상/없음/정확히) · 「이 카드 이외」</td><td class="ex">FGTR-003-1 타이거팽(몬스터 없음) · SLNA-001-1 시아 · SWRM-009-1 병정흰개미(필드 존) · DTBG-023 패키지(6장) · AMBR-007-3 결정충 · DTBG-011-2 버터플라이</td><td class="im">E: exists</td></tr>
+<tr><td class="id">C02</td><td class="b">각각 존재<span class="en">exists_each</span></td><td>「X」 · 「Y」가 각각 1장씩 있는가</td><td class="v">카드군 목록 · 수량</td><td class="ex">SLNA-007 듀얼 컴뱃 · SLNA-021 이클립스 하모니 · SLNA-024-2 솔루나 아츠</td><td class="im">C: cards3</td></tr>
+<tr><td class="id">C03</td><td class="b">이 카드 상태<span class="en">self_state</span></td><td>이 카드가 어디에 어떤 상태로 있는가</td><td class="v">필드에 앞면 · 공유 존 · 묘지 · 뒷면 · 장착 중</td><td class="ex">TAXM-002-1 두플리카토르(앞면) · UNSL-001-2 봉인을 푸는 자(공유 존) · COMN-009-2 명계의 징벌(묘지) · PKBS-005-3 시골쥐</td><td class="im">E: on_field 등</td></tr>
+<tr><td class="id">C04</td><td class="b">카운터 조건<span class="en">counter_cond</span></td><td>카운터가 놓여 있는가 · n개 이상인가</td><td class="v">이름 · 어디(이 카드/자신 필드/놓인 몬스터) · n</td><td class="ex">AMBR-001-2 · 3 아우렘 · AMBR-006-4 녹스(3개 이상) · AMBR-009-1 수액정 · CRSD-001-1 마들렌 · CRSD-008-2 퇴마의 부적</td><td class="im">E: counters</td></tr>
+<tr><td class="id">C05</td><td class="b">턴 · 단계<span class="en">turn_phase</span></td><td>누구의 턴 · 어느 단계인가</td><td class="v">자신 턴/상대 턴 · 단계</td><td class="ex">(F09와 함께) · CRSD-017 위저보드 · AMBR-017-2 봉인의 계약(자신 턴)</td><td class="im">E: turn_player · phase</td></tr>
+<tr><td class="id">C06</td><td class="b">처리 결과<span class="en">result_check</span></td><td>앞 처리의 결과로 판정</td><td class="v">보낸 카드에 「X」가 있는가 · 코스트를 냈는가 · 제외 존에 n장 모였는가</td><td class="ex">WSFT-015-1 조커 · WSFT-010-1 행운의 도적 · CRSD-007-2 저주인형</td><td class="im">C: 카드 함수 안</td></tr>
+<tr><td class="id">C07</td><td class="b">카드 종류 판정<span class="en">card_kind</span></td><td>그 카드의 종류 · 카드군에 따라 나눔(분기용)</td><td class="v">몬스터/지속 · 필드 마법/일반 · 트리거 · 신속 마법 · 「시엘」/「시아」</td><td class="ex">WSFT-013-2 성녀 · SLNA-006-2 여명과 황혼</td><td class="im">C: cards5 · cards3</td></tr>
+</table>
+
+<h2>3. 수량 표현 — 「n장 · n장까지 · 그 수만큼」</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">V01</td><td class="b">고정 수<span class="en">n</span></td><td>정해진 매수 · 수치</td><td class="v">n</td><td class="ex">대부분의 「1장」 · 「1000 대미지」</td><td class="im">—</td></tr>
+<tr><td class="id">V02</td><td class="b">까지<span class="en">up_to</span></td><td>0 ~ n 중 고름</td><td class="v">n</td><td class="ex">SLNA-009-1 천체정렬(2장까지) · DGMS-016 리페어(3장까지) · PKBS-006-2 도시쥐 · PKBS-008-2 플러쉬 늑대</td><td class="im">C</td></tr>
+<tr><td class="id">V03</td><td class="b">원하는 만큼<span class="en">any</span></td><td>개수를 고름</td><td class="v">상한</td><td class="ex">FGTR-011-3 투기장의 규칙 · SLNA-016-1 성광난무 · AMBR-001-4 아우렘(임의의 개수)</td><td class="im">C</td></tr>
+<tr><td class="id">V04</td><td class="b">가능한 만큼<span class="en">max</span></td><td>할 수 있는 최대</td><td class="v">—</td><td class="ex">DTBG-006-2 앤트</td><td class="im">C</td></tr>
+<tr><td class="id">V05</td><td class="b">개수 세기<span class="en">count_of</span></td><td>「…의 수 × k」 · 「1장당 k」</td><td class="v">장소 · 필터 · 배수 · 상한 · 이 카드 포함 여부</td><td class="ex">SWRM-020 대발생 · DTBG-010-2 유니온 마스터 · SWRM-015 군체이동(최대 6) · PKBS-008-1 플러쉬 늑대(1장당 500)</td><td class="im">C: per_card_self</td></tr>
+<tr><td class="id">V06</td><td class="b">앞 결과 수<span class="en">result_count</span></td><td>제거한 · 버린 · 되돌린 수만큼</td><td class="v">어느 처리의 결과 · 배수</td><td class="ex">AMBR-014 균열 · TAXM-005-2 프로쿠라토르 · PKBS-010-1 포카드 고양이 · SLNA-009-1 천체정렬 · CRSD-018-4 희생제</td><td class="im">C</td></tr>
+<tr><td class="id">V07</td><td class="b">주사위<span class="en">dice</span> <span class="star">★</span></td><td>주사위 눈</td><td class="v">면 수</td><td class="ex">COMN-008 럭키 다이스</td><td class="im">C: cards</td></tr>
+<tr><td class="id">V08</td><td class="b">선언 값<span class="en">declared</span></td><td>선언한 레벨 · 속성</td><td class="v">무엇을 선언</td><td class="ex">PKBS-014-1 짐승조커 · PKBS-011-1 표시목</td><td class="im">C: cards8</td></tr>
+</table>
+
+<h2 class="pb">4. 코스트 <span style="font-family:monospace;font-size:10pt">cost</span> — 「…하고 발동」</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">K01</td><td class="b">옮기기 코스트<span class="en">move_cost</span></td><td>카드를 옮기고 발동</td><td class="v">어디로(묘지/버림/제외/턴 종료 시까지 제외/덱/패/상대 패) · 어디서 · 필터 · 매수 · 이 카드 · 같은 이름 · 상대 필드 포함</td><td class="ex">DGMS-004-1 새크리파이스(이 카드 버림) · DTBG-020 습격 · TAXM-001-2 세리 유언(제외 존 3장 덱으로) · SLNA-014-1 월영암수(상대 패에) · SLNA-010-1 월영침식 · SWRM-001-1 시체송장벌레</td><td class="im">E: send_grave · banish · to_deck · to_hand</td></tr>
+<tr><td class="id">K02</td><td class="b">릴리스 코스트<span class="en">release_cost</span></td><td>릴리스하고 발동</td><td class="v">어디서(자신/상대/서로, 패 포함) · 필터 · 매수 · 이 카드</td><td class="ex">DTBG-001-1 캐터필러 · DTBG-005-1 에볼루션 · DTBG-016-2 로딩 · SWRM-004-1 메뚜기여왕(상대 필드) · SWRM-008-1 장수말벌여왕 · AMBR-004-1 마르모르</td><td class="im">E: tribute · releasable</td></tr>
+<tr><td class="id">K03</td><td class="b">덱 위 코스트<span class="en">deck_top_cost</span></td><td>덱 위에서 n장 제외하고 발동(부족분 다른 덱)</td><td class="v">누가(자신/서로) · 덱 · n · 부족분</td><td class="ex">TAXM-006-2 소환세 등 세금 유언 4장 · TAXM-011-2 · 3 세제(서로가)</td><td class="im">E: pay_deck_cost</td></tr>
+<tr><td class="id">K04</td><td class="b">카운터 코스트<span class="en">counter_cost</span></td><td>카운터를 제거하고 발동</td><td class="v">이름 · 매수(고정/임의/전부) · 어디서(이 카드/자신 필드 몬스터 1장/자신 필드)</td><td class="ex">CRSD-005-1 처키 · AMBR-012-1 황금봉랍 · AMBR-001-4 아우렘 · AMBR-014 균열 · UNSL-004 깨어남의 종</td><td class="im">E: remove_counter</td></tr>
+<tr><td class="id">K05</td><td class="b">보여주기<span class="en">reveal</span></td><td>보여주고 발동(지불 아님)</td><td class="v">이 카드 · 패의 「X」 원하는 만큼</td><td class="ex">FGTR-001-1 스네이크 · DGMS-006-1 어새신 · DGMS-008-1 다크 엠퍼러 · PKBS-008-3 플러쉬 늑대 · SLNA-016-1 성광난무</td><td class="im">C</td></tr>
+<tr><td class="id">K06</td><td class="b">이 카드 상태 코스트<span class="en">self_state_cost</span></td><td>이 카드의 상태를 바꾸고 발동</td><td class="v">앞면 수비 표시로 · 장착</td><td class="ex">DGMS-001-1 깜짝상자 · SWRM-002-1 맵시기생벌</td><td class="im">E: change_position · C: 장착</td></tr>
+<tr><td class="id">K07</td><td class="b">대체 코스트<span class="en">alt_cost</span></td><td>「…없는 경우 대신 …할 수 있다」</td><td class="v">원래 코스트 · 대체 코스트 · 조건</td><td class="ex">AMBR-004-1 마르모르 · AMBR-005-1 카르분쿨루스(봉인 카운터 3개)</td><td class="im">C: cards7</td></tr>
+<tr><td class="id">K08</td><td class="b">족보 재료<span class="en">combo_material</span></td><td>관계 조건을 만족하는 재료 n장</td><td class="v">관계(연속 레벨/같은 속성/같은 레벨 3+2/같은 레벨 4/같은 레벨 2 · 3) · 장소 · 이 카드 포함</td><td class="ex">PKBS-001-2 스트레이트 · PKBS-002-2 플러쉬 · PKBS-003-2 풀 하우스 · PKBS-004-2 포카드 · PKBS-016-2 올인 원페어 · 트리플</td><td class="im">C: cards8 combo_*</td></tr>
+<tr><td class="id">K09</td><td class="b">종류별 매수<span class="en">kinds_cost</span> <span class="star">★</span></td><td>여러 카드군에서 종류별로 정한 매수</td><td class="v">카드군 목록 · 종류마다 n · 합계 · 같은 종류 상한</td><td class="ex">WSFT-027-1 · 2 소원의 분수</td><td class="im">C: cards5</td></tr>
+</table>
+
+<h2>5. 대상 · 고르기 · 참조</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">T01</td><td class="b">대상 지정<span class="en">target</span></td><td>「대상으로 하고」 — 발동 시 고름(대상 지정 효과)</td><td class="v">장소 · 필터 · 매수(고정/원하는 만큼/수량식) · 여러 묶음(자신 1 + 상대 1)</td><td class="ex">FGTR-006-2 라이노 혼 · DGMS-003-1 다크나이트 · DTBG-017 백업 · DGMS-005-2 트랩퍼 · SLNA-024-3 솔루나 아츠(묘지 3장)</td><td class="im">E: link ctx · C: targets</td></tr>
+<tr><td class="id">T02</td><td class="b">고르기<span class="en">choose</span></td><td>「고르고」 · 처리 시 고름(비대상)</td><td class="v">장소 · 필터 · 매수</td><td class="ex">DTBG-020 습격 · AMBR-001-4 아우렘 · AMBR-014 균열 · AMBR-006-4 녹스 · DTBG-012-1 디지털 웜</td><td class="im">C: field_pick</td></tr>
+<tr><td class="id">T03</td><td class="b">지정<span class="en">designate</span> <span class="star">★</span></td><td>「지정하고 발동」 — 발동 시 정하지만 대상과 구별</td><td class="v">장소 · 매수(수량식)</td><td class="ex">SWRM-015 군체이동</td><td class="im">C: cards</td></tr>
+<tr><td class="id">T04</td><td class="b">참조<span class="en">ref</span></td><td>앞에서 정한 카드 · 효과를 가리킴</td><td class="v">그 카드 · 그 효과 · 그 2장 · 파괴한 몬스터 · 묘지로 보낸 카드 · 이 효과로 특수소환한 몬스터 · 패에 넣은 카드 · 장착된 몬스터</td><td class="ex">거의 모든 「그 …」 문구</td><td class="im">E: link ctx</td></tr>
+<tr><td class="id">T05</td><td class="b">상대가 고름<span class="en">opp_choice</span></td><td>선택을 상대가 함</td><td class="v">무엇을(효과 중 1개/무작위 1장/자신 카드 1장)</td><td class="ex">WSFT-024-1 염원 · TAXM-007-1 인지세 · CRSD-013 탐욕 · UNSL-001-1 봉인을 푸는 자 · CRSD-008-2 퇴마의 부적</td><td class="im">C</td></tr>
+<tr><td class="id">T06</td><td class="b">선언<span class="en">declare</span></td><td>레벨 · 속성을 선언</td><td class="v">선언 항목 · 범위</td><td class="ex">PKBS-014-1 짐승조커 · PKBS-011-1 표시목</td><td class="im">C: cards8</td></tr>
+</table>
+
+<h2 class="pb">6. 처리 <span style="font-family:monospace;font-size:10pt">do</span></h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>카드 이동</b></td></tr>
+<tr><td class="id">D01</td><td class="b">파괴<span class="en">destroy</span></td><td>카드를 파괴</td><td class="v">무엇(참조/고르기/전부) · 장소 · 필터 · 매수</td><td class="ex">DTBG-012-1 디지털 웜 · DTBG-021 리벤지(필드 전부) · UNSL-005 꿈의 파열(모든 몬스터) · CRSD-006-1 조리아드</td><td class="im">E: destroy</td></tr>
+<tr><td class="id">D02</td><td class="b">제외<span class="en">banish</span></td><td>카드를 제외</td><td class="v">무엇 · 장소 · 매수</td><td class="ex">COMN-003 태양과 달의 마력 · COMN-009-1 명계의 징벌 · SLNA-019-1 성광소각 · SLNA-004-4 리퍼 · CRSD-007-2 저주인형(이 카드)</td><td class="im">E: banish</td></tr>
+<tr><td class="id">D03</td><td class="b">묘지로<span class="en">to_grave</span></td><td>카드를 묘지로 보냄</td><td class="v">무엇 · 장소 · 매수</td><td class="ex">COMN-001 사기 감지 · CRSD-012 타락 · WSFT-027-2 소원의 분수 · DTBG-018 다운로드 · AMBR-010-2 반혼체(덱에서)</td><td class="im">E: send_grave · deck_to_grave</td></tr>
+<tr><td class="id">D04</td><td class="b">덱으로<span class="en">to_deck</span></td><td>카드를 덱으로 되돌림</td><td class="v">무엇 · 장소(필드/묘지/패/서로의 묘지 전부) · 덱 위/아래 · 섞기 · 고르는 사람</td><td class="ex">SLNA-010-1 월영침식 · SWRM-007-1 주기매미 · 「이 카드와 「X」 1장」 유언(WSFT-010-3 외) · DGMS-016 리페어 · SLNA-014-1 월영암수(상대 패 2장)</td><td class="im">E: to_deck</td></tr>
+<tr><td class="id">D05</td><td class="b">패에 넣기<span class="en">add_to_hand</span></td><td>서치 · 회수</td><td class="v">어디서(메인/상급/덱/묘지/덱 또는 묘지) · 필터 · 정확한 이름 · 매수 · 동명 허용</td><td class="ex">FGTR-002-1 래빗 풋 · DTBG-001-1 캐터필러(2장) · AMBR-003-3 실렉스(덱/묘지) · SLNA-012-1 잔월의 유산 · FGTR-010-3 투기장(동명 허용)</td><td class="im">E: search · salvage</td></tr>
+<tr><td class="id">D06</td><td class="b">드로우<span class="en">draw</span></td><td>카드를 뽑음</td><td class="v">누가 · 어느 덱 · 매수(고정/수량식)</td><td class="ex">FGTR-011-1 · 3 투기장의 규칙 · DGMS-005-3 트랩퍼(상대) · TAXM-011-2 세제 · PKBS-007-2 스트레이트 토끼(3장)</td><td class="im">E: draw</td></tr>
+<tr><td class="id">D07</td><td class="b">패 버리기<span class="en">discard</span></td><td>패를 버림</td><td class="v">누가 · 매수(고정/까지) · 이 카드</td><td class="ex">FGTR-001-1 스네이크 · DTBG-019 아로마 · SLNA-009-1 천체정렬 · WSFT-002-1 희생의 펜던트(이 카드)</td><td class="im">E: send_grave</td></tr>
+<tr><td class="id">D08</td><td class="b">덱 위 옮기기<span class="en">mill</span></td><td>덱 위에서 n장 제외 · 묘지로(세금 · 코인)</td><td class="v">누가(자신/상대/서로/그 플레이어) · 덱 · n · 어디로 · 부족분 다른 덱</td><td class="ex">TAXM-003-1 엑삭토르 · TAXM-008-4 이탈세(상대 10장) · WSFT-002-2 코인 · WSFT-015-1 조커 · WSFT-025-1 기적의 전조</td><td class="im">E: mill · dump</td></tr>
+<tr><td class="id">D09</td><td class="b">특수소환<span class="en">special_summon</span></td><td>몬스터를 특수소환</td><td class="v">무엇(이 카드/참조) · 어디서(패/덱/메인/상급/묘지/덱 또는 묘지/패 또는 묘지) · 필터 · 매수(고정/까지/가능한 만큼) · 표시 형식 · 어느 필드</td><td class="ex">데이터버그 손패 트리거 11장 · DTBG-006-2 앤트 · PKBS-006-2 도시쥐 · AMBR-011 침전(수비 표시) · DGMS-018-3 셔플</td><td class="im">E: special_summon</td></tr>
+<tr><td class="id">D10</td><td class="b">릴리스<span class="en">release</span></td><td>처리로 릴리스</td><td class="v">무엇 · 장소 · 매수</td><td class="ex">CRSD-015 빙의 · SWRM-015 군체이동</td><td class="im">E: tribute</td></tr>
+<tr><td class="id">D11</td><td class="b">세트<span class="en">set_from_deck</span></td><td>마법을 세트 · 상대 마법 존에 놓기</td><td class="v">어디서 · 필터 · 매수 · 이 턴에도 발동 가능 · 누구의 마법 존</td><td class="ex">DGMS-004-3 새크리파이스 · DGMS-005-1 트랩퍼 · SLNA-008-1 가호 · SLNA-024-2 솔루나 아츠 · CRSD-018-1 희생제(상대 존)</td><td class="im">E: place_spell</td></tr>
+<tr><td class="id">D12</td><td class="b">앞면으로 놓기<span class="en">place_faceup</span></td><td>지속 · 필드 마법을 앞면으로 놓음 · 발동</td><td class="v">어디서 · 필터 · 매수</td><td class="ex">SLNA-009-1 천체정렬 · SLNA-005-2 인카운터 · SWRM-009-1 병정흰개미 · SLNA-022-2 일광 · WSFT-025-2 기적의 전조(이 카드)</td><td class="im">E: place_spell · place_field</td></tr>
+<tr><td class="id">D13</td><td class="b">장착<span class="en">equip</span></td><td>장착 카드로 붙임</td><td class="v">무엇을 · 어디에 · 장착 중 효과(P31)</td><td class="ex">COMN-002 모스키토 · SWRM-006-1 넓적배사마귀 · SWRM-002-1 맵시기생벌</td><td class="im">C: cards · cards2</td></tr>
+<tr><td class="id">D14</td><td class="b">컨트롤 이동<span class="en">control</span></td><td>카드의 컨트롤을 옮김</td><td class="v">무엇 · 누구에게 · 돌아오는 때 · 함께 부여할 특성</td><td class="ex">PKBS-016-2 올인 원페어 · SLNA-011-1 · 2 월영잠행</td><td class="im">E: change_control</td></tr>
+<tr><td class="id">D15</td><td class="b">확인하고 고르기<span class="en">look_pick</span></td><td>덱 위 n장 · n장을 보고 골라 처리</td><td class="v">n · 고르는 사람 · 고른 카드 처리 목록 · 나머지(덱 아래/덱으로 섞기)</td><td class="ex">SWRM-017 대장정 · UNSL-001-1 봉인을 푸는 자</td><td class="im">C: cards</td></tr>
+<tr><td class="id">D16</td><td class="b">재배치<span class="en">rearrange</span> <span class="star">★</span></td><td>뒷면 카드를 다시 배치</td><td class="v">대상(필드의 뒷면 카드 전부)</td><td class="ex">DGMS-018-1 셔플</td><td class="im">C: cards9</td></tr>
+<tr><td class="id">D17</td><td class="b">덱 섞기<span class="en">shuffle</span></td><td>덱을 섞음</td><td class="v">누구의</td><td class="ex">SWRM-007-1 주기매미 · UNSL-001-1 봉인을 푸는 자</td><td class="im">E: shuffle</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>무효 · 변경</b></td></tr>
+<tr><td class="id">D18</td><td class="b">발동 무효<span class="en">negate_activation</span></td><td>발동 · 효과를 무효로</td><td class="v">무엇(그 효과/그 발동/묘지에서 발동한 효과 전부) · 그리고 파괴</td><td class="ex">DTBG-011-1 버터플라이 · DTBG-015-2 쌍살벌 · DTBG-013-3 더 바이러스(무효 후 파괴) · COMN-010 명계의 규율 · FGTR-009 반격</td><td class="im">E: negate</td></tr>
+<tr><td class="id">D19</td><td class="b">소환 무효<span class="en">negate_summon</span> <span class="star">★</span></td><td>소환을 무효로 하고 파괴</td><td class="v">—</td><td class="ex">DTBG-013-2 더 바이러스</td><td class="im">E: summon_negate</td></tr>
+<tr><td class="id">D20</td><td class="b">카드 무효<span class="en">negate_card</span></td><td>카드의 효과를 무효로</td><td class="v">무엇(참조/전부 「상대 지속 마법」) · 기간(턴 종료 시까지/장착 중/조건 동안)</td><td class="ex">WSFT-007-2 사서 · SLNA-015-1 여명신광 · PKBS-002-1-1 메이드 늑대 · COMN-007 해주 · CRSD-010 의심 · AMBR-004-3 마르모르</td><td class="im">E: negate_card</td></tr>
+<tr><td class="id">D21</td><td class="b">효과 변경<span class="en">replace_effect</span></td><td>발동한 효과를 「…」로 바꿔 처리</td><td class="v">바꿀 처리(블록 목록) · 대상 발동</td><td class="ex">SWRM-005-1 노린재 · DGMS-014 깜짝상자 · TAXM-008-2 이탈세 · TAXM-007-1 인지세(무효 대신 5장 제외 — 상대 선택)</td><td class="im">E: replace</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>HP · 스탯 · 전투</b></td></tr>
+<tr><td class="id">D22</td><td class="b">대미지<span class="en">damage</span></td><td>대미지를 줌 · 받음</td><td class="v">누구에게 · 수치(고정/수량식)</td><td class="ex">FGTR-006-2 라이노 혼 · CRSD-005-1 처키 · SLNA-003-3 코로나 · PKBS-009-3 풀 하우스 강아지(2500) · CRSD-018-4 희생제</td><td class="im">E: damage</td></tr>
+<tr><td class="id">D23</td><td class="b">회복<span class="en">heal</span></td><td>HP 회복</td><td class="v">누가 · 수치</td><td class="ex">FGTR-004-2 라이온하트 · SLNA-015-1 여명신광 · SLNA-004-4 리퍼</td><td class="im">E: heal</td></tr>
+<tr><td class="id">D24</td><td class="b">스탯 증감<span class="en">stat_change</span></td><td>공격력 · 수비력 증감(기간 있음)</td><td class="v">무엇 · 공격력/수비력 · 수치 · 기간</td><td class="ex">WSFT-012-1 용기의 전사(+1000) · COMN-004 고대의 봉인(−1000) · WSFT-014-3 · 4 기적의 영웅 · SLNA-002-3 시엘</td><td class="im">E: mods</td></tr>
+<tr><td class="id">D25</td><td class="b">추가 공격<span class="en">extra_attack</span></td><td>한 번 더 공격할 수 있게 함</td><td class="v">무엇 · 횟수</td><td class="ex">FGTR-003-2 타이거팽 · DTBG-007-1 헤라클레스 · FGTR-007 세레모니 · SLNA-002-3 시엘</td><td class="im">E: extra_attacks</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>표시 형식 · 카운터 · 특성</b></td></tr>
+<tr><td class="id">D26</td><td class="b">뒷면으로<span class="en">set_face_down</span></td><td>카드를 뒷면 표시로</td><td class="v">무엇(참조/고르기/전부) · 뒷면 수비 지정</td><td class="ex">DGMS-005-2 트랩퍼(2장) · AMBR-006-4 녹스 · UNSL-002 월식(전부) · UNSL-003 몽마의 도래 · DGMS-014 깜짝상자</td><td class="im">E: set_face_down · set_spell_face_down</td></tr>
+<tr><td class="id">D27</td><td class="b">앞면으로 뒤집기<span class="en">flip_face_up</span> <span class="star">★</span></td><td>뒷면 몬스터를 앞면으로</td><td class="v">무엇</td><td class="ex">DGMS-018-2 셔플</td><td class="im">E: change_position</td></tr>
+<tr><td class="id">D28</td><td class="b">카운터 놓기<span class="en">add_counter</span></td><td>카운터를 놓음</td><td class="v">이름 · 수 · 어디에(이 카드/「희생제」/「퇴마의 부적」/자신 필드 몬스터 1장/필드 몬스터)</td><td class="ex">CRSD-001-1 마들렌 · CRSD-009 재앙 · AMBR-001-1 아우렘 · AMBR-002-3 레시나 · AMBR-008-2 잔편</td><td class="im">E: add_counter</td></tr>
+<tr><td class="id">D29</td><td class="b">카운터 제거<span class="en">remove_counter</span></td><td>처리로 카운터 제거</td><td class="v">이름 · 수(고정/전부) · 어디서</td><td class="ex">CRSD-002-1 비비안 · UNSL-002 월식 · CRSD-018-4 희생제 · AMBR-017-2 봉인의 계약</td><td class="im">E: remove_counter</td></tr>
+<tr><td class="id">D30</td><td class="b">특성 부여<span class="en">grant_traits</span></td><td>레벨 · 속성 부여 · 몬스터로 취급</td><td class="v">무엇 · 레벨 · 속성 · 몬스터 취급</td><td class="ex">PKBS-011-1 표시목 · PKBS-014-1 짐승조커 · PKBS-016-2 올인 원페어</td><td class="im">C: cards8 clear_on_leave</td></tr>
+<tr><td class="id">D31</td><td class="b">효과 부여<span class="en">grant_effect</span></td><td>카드가 효과를 얻게 함</td><td class="v">무엇 · 부여할 효과(블록으로 조립) · 기간</td><td class="ex">FGTR-007 세레모니</td><td class="im">C: cards cer_effect</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>기간 있는 상태 · 규칙</b></td></tr>
+<tr><td class="id">D32</td><td class="b">카드 상태 부여<span class="en">temp_status</span></td><td>카드에 기간 있는 상태를 줌</td><td class="v">상태(상대 효과 받지 않음/다른 카드 효과 받지 않음/릴리스 불가/전투 파괴 안 됨/표시 형식 변경 불가/공격 불가/효과 발동 불가) · 기간</td><td class="ex">FGTR-008-1 입장 · COMN-006-1 용사 · COMN-004 고대의 봉인 · AMBR-015 임시 봉인 · AMBR-010-1 반혼체 · DTBG-022 콜로니</td><td class="im">E: flags *_until</td></tr>
+<tr><td class="id">D33</td><td class="b">플레이어 규칙 부여<span class="en">temp_rule</span></td><td>플레이어에게 기간 있는 규칙을 적용</td><td class="v">규칙(P14 금지 목록 · 발동 n회 제한 · 대미지 줄 수 없음) · 누구 · 기간</td><td class="ex">SWRM-010-1 하루살이대군 · CRSD-002-1 비비안(4회 제한) · COMN-007 해주 · SLNA-020 이클립스 오버드라이브 · DGMS-015 거짓 샘물</td><td class="im">E: act_limit · no_damage</td></tr>
+<tr><td class="id">D34</td><td class="b">예약 처리<span class="en">delayed</span></td><td>기간 동안 사건마다 · 정한 시점에 처리하도록 예약</td><td class="v">시점(발동 시점 블록) · 처리 · 기간 · 임의 여부</td><td class="ex">SWRM-003-1 먹이바구미(소환할 때마다 서치) · DGMS-007-1 다크 매지션(종료 단계에 회수할 수 있다)</td><td class="im">C: on_event</td></tr>
+<tr><td class="id">D35</td><td class="b">승리<span class="en">win</span> <span class="star">★</span></td><td>게임에서 승리</td><td class="v">조건(C06)</td><td class="ex">CRSD-007-2 저주인형(제외 존 3장)</td><td class="im">E: GameOver</td></tr>
+<tr><td class="id">D36</td><td class="b">시작 패 매수<span class="en">hand_setup</span> <span class="star">★</span></td><td>라운드 시작 패 구성 매수</td><td class="v">매수</td><td class="ex">PKBS-016-1 올인(7장)</td><td class="im">C: 스킬 규칙</td></tr>
+</table>
+
+<h2 class="pb">7. [지속] <span style="font-family:monospace;font-size:10pt">apply</span> — 발동하지 않고 적용되는 효과</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>내성 · 보호</b></td></tr>
+<tr><td class="id">P01</td><td class="b">효과 내성<span class="en">immune</span></td><td>효과를 받지 않음</td><td class="v">누가(이 카드/자신 필드의 다른 카드) · 무엇으로부터(상대/다른 카드/「X」 이외 이름/「X」 카드 이외 카드군/상대 「X」 이외) · 비대상 효과만 · 카운터는 받음</td><td class="ex">DTBG-011-2 버터플라이 · TAXM-004-1 릭토르 · WSFT-014-2 기적의 영웅 · CRSD-007-1 저주인형 · CRSD-008-1 퇴마의 부적 · AMBR-001-2 아우렘 · AMBR-004-2 마르모르(비대상) · DGMS-010-1 헬</td><td class="im">E: immune flags</td></tr>
+<tr><td class="id">P02</td><td class="b">대상 내성<span class="en">untargetable</span> <span class="star">★</span></td><td>상대 효과의 대상이 되지 않음</td><td class="v">누가</td><td class="ex">AMBR-005-2 카르분쿨루스</td><td class="im">E: untargetable_opp</td></tr>
+<tr><td class="id">P03</td><td class="b">파괴 내성<span class="en">indestructible</span></td><td>파괴되지 않음</td><td class="v">원인(전투/효과) · 누가(이 카드/조건을 만족한 자신 몬스터)</td><td class="ex">PKBS-001-1 토끼 · CRSD-007-1 저주인형 · AMBR-002-2 레시나(효과로) · AMBR-016-2 태고의 수해 · DGMS-010-1 헬</td><td class="im">E: rule indestructible</td></tr>
+<tr><td class="id">P04</td><td class="b">릴리스 불가<span class="en">no_release</span></td><td>릴리스되지 않음 · 할 수 없음</td><td class="v">누가</td><td class="ex">AMBR-001-2 아우렘 · 수호자 2번 4장 · WSFT-014-2 기적의 영웅 · CRSD-008-1 퇴마의 부적</td><td class="im">E: no_release</td></tr>
+<tr><td class="id">P05</td><td class="b">필드 이탈 불가<span class="en">stay_on_field</span> <span class="star">★</span></td><td>파괴 이외의 방법으로 필드를 벗어나지 않음</td><td class="v">누가</td><td class="ex">AMBR-003-2 실렉스</td><td class="im">E: stays</td></tr>
+<tr><td class="id">P06</td><td class="b">표시 형식 고정<span class="en">no_position_change</span></td><td>표시 형식을 변경할 수 없음</td><td class="v">누가</td><td class="ex">AMBR-001-3 아우렘 · AMBR-015 임시 봉인(D32 기간형)</td><td class="im">E: no_pos_change</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>공격 · 전투</b></td></tr>
+<tr><td class="id">P07</td><td class="b">직접공격 허용<span class="en">direct_attack</span></td><td>상대 몬스터가 있어도 직접공격 · 상대가 자신에게 직접공격 가능</td><td class="v">누가 · 조건</td><td class="ex">번성충 2번 9장(SWRM-001-2 외) · AMBR-006-3 녹스</td><td class="im">E: rule direct_attack</td></tr>
+<tr><td class="id">P08</td><td class="b">전체 공격<span class="en">attack_all</span> <span class="star">★</span></td><td>상대 몬스터 전부에 공격 선언</td><td class="v">—</td><td class="ex">SLNA-004-3 리퍼</td><td class="im">E: flags attack_all</td></tr>
+<tr><td class="id">P09</td><td class="b">2회 공격<span class="en">multi_attack</span> <span class="star">★</span></td><td>필터에 맞는 몬스터가 2회 공격</td><td class="v">필터 · 횟수</td><td class="ex">WSFT-012-2 용기의 전사</td><td class="im">E: rule double_attack</td></tr>
+<tr><td class="id">P10</td><td class="b">공격 불가<span class="en">no_attack</span></td><td>공격할 수 없음 · 공격 선언 불가</td><td class="v">누가 · 조건</td><td class="ex">AMBR-001-3 아우렘 · PKBS-001-1-2 메이드 토끼</td><td class="im">E: flags no_attack</td></tr>
+<tr><td class="id">P11</td><td class="b">공격 강제<span class="en">must_attack</span> <span class="star">★</span></td><td>상대는 반드시 공격해야 함</td><td class="v">조건</td><td class="ex">FGTR-010-1 투기장</td><td class="im">E: rule must_attack</td></tr>
+<tr><td class="id">P12</td><td class="b">수비 표시 금지<span class="en">no_defense</span> <span class="star">★</span></td><td>상대 몬스터는 수비 표시로 존재할 수 없음</td><td class="v">누구의</td><td class="ex">FGTR-010-1 투기장</td><td class="im">E: rule no_defense</td></tr>
+<tr><td class="id">P13</td><td class="b">전투 대미지 조정<span class="en">battle_damage_mod</span></td><td>전투 대미지 0 · 절반</td><td class="v">누가 받는 · 배율 · 조건</td><td class="ex">DGMS-012-1 데스 칠 · AMBR-017-3 봉인의 계약</td><td class="im">E: rule half/no_battle_damage</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>금지 · 규칙</b></td></tr>
+<tr><td class="id">P14</td><td class="b">플레이어 금지<span class="en">forbid</span></td><td>플레이어가 할 수 없는 것</td><td class="v">무엇(트리거 마법 발동/효과로 덱→패/특수소환/공격/대미지 주기/발동 횟수 제한) · 누구</td><td class="ex">COMN-006-2 용사 · DGMS-012-2 데스 칠 · DTBG-014-3 더 딜리트</td><td class="im">E: rule no_trigger_spell · no_deck_to_hand · no_special</td></tr>
+<tr><td class="id">P15</td><td class="b">필드 매수 제한<span class="en">field_limit</span> <span class="star">★</span></td><td>「X」 몬스터는 각각 1장밖에 존재할 수 없음</td><td class="v">카드군 목록 · 수</td><td class="ex">SLNA-024-1 솔루나 아츠</td><td class="im">E: rule field_limit</td></tr>
+<tr><td class="id">P16</td><td class="b">조건 자동 파괴<span class="en">auto_destroy</span></td><td>조건을 만족한 몬스터는 파괴된다(상태 점검)</td><td class="v">필터(공격력 · 수비력 ≥ n 등) · 누구의</td><td class="ex">DGMS-009-1 · 2 인페르노 드래곤</td><td class="im">E: state_check</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>스탯 · 취급</b></td></tr>
+<tr><td class="id">P17</td><td class="b">스탯 증감<span class="en">stat_mod</span></td><td>공격력 · 수비력 증감(지속)</td><td class="v">누구(필터) · 공격력/수비력 · 수량식(V05)</td><td class="ex">DTBG-010-2 유니온 마스터 · SWRM-020 대발생 · PKBS-002-1 플러쉬를 노리는 늑대 · PKBS-004-1 포카드를 보는 고양이 · PKBS-004-1-2 메이드 고양이(상대 −)</td><td class="im">E: atk_mod · def_mod</td></tr>
+<tr><td class="id">P18</td><td class="b">다른 것으로도 취급<span class="en">treat_as</span></td><td>다른 카드군 · 속성으로도 취급</td><td class="v">카드군 목록 · 속성 목록</td><td class="ex">WSFT-014-2 기적의 영웅(4개 카드군) · PKBS-005-1 · 006-1 시골쥐 · 도시쥐(속성 4개)</td><td class="im">C: also_groups · all_suits</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>코스트 · 소환 · 발동 규칙</b></td></tr>
+<tr><td class="id">P19</td><td class="b">코스트 배수<span class="en">cost_multiplier</span> <span class="star">★</span></td><td>코스트 카드 매수 n배(K01 ~ K09에 일반 적용, 「이 카드」 제외)</td><td class="v">누구(자신/서로) · 배수</td><td class="ex">TAXM-002-1 두플리카토르</td><td class="im">E: rule cost_double · dupcost.py</td></tr>
+<tr><td class="id">P20</td><td class="b">코스트 대납<span class="en">cost_by_opponent</span> <span class="star">★</span></td><td>코스트를 상대가 대신 지불</td><td class="v">누구</td><td class="ex">TAXM-001-1 델레가토르</td><td class="im">E: rule cost_transfer</td></tr>
+<tr><td class="id">P21</td><td class="b">코스트 매수 변경<span class="en">cost_override</span> <span class="star">★</span></td><td>특정 효과의 코스트 매수를 바꿈</td><td class="v">대상 효과(필터) · 매수</td><td class="ex">TAXM-010-2 아이라리움(세리 유언 1장)</td><td class="im">E: rule seri_lw_one</td></tr>
+<tr><td class="id">P22</td><td class="b">추가 일반소환<span class="en">extra_normal</span></td><td>추가로 일반소환할 수 있음</td><td class="v">필터 · 횟수 · 기간(이 턴/지속)</td><td class="ex">PKBS-009-1 풀 하우스 강아지(지속 2번) · PKBS-003-1 풀 하우스를 찾는 강아지 · DTBG-023 패키지(이 턴)</td><td class="im">E: extra_normal</td></tr>
+<tr><td class="id">P23</td><td class="b">패에서 발동 허용<span class="en">hand_activation</span> <span class="star">★</span></td><td>「X」 [신속]을 패에서도 발동</td><td class="v">필터 · 횟수</td><td class="ex">PKBS-015-1 도박장</td><td class="im">E: rule pk_hand_quick</td></tr>
+<tr><td class="id">P24</td><td class="b">덱 위 추가<span class="en">extra_mill</span> <span class="star">★</span></td><td>덱 위에서 묘지로 보낼 때 1장 추가 가능</td><td class="v">수 · 누구</td><td class="ex">WSFT-026-1 간절한 마음</td><td class="im">E: rule dump_extra</td></tr>
+<tr><td class="id">P25</td><td class="b">효과 바꾸기 허용<span class="en">effect_option_change</span></td><td>자신 효과를 「…」로 바꿀 수 있음 · 바뀜</td><td class="v">대상 효과(필터) · 바꿀 처리(블록) · 조건 · 강제 여부</td><td class="ex">DGMS-017-1 암흑의 율법([유언]) · WSFT-010-2 행운의 도적(코인) · CRSD-008-2 퇴마의 부적(4개 이상)</td><td class="im">E: replace · rule coin_replace</td></tr>
+<tr><td class="id">P26</td><td class="b">다른 효과 값 변경<span class="en">modify_effect</span> <span class="star">★</span></td><td>다른 번호 효과의 값을 바꿈</td><td class="v">대상 번호 · 바꿀 값</td><td class="ex">UNSL-001-2 봉인을 푸는 자(공유 존이면 상대가 2장 고름)</td><td class="im">C: cards7</td></tr>
+<tr><td class="id" colspan="6" style="background:#f6f7fa;color:#1d2330"><b>자동 처리 · 기타</b></td></tr>
+<tr><td class="id">P27</td><td class="b">할 때마다<span class="en">whenever</span></td><td>「…할 때마다」 자동 처리</td><td class="v">사건(소환/특수소환/드로우 · 서치/효과 발동/「X」 효과 발동/효과로 제거) · 누구 · 처리(대미지/덱 위 제외)</td><td class="ex">DGMS-010-2 헬 · TAXM-009-1 취득세 · TAXM-010-1 아이라리움 · TAXM-011-1 세제 · PKBS-003-1-2 메이드 강아지 · DGMS-015 거짓 샘물</td><td class="im">E: on_event</td></tr>
+<tr><td class="id">P28</td><td class="b">정한 시점 처리<span class="en">at_time</span></td><td>정해진 시점에 자동 처리(유지비 포함)</td><td class="v">시점(각/자신/상대 턴 종료 · 턴 시작) · 처리 · 선택지 · 못하면 대신(대미지)</td><td class="ex">SWRM-019 번식지 · AMBR-016-1 태고의 수해 · AMBR-017-2 봉인의 계약 · AMBR-018-2 몽식 · CRSD-018-4 희생제 · CRSD-013 탐욕 · CRSD-017 위저보드</td><td class="im">E: end_process · C: 턴 시작</td></tr>
+<tr><td class="id">P29</td><td class="b">묘지 대신 덱<span class="en">grave_redirect</span></td><td>묘지로 보내질 경우 덱으로 되돌아감</td><td class="v">—</td><td class="ex">SLNA-003-2 코로나 · SLNA-004-2 리퍼</td><td class="im">E: grave_redirect</td></tr>
+<tr><td class="id">P30</td><td class="b">효과 부여(지속)<span class="en">grant_effect_cont</span> <span class="star">★</span></td><td>「X」 몬스터가 효과를 얻음</td><td class="v">누구(필터) · 부여할 효과(블록으로 조립)</td><td class="ex">PKBS-016-2 올인(원페어 · 트리플)</td><td class="im">E: grant · C: cards8</td></tr>
+<tr><td class="id">P31</td><td class="b">장착 중 적용<span class="en">while_equipped</span></td><td>장착되어 있는 동안 · 장착 몬스터가 벗어났을 때</td><td class="v">적용(그 몬스터 효과 무효) · 벗어났을 때 처리</td><td class="ex">COMN-002 모스키토 · SWRM-002-1 맵시기생벌</td><td class="im">E: negates_host · on_unequip</td></tr>
+</table>
+
+<h2>8. [제약] · 발동 뒤 제약</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">R01</td><td class="b">소환 방법 제한<span class="en">summon_only_by</span></td><td>「…로만 소환할 수 있다」</td><td class="v">카드의 효과/스킬 카드의 효과 · 일반/특수</td><td class="ex">SLNA-003-1 코로나 · SLNA-004-1 리퍼 · WSFT-014-1 기적의 영웅</td><td class="im">E: effect_only · ss_by_skill_only</td></tr>
+<tr><td class="id">R02</td><td class="b">다른 효과로 소환 불가<span class="en">no_summon_by_others</span></td><td>「다른 카드의 효과로 소환할 수 없다」</td><td class="v">—</td><td class="ex">DTBG-013-1 더 바이러스 · DTBG-014-1 더 딜리트</td><td class="im">C: ss_self_only</td></tr>
+<tr><td class="id">R03</td><td class="b">소환 절차<span class="en">summon_procedure</span></td><td>「…해야만 패에서 특수소환할 수 있다」(발동이 아님)</td><td class="v">조건 · 비용(코스트 블록)</td><td class="ex">DTBG-013-1 더 바이러스 · DTBG-014-1 더 딜리트</td><td class="im">E: Effect.procedure</td></tr>
+<tr><td class="id">R04</td><td class="b">특수 일반소환<span class="en">alt_normal</span> <span class="star">★</span></td><td>「…하는 것으로 일반소환할 수 있다」</td><td class="v">비용(코스트 블록)</td><td class="ex">TAXM-005-1 프로쿠라토르(묘지 3레벨 「세리」 3장 제외)</td><td class="im">E: alt_normal</td></tr>
+<tr><td class="id">R05</td><td class="b">맹세<span class="en">oath</span></td><td>이 효과를 발동한 턴, 「X」 카드만 사용(다음 상대 턴 종료 시까지)</td><td class="v">카드군 · 기간</td><td class="ex">번성충 1번 9장(SWRM-001-1 외) · AMBR-011 침전</td><td class="im">E: oath</td></tr>
+</table>
+
+<h2>9. 연결 — 처리 블록을 잇는 방법</h2>
+<table>
+<thead><tr><th>ID</th><th>블록</th><th>하는 일</th><th>값</th><th>쓰는 카드 예</th><th>지금 구현</th></tr></thead>
+<tr><td class="id">J01</td><td class="b">차례로<span class="en">and</span></td><td>「…하고, …」 · 「…한다. …한다.」 — 앞이 안 돼도 뒤는 처리</td><td class="v">—</td><td class="ex">대부분 · FGTR-001-1 스네이크(파괴하고 버림)</td><td class="im">C</td></tr>
+<tr><td class="id">J02</td><td class="b">그 후<span class="en">then</span></td><td>앞 처리가 되었을 때만 뒤를 처리</td><td class="v">—</td><td class="ex">DTBG-020 습격 · DTBG-018 다운로드 · DTBG-021 리벤지 · PKBS-001-1-1 메이드 토끼</td><td class="im">C</td></tr>
+<tr><td class="id">J03</td><td class="b">경우<span class="en">if</span></td><td>「…했을 경우 · …있으면」 조건부 처리</td><td class="v">조건(C 블록)</td><td class="ex">WSFT-015-1 조커 · WSFT-010-1 행운의 도적 · CRSD-001-1 마들렌 · SLNA-001-3 시아 · SLNA-007 듀얼 컴뱃</td><td class="im">C</td></tr>
+<tr><td class="id">J04</td><td class="b">택1<span class="en">choose_one</span></td><td>「…하거나」 · 「이하의 효과 중 1개」</td><td class="v">선택지 목록 · 고르는 사람(자신/상대)</td><td class="ex">FGTR-008-1 입장 · WSFT-019-2 영웅의 조건 · WSFT-024-1 염원(상대가 고름) · TAXM-007-1 인지세 · CRSD-013 탐욕 · CRSD-017 위저보드</td><td class="im">C</td></tr>
+<tr><td class="id">J05</td><td class="b">분기<span class="en">branch</span></td><td>값에 따라 처리를 나눔</td><td class="v">기준(카드 종류/주사위 눈/카드군) · 경우별 처리</td><td class="ex">WSFT-013-2 성녀 · COMN-008 럭키 다이스 · SLNA-006-2 여명과 황혼</td><td class="im">C</td></tr>
+<tr><td class="id">J06</td><td class="b">부속 연결<span class="en">attached</span></td><td>본 효과의 처리 시에 부속 효과를 이어 처리(F12)</td><td class="v">본 효과 번호 · 조건</td><td class="ex">아츠 2번 10장 · SLNA-005-2 인카운터 · DTBG-016-1 로딩</td><td class="im">C: arts</td></tr>
+</table>
+
+<h2 class="pb">10. 공통 값 — 모든 블록이 같은 형식으로 씀</h2>
+<table>
+<thead><tr><th style="width:16%">공통 값</th><th>항목</th><th style="width:34%">문구 예</th></tr></thead>
+<tr><td><b>필터</b><span style="display:block;font-family:monospace;font-size:7.6pt;color:#2f5fb3">filter</span></td><td>카드군(하나 · 「X」 또는 「Y」) · 종류(몬스터/마법/필드/스킬) · 세부 종류(일반/신속/트리거/지속, 장착 취급) · 레벨(=, ≤, ≥) · 속성 · 이름(정확히 · 이름에 포함) · 제외 조건(「X」 이외 · 이 카드 이외 · 다른) · 앞면/뒷면 · 공격력/수비력 기준 · 카운터가 놓인 · 소유자/컨트롤러 · 같은 이름(동명) · 재료 관계(연속 레벨 · 같은 속성 · 같은 레벨)</td><td>「「데이터버그」 몬스터」 · 「「트랩」 또는 「다크」 마법 카드」 · 「4레벨 이하의 몬스터」 · 「「망령」 몬스터」 · 「「솔루나」 이외」 · 「공격력 2000 이상의 상대 몬스터」 · 「봉인 카운터가 놓인 몬스터」</td></tr>
+<tr><td><b>장소</b><span style="display:block;font-family:monospace;font-size:7.6pt;color:#2f5fb3">where</span></td><td>누구(자신/상대/서로) × 몬스터 존 · 마법 존 · 필드 존 · 공유 존 · 필드 전체 · 패 · 메인 덱 · 상급 덱 · 덱(둘 중) · 덱 위 · 묘지 · 제외 존 · 스킬 존</td><td>「자신 필드」 · 「서로의 필드와 묘지」 · 「덱 또는 묘지」 · 「자신 필드/묘지」 · 「상대 몬스터 존」</td></tr>
+<tr><td><b>기간</b><span style="display:block;font-family:monospace;font-size:7.6pt;color:#2f5fb3">until</span></td><td>이 턴 · 턴 종료 시까지 · 다음 턴 종료 시까지 · 다음 상대 턴 종료 시까지 · 다음 자신 턴 종료 시까지 · 장착 중 · 조건이 유지되는 동안 · 영구</td><td>「턴 종료 시까지」 · 「이 제약은 다음 상대 턴 종료 시까지」 · 「이 카드가 장착되어 있는 한」</td></tr>
+<tr><td><b>누구</b><span style="display:block;font-family:monospace;font-size:7.6pt;color:#2f5fb3">who</span></td><td>자신 · 상대 · 서로 · 그 플레이어(사건의 주체) · 이 카드의 주인 · 원래 주인</td><td>「서로가 … 그 플레이어는」 · 「이 카드의 주인이」</td></tr>
+</table>
+
+<div class="box">
+<b>판단에 참고하실 점</b>
+<ul style="margin:1mm 0 0;padding-left:5mm">
+<li>124개 중 101개는 2장 이상이 함께 쓰는 블록이고, 23개(★)는 지금 카드 1장만 씁니다. ★ 블록도 기능 이름이라 같은 기능의 새 카드가 들어오면 그대로 씁니다.</li>
+<li>「지금 구현」이 <span style="font-family:monospace">E:</span>인 블록은 엔진에 이미 있는 함수를 감싸면 되고, <span style="font-family:monospace">C:</span>인 블록은 지금 카드 함수 안에 따로 짜여 있어 블록으로 옮기는 작업이 필요합니다.</li>
+<li>합칠 수 있는 후보: W09 릴리스되었을 때 → W05의 원인 값 · D27 앞면으로 뒤집기 → 표시 형식 변경 블록 · P02 대상 내성 → P01의 값 · V01 ~ V04 → 수량 블록 하나의 값. 합치면 블록 수는 줄고 블록 하나의 값이 늘어납니다.</li>
+<li>나눌 수 있는 후보: P14 플레이어 금지(금지 종류마다) · D04 덱으로(필드/묘지/패마다). 나누면 블록은 늘고 표가 읽기 쉬워집니다.</li>
+</ul>
+</div>
+
+</body></html>
