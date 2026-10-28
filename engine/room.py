@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .deck import 공용태그, 대전_준비, 덱_만들기
+from .deck import 공용태그, 대전_준비, 덱_골라만들기, 덱_만들기, 덱_점검
 from .effects import 효과적용기
 from .legalmoves import 합법수_생성
 from .players import 무작위플레이어, 필터플레이어
@@ -197,10 +197,17 @@ class 대국:
 
     기본간격 = 0.8          # 1배속에서 한 수 사이
 
-    def __init__(self, 내덱: str, 상대덱: str, 역할: dict[str, str], 시드: int):
+    def __init__(self, 내덱: str, 상대덱: str, 역할: dict[str, str], 시드: int,
+                 고른카드: dict[str, list[str]] | None = None):
         self.표 = 기본카드표()
         self.적용기 = 효과적용기(표=self.표)
-        self.상태, self.난수 = 대전_준비(내덱, 상대덱, 시드, self.표)
+        고른카드 = 고른카드 or {}
+        self.고른카드 = {자리: list(고른카드.get(자리) or []) for 자리 in ("나", "상대")}
+        self.상태, self.난수 = 대전_준비(
+            내덱, 상대덱, 시드, self.표,
+            나_카드=self.고른카드["나"] or None,
+            상대_카드=self.고른카드["상대"] or None,
+        )
         self.기록 = 기보()
         self.덱 = {"나": 내덱, "상대": 상대덱}
         # 선언 안 된 덱은 기본값(세금 0 · 벽 0) — "그 덱 전용 규칙을 아직 안 적었다"는
@@ -330,12 +337,13 @@ class 대국:
 
 class 방:
     def __init__(self, 이름: str, 내덱: str, 상대덱: str, 역할: dict[str, str],
-                 시드: int, 최대인원: int = 최대인원_기본):
+                 시드: int, 최대인원: int = 최대인원_기본,
+                 고른카드: dict[str, list[str]] | None = None):
         self.이름 = 이름
         self.최대인원 = 최대인원
         self.참가자들: dict[str, 참가자] = {}
         self.만든때 = time.time()
-        self.대국 = 대국(내덱, 상대덱, 역할, 시드)
+        self.대국 = 대국(내덱, 상대덱, 역할, 시드, 고른카드)
         self.역할설정 = 역할
         self.메모들: list[메모] = []
         self.판정: dict[int, dict] = {}    # 메모 번호 → 루틴이 내린 건별 판정
@@ -349,11 +357,23 @@ class 방:
                 return 자리
         return None
 
+    def 덱점검(self) -> dict[str, list[str]]:
+        """지금 쓰는 두 덱이 룰지 0-1·0-2 매수 범위에 맞는지. 막지 않고 알리기만 한다."""
+        나온것 = {}
+        for 자리 in ("나", "상대"):
+            고른 = self.대국.고른카드.get(자리) or None
+            테마 = self.대국.덱[자리]
+            덱 = (덱_골라만들기(테마, 고른, self.대국.표) if 고른
+                  else 덱_만들기(테마, self.대국.표))
+            나온것[자리] = 덱_점검(덱)
+        return 나온것
+
     def 방장토큰(self) -> str | None:
         """방을 만든 사람. 나가면 그 다음으로 들어온 사람이 이어받는다."""
         return next(iter(self.참가자들), None)
 
-    def 다시하기(self, 토큰: str, 내덱=None, 상대덱=None, 역할=None) -> bool:
+    def 다시하기(self, 토큰: str, 내덱=None, 상대덱=None, 역할=None,
+                 고른카드=None) -> bool:
         """같은 방에서 새 판. **방장만** 누를 수 있고, 메모와 판정은 그대로 둔다.
 
         덱·역할을 안 주면 하던 그대로 다시 한다. 자리는 다시 배정한다 — 사람 자리가
@@ -368,7 +388,8 @@ class 방:
                     새역할[자리] = 역할[자리]
         self.역할설정 = 새역할
         self.대국 = 대국(내덱 or self.대국.덱["나"], 상대덱 or self.대국.덱["상대"],
-                         새역할, random.randrange(1 << 20))
+                         새역할, random.randrange(1 << 20),
+                         고른카드 if 고른카드 is not None else self.대국.고른카드)
         찬자리: set[str] = set()
         for 하나 in self.참가자들.values():
             하나.자리 = None
@@ -553,6 +574,7 @@ class 방:
             ],
             "정원": self.최대인원,
             "방장인가": 토큰 == self.방장토큰(),
+            "덱점검": self.덱점검(),
             "역할설정": dict(self.역할설정),
             "기다리는자리": 기다리는자리,
             "메모들": [
@@ -585,14 +607,15 @@ class 방장부:
         return sum(len(하나.참가자들) for 하나 in self.방들.values())
 
     def 만들기(self, 별명: str, 내덱: str, 상대덱: str, 역할: dict[str, str],
-               시드: int | None = None) -> tuple[방, 참가자]:
+               시드: int | None = None,
+               고른카드: dict[str, list[str]] | None = None) -> tuple[방, 참가자]:
         with self.자물쇠:
             if self.총인원() >= self.최대인원:
                 raise ValueError(f"서버 정원 {self.최대인원}명이 꽉 찼다")
             이름 = secrets.token_hex(3)
             하나 = 방(이름, 내덱, 상대덱, 역할,
                      시드 if 시드 is not None else random.randrange(10 ** 6),
-                     self.최대인원)
+                     self.최대인원, 고른카드)
             self.방들[이름] = 하나
             return 하나, 하나.들이기(별명)
 
