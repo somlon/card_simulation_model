@@ -78,12 +78,7 @@ def k_forbid(c, num, k, notes, kw):
 def place_effect(c):
     """효과 번호 0 — 지속 · 필드 마법 카드를 앞면으로 놓기만 하는 발동. 점수(B안): 그 카드의 [지속] · 효과를 쓸 수 있게 되는 가치,
     자신 필드 존에 이미 같은 카드가 있으면 0, 다른 자신 필드 마법을 덮어쓰면 줄임"""
-    def sc(g, c, p, ev):
-        if getattr(c, 'cont_forced', None): return 0.0   # 주인에게 불리한 [지속]이 있는 카드(퇴마의 부적) — 자신 필드에 놓지 않는다
-        if c.type == '필드' and g.fieldz is not None and g.fieldz.controller == p:
-            return 0.0 if g.fieldz.name == c.name else L.UNIT
-        if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
-        return 3.0 * L.UNIT
+    def sc(g, c, p, ev): return L.place_gain(g, c, p)
     import cards
     e = Effect(0, 'ignition', ('hand', 'field'), spell_act=True, score=sc, threat=400, label='카드 발동(놓기)')
     cards.text_attrs(e, '', c.name)   # 0번 = 놓기만 하는 발동 — 처리 문장 없음(행동 세금의 확정 행동도 없음)
@@ -342,3 +337,70 @@ def k_hand_quick(c, num, k, notes, kw):
     """[지속] 「자신 「X」 몬스터의 [신속] 효과를 패에서도 발동할 수 있다」 — 규칙 pk_hand_quick, 1턴 횟수는 단서(「1턴에 n번까지」)"""
     add_rule(c, 'pk_hand_quick', lambda g, src, p, *a: p == src.controller, num)
     c.hand_quick_n = notes.get('opt') or 1; c.hand_quick_num = num
+
+
+# ═══════════════════════ 던전마스터에서 더한 것 ═══════════════════════
+@kind('auto_destroy')
+def k_auto_destroy(c, num, k, notes, kw):
+    """[지속] 「이 카드가 필드에 존재하는 한, (공격력 · 수비력) N 이상의 상대 필드의 몬스터는 파괴된다」 — 상태 확인(state_check)마다.
+    이 규칙을 가진 모든 카드의 파괴 대상을 먼저 모은 뒤 한꺼번에 파괴(양쪽에 있으면 동시에). 효과를 받지 않는 · 효과로 파괴되지 않는 몬스터는 건너뛴다"""
+    c.auto_destroy = list(getattr(c, 'auto_destroy', None) or []) + [(k['stat'], k['n'], k['to'])]
+    if getattr(c, '_ad_hooked', False): return
+    c._ad_hooked = True
+    def sc(g, src):
+        if g.__dict__.get('_auto_destroy_busy') or not g.on_field(src): return
+        hits = []
+        for s in [x for x in g.all_field() if getattr(x, 'auto_destroy', None) and g.cont_active(x)]:
+            p = s.controller
+            for st, n, to in s.auto_destroy:
+                for m in L.cards_in(g, s, p, to):
+                    if not m.faceup or not m.is_monster(): continue
+                    v = g.atk(m) if st == 'atk' else g.df(m)
+                    if v >= n and not g.immune(m, p, s) and not g.rule('indestructible', m, False) and all(m is not h for _, h in hits):
+                        hits.append((s, m))
+        if not hits: return
+        g._auto_destroy_busy = True
+        try:
+            for s, m in hits:
+                if g.on_field(m) and m.controller != s.controller and m.faceup:
+                    g.L(f'{s.name} [지속]: {m}(공 {g.atk(m)} / 수 {g.df(m)}) 파괴'); g.destroy(m, ('effect', s))
+        finally:
+            g._auto_destroy_busy = False
+    chain_hook(c, 'state_check', sc)
+
+
+@kind('guard_while')
+def k_guard_while(c, num, k, notes, kw):
+    """처리로 붙은 상태(flags[flag])가 있고 조건(while)이 맞는 동안: 「전투로는 파괴되지 않으며 효과를 받지 않는다」(헬 1번 뒷문장 — 처리 때 부여, 필드를 벗어나면 사라짐)"""
+    flag, w = k['flag'], k['while']
+    def on(g, x): return x.faceup and g.on_field(x) and bool(x.flags.get(flag)) and L.TESTS[w.name](g, x, x.controller, None, w.k)
+    c.flags['immune_except_group'] = lambda g, x: '__아무 카드군도 아님__' if on(g, x) else None   # 다른 모든 카드의 효과를 받지 않는다
+    r = dict(c.rules or {}); r['indestructible'] = lambda g, src, x, battle=False, *a: battle and x is src and on(g, src); c.rules = r
+
+
+@kind('no_battle_damage_self')
+def k_no_battle_damage_self(c, num, k, notes, kw):
+    """[지속] 「이 카드가 몬스터와 전투할 때, 상대 플레이어에게 가하는 대미지는 0이 된다」 — 엔진 규칙 no_battle_damage(p, 공격 몬스터, 공격 대상)"""
+    add_rule(c, 'no_battle_damage', lambda g, src, p, a, t: p == 1 - src.controller and (a is src or t is src), num)
+
+
+@kind('lw_replace')
+def k_lw_replace(c, num, k, notes, kw):
+    """[지속] 「자신의 [유언] 효과가 발동할 때, 그 효과를 「…」로 변경할 수 있다」 — 바뀐 처리는 그 카드의 효과(「이 카드」 = [유언] 카드), 그 플레이어가 처리.
+    AI(B안): 바뀐 처리의 블록 가치가 원래 효과 점수보다 클 때(강제 [유언] 「상대는 1장 드로우」 등은 대개 바꾼다)"""
+    steps = tuple(k['steps'])
+    c.lw_replace_steps = steps   # [유언] 점수가 바뀐 처리의 가치도 본다(lib.lw_alt)
+    def on_ev(g, src, ev):
+        if ev['kind'] != 'activate' or ev.get('player') != src.controller: return
+        link = ev['link']
+        if link.eff.kind != 'lastwill' or link.replaced is not None or link.negated: return
+        p = src.controller; x = link.card; e0 = link.ctx.get('ev')
+        new = L.v_steps(g, x, p, e0, steps)
+        L.LW_ALT_OFF[0] = True
+        try: old = link.eff.score(g, x, p, e0)
+        finally: L.LW_ALT_OFF[0] = False
+        if new <= old: return
+        def rep(g2, tl, p=p): L.steps_run(g2, tl.card, p, steps, src=tl.card)
+        if g.replace(link, rep, src):
+            g.L(f'판단[{g.pname(p)}] {src.name}: {x}의 [유언]을 「{k.get("label", "…")}」로 변경', 'decision')
+    chain_hook(c, 'on_event', on_ev)

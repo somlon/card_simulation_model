@@ -347,7 +347,9 @@ def v_loss(g, p, xs):
 
 
 def v_remove(g, c, p, ev, k):
-    return v_loss(g, p, preview(g, c, p, ev, k))
+    """파괴 · 릴리스(묘지로): 잃는 카드 가치 + 자신 카드는 묘지로 가서 발동할 [유언]의 기대 가치"""
+    xs = preview(g, c, p, ev, k)
+    return v_loss(g, p, xs) + sum(lw_bonus(g, p, x, x.zone) for x in xs if g.side_of(x) == p)
 
 
 # ═══════════════════════ 처리 블록 ═══════════════════════
@@ -499,7 +501,16 @@ def can_search(g, c, p, ev, k):
 
 
 def v_search(g, c, p, ev, k):
-    return HAND_CARD * UNIT * n_of(k)
+    """서치: 패 1장의 가치, 가져올 카드(덱 지침이 고를 카드)가 몬스터면 그 몬스터를 낼 때 가치의 절반이 더 크면 그것"""
+    v = HAND_CARD * UNIT
+    if not _LW_DEPTH[0]:
+        sc = k['scope']; prev = g.src; g.src = c
+        try: cs = g.search_cands(p, lambda y: match_card(g, c, p, y, sc), which=deck_which(sc))
+        finally: g.src = prev
+        if cs:
+            x = g.p[p].ai.pick_search(g, p, cs, c.name)
+            if x.is_monster(): v = max(v, 0.5 * (value(g, x) * UNIT + mon_extra(g, x, p)))
+    return v * n_of(k)
 
 
 @block('search', can=can_search, val=v_search, threat=300)
@@ -597,6 +608,7 @@ def summon_cands(g, c, p, k):
 
 
 def can_special(g, c, p, ev, k):
+    if k.get('who') == 'opp': p = 1 - p
     if 'ref' in k:
         if k['ref'] == 'SELF': return c.zone in k.get('src_zone', ('hand', 'grave', 'main', 'upper', 'banish')) and g.can_special(c, p)
         return True
@@ -627,8 +639,9 @@ def mon_extra(g, x, p):
             try: out += max(0.0, e.score(g, x, p, {'kind': 'summon', 'card': x, 'player': p, 'how': 'special'}))
             finally: _LW_DEPTH[0] -= 1
         elif e.kind == 'ignition' and 'field' in e.zones and getattr(e, 'spec', None) is not None:
-            _LW_DEPTH[0] += 1   # 필드에서 쓸 기동 효과: 그 블록 가치의 절반(쓸 때가 오면) — 적어도 FIELD_FX
-            try: out += max(FIELD_FX * UNIT, 0.5 * e.score(g, x, p, None))
+            _LW_DEPTH[0] += 1   # 필드에서 쓸 기동 효과: 자신 진행 단계면 바로 쓸 수 있어 그 블록 가치, 아니면 절반 — 적어도 FIELD_FX
+            f = 1.0 if g.turn_player == p and g.phase == '진행' else 0.5
+            try: out += max(FIELD_FX * UNIT, f * e.score(g, x, p, None))
             finally: _LW_DEPTH[0] -= 1
         elif 'field' in e.zones and e.kind not in ('cont', 'restrict', 'lastwill', 'summon'):
             out += FIELD_FX * UNIT
@@ -643,7 +656,9 @@ def summon_pick(g, c, p, pool, why):
 
 @block('special', can=can_special, val=v_special, threat=500)
 def do_special(g, c, p, l, k):
-    """A6 특수소환 — ref(이 카드 · 고른 카드) 또는 scope에서 n장(처리 때 고름). pos 'atk' · 'def' · None(소환하는 쪽이 고름)"""
+    """A6 특수소환 — ref(이 카드 · 고른 카드) 또는 scope에서 n장(처리 때 고름). pos 'atk' · 'def' · None(소환하는 쪽이 고름).
+    who='opp': 「상대는 (자신의 덱에서) …를 특수소환한다」 — 상대가 상대 쪽 집합에서 소환(집합의 side는 상대 기준)"""
+    if k.get('who') == 'opp': p = 1 - p
     pos = k.get('pos')
     if 'ref' in k:
         xs = ref_cards(g, c, p, l, k['ref'])
@@ -1042,6 +1057,8 @@ def timing(g, c, p, ev, info, v):
     """효과 점수 = 시점 보정 × 블록 가치 합. 시점이 정해진 효과(트리거 · [소환] · [유언] · [전투] · 응답)는 그대로.
     [신속]은 언제 쓰는가가 판단이다: 자신 턴 진행 · 정비 단계(체인 없음)에는 그대로, 상대 발동에 응답할 때는 상대 카드를 없애거나 무효로 하는
     효과(disrupt)만, 자신 전투 단계에는 방해 효과만(상대 몬스터를 치우고 공격), 상대 턴에는 방해 효과를 줄여서 · 상대 종료 단계에는 자원 효과를 줄여서"""
+    if info['kind'] == 'lastwill': v = lw_alt(g, c, p, ev, v)
+    if info.get('places') and c.zone == 'hand': v += place_gain(g, c, p)   # 지속 · 필드 마법의 카드의 발동 — 처리하고 앞면으로 남는다
     if v <= 0 or info['kind'] != 'quick' or info.get('aware') or info.get('phase_only'): return v   # 쓸 수 있는 단계가 정해진 효과는 그때 쓴다
     if any(lk.card is c and lk.eff.num == info.get('num') for lk in g.chain): return 0.0   # 같은 효과를 체인에 거듭 쌓지 않는다(앞 발동이 처리되면 형세가 바뀐다)
     own = g.turn_player == p
@@ -1340,7 +1357,10 @@ def can_place(g, c, p, ev, k):
     return any(x.type == '필드' for x in pool) or bool(g.free_s(1 - p if k.get('to') == 'opp' else p))
 
 
-@block('place', can=can_place, val=lambda g, c, p, ev, k: (3.0 * UNIT * n_of(k)) if can_place(g, c, p, ev, k) else 0.0, threat=900)
+PLACE_UP = 3.0      # 앞면으로 놓는 지속 · 필드 마법 1장의 가치(카드 가치 단위 — 놓인 동안 [지속] · 효과)
+
+
+@block('place', can=can_place, val=lambda g, c, p, ev, k: ((HAND_CARD if k.get('set') else PLACE_UP) * UNIT * n_of(k)) if can_place(g, c, p, ev, k) else 0.0, threat=900)
 def do_place(g, c, p, l, k):
     """A7 마법 놓기 — 덱 등에서 필드 카드를 골라 발동(필드 존에 앞면) · 마법 카드를 앞면으로 놓기 · 세트(set=True). n장(upto: 있는 만큼)"""
     n = num(l, k.get('n', 1)); done = 0
@@ -1962,3 +1982,187 @@ def w_activated_ev2(g, c, p, ev, k):
     """group: 발동한 카드가 「X」 카드(「자신이 「X」 효과를 발동할 때마다」)"""
     if k.get('group') and not (ev_kind(ev, 'activate') and grp(ev['link'].card, k['group'])): return False
     return _w_aev(g, c, p, ev, k)
+
+
+# ═══════════════════════ 던전마스터에서 더한 것 ═══════════════════════
+PRED['turnable'] = lambda g, c, p, x: __import__('cards9').turnable(g, x)   # 「뒷면 표시로 한다」를 받을 수 있는 앞면 카드
+PRED['facedown_mon'] = lambda g, c, p, x: g.on_field(x) and not x.faceup and x.is_monster()
+
+
+@test('cond_self_facedown')
+def t_self_facedown(g, c, p, ev, k):
+    """「(이 효과는 뒷면 표시일 때만 발동할 수 있다.)」 — 몬스터 존의 뒷면 이 카드"""
+    return g.on_field(c) and not c.faceup and c.zone in ('m', 'shared')
+
+
+@test('cond_ev_was_facedown')
+def t_ev_was_facedown(g, c, p, x, k):
+    """「뒷면 표시의 이 카드가 묘지로 보내졌을 경우」 — 사건의 was_faceup(보내지기 직전)"""
+    ev = x.ctx.get('ev') if hasattr(x, 'ctx') else x
+    return isinstance(ev, dict) and not ev.get('was_faceup', True)
+
+
+@test('cond_not_on_chain')
+def t_not_on_chain(g, c, p, ev, k):
+    """이 카드의 이 효과가 체인에 아직 있지 않다(이 카드가 처리 전에 다시 같은 효과를 발동할 수 없음 — 어새신 1번 재정)"""
+    return not any(lk.card is c and lk.eff.num == k['num'] for lk in g.chain)
+
+
+@block('flip_up', val=lambda g, c, p, ev, k: 0.0)
+def do_flip_up(g, c, p, l, k):
+    """뒷면 몬스터를 앞면으로(소환 아님 — 사건 flip). pos: 「앞면 수비 표시로」"""
+    import cards9
+    xs = [c] if k.get('ref') == 'SELF' else subjects(g, c, p, l, k)
+    return any(cards9.flip_up(g, x, c, k.get('pos')) for x in xs)
+
+
+def v_turn_down(g, c, p, ev, k):
+    xs = preview(g, c, p, ev, k)
+    return sum((-0.3 if g.side_of(x) == p else 0.7) * value(g, x) * UNIT for x in xs)
+
+
+@block('turn_down', can=can_subjects, val=v_turn_down, threat=700)
+def do_turn_down(g, c, p, l, k):
+    """A18 「뒷면 표시로 한다」 — 몬스터는 표시 형식 유지, 마법 존의 마법은 세트 상태로(이 턴에 세트한 것으로), 필드 존은 묘지로(cards9.turn_face_down).
+    keep_set: 처리 중인 일반 · 신속 · 트리거 마법을 세트한 채 필드에 남긴다"""
+    import cards9
+    def f(x):
+        was = x.zone == 's'
+        ok = cards9.turn_face_down(g, x, c)
+        if ok and was and k.get('keep_set'): cards9.keep_set(g, x)
+        return ok
+    return _each(g, c, p, l, k, f)
+
+
+def owner_only_card(x):
+    return any(getattr(e, 'owner_only', False) and getattr(e, 'facedown_ok', False) for e in x.effects)
+
+
+def fd_take(g, p, y):
+    """상대 필드의 뒷면 카드 y를 자신 필드로 받는 가치 — 원래 주인만 뒷면에서 쓸 수 있는 효과가 있는 상대 소유 카드는 받지 않는다"""
+    if y.zone == 'm':
+        if owner_only_card(y) and y.owner != p: return None
+        return value(g, y) + 0.5
+    return max((e.threat for e in y.effects), default=0) / 500
+
+
+def fd_give(g, p, x):
+    """자신 필드의 뒷면 카드 x를 상대 필드로 주는 손해 — 원래 주인만 쓰는 카드는 상대 필드에서도 자신이 쓴다"""
+    if x.zone == 'm':
+        if owner_only_card(x) and x.owner == p: return -0.5
+        return 0.6 * value(g, x) + (0.6 if x.pos == 'def' else 0)
+    return max((e.threat for e in x.effects), default=0) / 500
+
+
+def fd_plan(g, c, p):
+    """「필드의 뒷면 표시 카드를 전부 원하는 대로 재배치한다」 AI: 같은 종류 존끼리 자신 ↔ 상대 뒷면 카드 맞바꾸기 중 얻는 가치가 큰 것(재배치 모델은 cards9.swap_cards)"""
+    o = 1 - p; out = []
+    for z in ('m', 's'):
+        mine = [x for x in getattr(g.p[p], z) if x is not None and not x.faceup and not g.immune(x, p, c)]
+        theirs = [y for y in getattr(g.p[o], z) if y is not None and not y.faceup and not g.immune(y, p, c)]
+        theirs = sorted([(fd_take(g, p, y), y.uid, y) for y in theirs if fd_take(g, p, y) is not None], key=lambda t: (-t[0], t[1]))
+        mine = sorted([(fd_give(g, p, x), x.uid, x) for x in mine], key=lambda t: (t[0], t[1]))
+        for (gain, _, y), (cost, _, x) in zip(theirs, mine):
+            if gain - cost <= 0.3: break
+            out.append((x, y, gain - cost))
+    return out
+
+
+@block('rearrange', can=lambda g, c, p, ev, k: any(x for i in (0, 1) for x in g.p[i].m + g.p[i].s if x and not x.faceup),
+       val=lambda g, c, p, ev, k: (sum(d for _, _, d in fd_plan(g, c, p)) * UNIT) or -1.0, threat=700)   # 바꿀 것이 없으면 쓰지 않는다
+def do_rearrange(g, c, p, l, k):
+    import cards9
+    plan = fd_plan(g, c, p)
+    if not plan: g.L(f'{c.name}: 뒷면 카드 그대로 (바꿀 자리 없음)', 'sys'); return True
+    for x, y, _ in plan:
+        if cards9.swap_cards(g, x, y):
+            g.L(f'{c.name}: 뒷면 카드 맞바꿈 — {g.pname(p)} 필드 ← {y.name} / {g.pname(1 - p)} 필드 ← {x.name} (컨트롤 이동)')
+    return True
+
+
+def flip_val(g, c, p, x):
+    """뒷면 몬스터를 앞면으로 뒤집는 가치(AI): 자신 필드는 공격력 만큼(원래 주인만 뒷면에서 쓰는 카드는 뒤집지 않음), 상대 필드는 이번 턴 전투로 이길 수 있고 [지속]이 없을 때만"""
+    if x.controller == p:
+        if owner_only_card(x) and x.owner == p: return -1.0
+        return 2.0 + g.atk(x) / 1000 + (1.3 if x.owner != p else 0)
+    if not (g.can_declare_attack(p) and g.phase == '진행'): return -1.0
+    if getattr(x, 'state_check', None) or getattr(x, 'on_event', None) or x.rules or getattr(x, 'atk_mod', None): return -1.0
+    wall = g.df(x) if x.pos == 'def' else g.atk(x)
+    if not any(m.faceup and m.pos == 'atk' and not g.attack_banned(m) and g.atk(m) > wall for m in g.monsters(p)): return -1.0
+    return 1.0
+
+
+def _flip_pool(g, c, p):
+    return [x for x in g.monsters(0) + g.monsters(1) if not x.faceup and x.is_monster() and not g.immune(x, p, c)]
+
+
+@block('flip_pick', can=lambda g, c, p, ev, k: bool(_flip_pool(g, c, p)),
+       val=lambda g, c, p, ev, k: max([flip_val(g, c, p, x) for x in _flip_pool(g, c, p)] or [0.0]) * UNIT, threat=300)
+def do_flip_pick(g, c, p, l, k):
+    """「필드의 뒷면 표시 몬스터 1장을 앞면 표시로 뒤집는다」 — 처리 때 고름(비대상)"""
+    import cards9
+    cs = _flip_pool(g, c, p)
+    if not cs: return False
+    return cards9.flip_up(g, max(cs, key=lambda x: (flip_val(g, c, p, x), x.uid)), c)
+
+
+@block('set_flag', val=lambda g, c, p, ev, k: k.get('val', 1.0) * UNIT)
+def do_set_flag(g, c, p, l, k):
+    """처리로 이 카드에 붙는 상태(필드를 벗어나면 사라짐) — 카드 단위 설정(status)이 그 상태를 읽는다(헬 1번 뒷문장)"""
+    if not g.on_field(c): return False
+    c.flags[k['key']] = True
+    col = dict(c.flags.get('clear_on_leave') or {}); col.setdefault(k['key'], None); c.flags['clear_on_leave'] = col
+    g.L(f'{c}: {k.get("label", k["key"])}'); return True
+
+
+SHIELD_VAL = 1.5 * UNIT   # 상대 턴(공격 전) 「상대는 전투로 몬스터를 파괴할 수 없다」의 가치
+
+
+@block('battle_shield', val=lambda g, c, p, ev, k: SHIELD_VAL if g.turn_player != p and g.phase in ('준비', '진행') else 0.3 * SHIELD_VAL, threat=300)
+def do_battle_shield(g, c, p, l, k):
+    """플레이어 규칙 「(턴 종료 시까지) 상대는 전투로 몬스터를 파괴할 수 없다」 — 이 턴 동안 자신 필드의 몬스터(나중에 나온 것 포함)에 전투 파괴 내성"""
+    t0 = g.turn
+    def guard(g2):
+        for m in g2.monsters(p):
+            if m.flags.get('battle_indestr_until', -1) < t0: m.flags['battle_indestr_until'] = t0
+    def fl(g2, ev):
+        if g2.turn == t0: guard(g2)
+    fl.until = t0; g.floating.append(fl); guard(g)
+    g.L(f'턴 종료 시까지 {g.pname(1 - p)}: 전투로 몬스터를 파괴할 수 없음'); return True
+
+
+_w_lf = TESTS['when_left_field']
+
+
+@test('when_left_field')
+def w_left_field2(g, c, p, ev, k):
+    """by_effect_of: 'opp' — 상대 카드의 효과(코스트 제외)로 필드의 카드가 필드를 벗어남(「상대가 카드를 효과로 제거할 때마다」)"""
+    if k.get('by_effect_of'):
+        if not ev_kind(ev, 'leave_field'): return False
+        ca = ev.get('cause') or ('', None)
+        src = ca[1] if ca[0] == 'effect' else None
+        if not (isinstance(src, Card) and (src.controller != p) == (k['by_effect_of'] == 'opp')): return False
+        if ev.get('prev') not in FIELD_Z: return False
+    return _w_lf(g, c, p, ev, k)
+
+
+LW_ALT_OFF = [False]   # 바꿀지 판단할 때는 원래 [유언]의 점수만 본다(status.k_lw_replace)
+
+
+def lw_alt(g, c, p, ev, v):
+    """[유언]의 점수: 자신의 [지속]이 그 [유언]을 다른 처리로 바꿀 수 있으면(lw_replace — 암흑의 율법) 둘 중 큰 쪽"""
+    if LW_ALT_OFF[0]: return v
+    for s in g.field_cards(p) + ([g.p[p].skill] if g.p[p].skill else []):
+        steps = getattr(s, 'lw_replace_steps', None)
+        if steps and g.cont_active(s): v = max(v, v_steps(g, c, p, ev, steps))
+    return v
+
+
+def place_gain(g, c, p):
+    """지속 · 필드 마법 c를 앞면으로 놓는 가치(B안): 그 카드의 [지속] · 효과를 쓸 수 있게 되는 가치. 자신 필드에 이미 같은 카드가 있으면 0,
+    다른 자신 필드 마법을 덮어쓰면 줄임, 주인에게 불리한 [지속]이 있는 카드(퇴마의 부적)는 0"""
+    if getattr(c, 'cont_forced', None): return 0.0
+    if c.type == '필드' and g.fieldz is not None and g.fieldz.controller == p:
+        return 0.0 if g.fieldz.name == c.name else UNIT
+    if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
+    return PLACE_UP * UNIT

@@ -41,7 +41,9 @@ def attach(c):
         proto = _CACHE.get(ck)
         if proto is None:
             proto = _CACHE[ck] = compile_spec(spec, sent, c.d)
-        if proto.effect is not None: effects.append(proto.effect)
+        if proto.effect is not None:
+            effects.append(proto.effect)
+            if spec.kw.get('reuse'): effects.append(reuse_effect(proto))   # 지속 마법: 카드의 발동 뒤에도 앞면으로 있는 동안 1턴 1번 같은 효과(정본 1-2)
         for inst in proto.installs: inst(c)
     from cards import grp
     for group, lst in D.CONT_GRANTS.items():   # 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속] — 그 카드군 카드마다 붙이고, 발동은 부여가 적용될 때만
@@ -60,10 +62,10 @@ def attach(c):
 
 
 class Proto:
-    __slots__ = ('effect', 'installs')
+    __slots__ = ('effect', 'installs', '_reuse')
 
     def __init__(self, effect=None, installs=()):
-        self.effect = effect; self.installs = list(installs)
+        self.effect = effect; self.installs = list(installs); self._reuse = None
 
 
 # ═══════════════════════ 명세 해석 ═══════════════════════
@@ -141,6 +143,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
         costs.insert(0, D.B('keep_link', **wa.k))
     dos = scoped(costs, list(kw.get('do', ())))
     conds = list(kw.get('cond', ()))
+    kw = dict(kw, spell_type=('필드' if d.get('type') == '필드' else d.get('subtype') if d.get('type') == '마법' else ''))
     fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows_of(spec, d), num)
     e = Effect(num, kind, f['zones'], cond=fns['cond'], cost=fns['cost'] if costs or notes.get('cooldown') else None, res=fns['res'], score=fns['score'],
                opt=f['opt'], mandatory=f['mandatory'], threat=kw.get('threat', threat_of(dos + [b for b in costs if b.name != 'pick'])),
@@ -267,7 +270,7 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         vals.append(f'(({_val_expr(G, d2)}) if ({ok}) else 0.0)')
     cvals = [(f'max(0.0, {G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)}) + {_val_expr(G, list(b.k.get("gain", ())))})' if b.k.get('may') else
               f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})') for b in costs if b.name not in ('pick', 'keep_link')]
-    info = dict(num=num, phase_only=bool(notes.get('phase_only')), kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
+    info = dict(places=bool(f['spell_act'] and (kw.get('spell_type') or '') in ('지속', '필드')), num=num, phase_only=bool(notes.get('phase_only')), kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
                                          for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
                 aware=any(b.name in AWARE for b in _flat(dos)))
     v = ' + '.join(vals) or '0.0'
@@ -444,4 +447,14 @@ def cont_granted_effect(code, key, num):
             if spec.kw.get(a): setattr(e, a, spec.kw[a])
         if spec.kw.get('pk_granted') is not None: e.pk_granted = spec.kw['pk_granted']
         _CG[ck] = e
+    return e
+
+
+def reuse_effect(proto):
+    """지속 마법의 표기 없는 효과: 카드의 발동(spell_act)과 같은 처리를, 앞면으로 있는 동안 기동 효과로도(같은 효과 번호 — 1턴 1번 공유)"""
+    e = getattr(proto, '_reuse', None)
+    if e is None:
+        import copy
+        e = copy.copy(proto.effect); e.spell_act = False; e.zones = ('field',)
+        proto._reuse = e
     return e
