@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import yaml
+from .자료읽기 import 읽기 as _자료읽기
 
 from . import action, expr
 from .predicates import 덱상수, 술어집
@@ -111,7 +111,7 @@ def _가중키가_있는가(값: Any) -> bool:
 
 def 맵_읽기(경로: str | Path, 상수: 덱상수 | None = None) -> 맵:
     경로 = Path(경로)
-    원본 = yaml.safe_load(경로.read_text(encoding="utf-8"))
+    원본 = _자료읽기(경로)
     if not isinstance(원본, dict) or "노드" not in 원본:
         raise 맵오류(f"맵 꼴이 아니다 (최상위에 '노드' 가 없다) — {경로}")
 
