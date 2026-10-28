@@ -33,7 +33,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -92,7 +92,11 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
 .윗띠 b{font-size:15px}
 .판판{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;
  align-items:center;justify-content:center;overflow:auto}
-.단계띠{display:flex;gap:4px;margin-left:auto}
+.조절{display:flex;gap:4px;align-items:center;margin-left:auto}
+.조절 button{padding:4px 9px;font-size:12px;border-radius:7px}
+.조절 .켬{background:var(--강조);color:#1a1510;border-color:transparent;font-weight:700}
+.조절 .칸막이{width:1px;height:18px;background:var(--선);margin:0 3px}
+.단계띠{display:flex;gap:4px}
 .단계알{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--선);
  color:var(--흐림)}
 .단계알.켬{background:var(--강조);color:#1a1510;border-color:transparent;font-weight:700}
@@ -233,12 +237,21 @@ button:hover .효과문{color:var(--글)}
       <label>상대 덱</label>
       <select id="상대덱"><option>던전마스터</option><option>호박옥</option></select>
     </div>
-    <div class="줄"><label>상대</label>
+    <div class="줄"><label>내 쪽</label>
+      <select id="내역할">
+        <option value="사람">내가 둔다</option>
+        <option value="필터">AI (1층 필터)</option>
+        <option value="무작위">AI (무작위)</option>
+      </select>
+      <label>상대</label>
       <select id="상대역할">
         <option value="필터">AI (1층 필터)</option>
         <option value="무작위">AI (무작위)</option>
         <option value="사람">사람 — 초대 링크로 부른다</option>
       </select>
+    </div>
+    <div class="줄" style="margin-bottom:2px">
+      <span class="사람들">양쪽 다 AI 로 두면 구경만 하는 방이 된다 — 배속·멈춤으로 보면서 메모를 남길 수 있다.</span>
     </div>
     <div class="줄"><button class="주" onclick="방만들기()">방 만들기</button>
       <span id="로비말" style="color:var(--흐림);font-size:12px"></span></div>
@@ -257,6 +270,7 @@ button:hover .효과문{color:var(--글)}
     <b>뉴 네오</b>
     <span id="머리말" class="사람들"></span>
     <span class="사람들" id="사람말"></span>
+    <div class="조절 숨김" id="조절"></div>
     <div class="단계띠" id="단계띠"></div>
   </div>
 
@@ -329,7 +343,7 @@ async function 방목록(){
 }
 async function 방만들기(){
   const d = await 보내기('/api/create',{별명:$('별명').value,내덱:$('내덱').value,
-    상대덱:$('상대덱').value,상대역할:$('상대역할').value});
+    상대덱:$('상대덱').value,내역할:$('내역할').value,상대역할:$('상대역할').value});
   if(d.오류){ $('로비말').textContent = d.오류; return; }
   들어가기(d.방, d.토큰);
 }
@@ -339,7 +353,8 @@ async function 참가(이름){
   들어가기(d.방, d.토큰);
 }
 function 들어가기(이름, 표){
-  방=이름; 토큰=표;
+  방=이름; 토큰=표; 마지막그림=''; 현재진행={}; 마지막판정수=0;
+  $('끝자리').innerHTML='';
   history.replaceState(null,'',`?방=${이름}`);
   $('로비').classList.add('숨김'); $('판').classList.remove('숨김');
   뽑기();
@@ -669,15 +684,19 @@ async function 뽑기(){
       return t;
     }).join('\n');
     if(바닥) g.scrollTop=g.scrollHeight;
+    현재진행=d.진행||{};
+    조절그리기(d);
     수그리기(d);
     메모그리기(d);
     if(d.리포) 리포주소=d.리포;
-    if(d.끝) $('끝자리').innerHTML=`<div class="끝판">${벗기기(d.끝.승자)} 승 — ${벗기기(d.끝.근거)}</div>`;
+    /* 끝나지 않았으면 비운다 — 전에 보던 판의 띠가 남아 있었다 */
+    $('끝자리').innerHTML = d.끝
+      ? `<div class="끝판">${벗기기(d.끝.승자)} 승 — ${벗기기(d.끝.근거)}</div>` : '';
   }catch(e){ $('물음').textContent='서버와 끊겼다.'; }
 }
 
 /* ---------- 메모(피드백) ---------- */
-let 메모갈래='버그', 마지막판정수=0;
+let 메모갈래='버그', 마지막판정수=0, 현재진행={};
 document.getElementById('갈래줄').addEventListener('click',e=>{
   const b=e.target.closest('.갈래'); if(!b) return;
   메모갈래=b.dataset.갈래;
@@ -732,6 +751,27 @@ function 메모그리기(d){
       +(p&&p.커밋?` <code>${벗기기(p.커밋)}</code>`:'')+`</div></div>`;
   }).join('');
 }
+
+/* ---------- 진행 조절 (AI끼리 두는 판을 보면서) ---------- */
+const 배속들=[0.5,1,2,4,0];
+async function 진행(몸){ await 보내기('/api/진행',Object.assign({방,토큰},몸)); 마지막그림=''; 뽑기(); }
+function 조절그리기(d){
+  const 자리=$('조절'), p=d.진행;
+  /* 사람이 둘 차례가 아닌 판(AI끼리 두거나 내가 관전)에서만 쓴다 */
+  const 보일까 = p && (p.AI끼리 || !d.나의자리) && !d.끝;
+  자리.classList.toggle('숨김', !보일까);
+  if(!보일까) return;
+  자리.innerHTML = `<button class="주" data-짓="멈춤">${p.멈춤?'▶ 이어서':'⏸ 멈춤'}</button>`
+    + (p.멈춤?`<button data-짓="한걸음" title="수를 고르는 자리 하나만큼 나간다 — 둘 수가 없어 단계만 넘어가는 자리도 한 걸음이다">한 걸음</button>`:'')
+    + `<span class="칸막이"></span>`
+    + 배속들.map(v=>`<button data-배속="${v}" class="${p.배속===v?'켬':''}">${v?v+'×':'최대'}</button>`).join('');
+}
+$('조절').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.배속!==undefined) 진행({배속:parseFloat(b.dataset.배속)});
+  else if(b.dataset.짓==='한걸음') 진행({한걸음:true});
+  else if(b.dataset.짓==='멈춤') 진행({멈춤:!현재진행.멈춤});
+});
 
 /* ---------- 탭 ---------- */
 document.getElementById('탭줄').addEventListener('click',e=>{
@@ -933,10 +973,12 @@ def 손잡이_만들기(장부: 방장부):
         def do_POST(self):
             길이 = int(self.headers.get("Content-Length") or 0)
             몸통 = json.loads(self.rfile.read(길이) or b"{}")
-            길 = urlparse(self.path).path
+            # 길에 한글이 들어가면 브라우저가 퍼센트 인코딩해 보낸다 — 풀어서 본다.
+            길 = unquote(urlparse(self.path).path)
             try:
                 if 길 == "/api/create":
-                    역할 = {"나": "사람", "상대": 몸통.get("상대역할", "필터")}
+                    역할 = {"나": 몸통.get("내역할", "사람"),
+                            "상대": 몸통.get("상대역할", "필터")}
                     하나, 사람 = 장부.만들기(
                         몸통.get("별명", ""), 몸통.get("내덱", "호박옥"),
                         몸통.get("상대덱", "던전마스터"), 역할,
@@ -949,6 +991,15 @@ def 손잡이_만들기(장부: 방장부):
                     하나 = 장부.방들.get(몸통.get("방", ""))
                     됐나 = bool(하나 and 하나.답하기(몸통.get("토큰", ""), 몸통.get("값")))
                     self._json({"됐나": 됐나})
+                elif 길 == "/api/진행":
+                    하나 = 장부.방들.get(몸통.get("방", ""))
+                    if 하나 is None:
+                        self._json({"오류": "그런 방이 없다"})
+                    else:
+                        self._json(하나.대국.진행조절(
+                            배속=몸통.get("배속"), 멈춤=몸통.get("멈춤"),
+                            한걸음=bool(몸통.get("한걸음")),
+                        ))
                 elif 길 == "/api/memo":
                     하나 = 장부.방들.get(몸통.get("방", ""))
                     메모하나 = 하나 and 하나.메모남기기(

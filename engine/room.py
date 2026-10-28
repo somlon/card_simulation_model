@@ -144,7 +144,14 @@ class 참가자:
 
 
 class 대국:
-    """한 판. 자리 둘 중 사람이 앉은 쪽은 `사람자리`, 빈 쪽은 AI가 맡는다."""
+    """한 판. 자리 둘 중 사람이 앉은 쪽은 `사람자리`, 빈 쪽은 AI가 맡는다.
+
+    **AI끼리 두는 판은 박자를 맞춰 보여 준다**(사용자 요청 2026-10-28) — 그냥 두면
+    한순간에 끝나 버려 구경할 수가 없다. 수를 두기 전에 `박자()` 에서 멈춤·배속을 본다.
+    사람 자리는 어차피 사람을 기다리므로 박자를 넣지 않는다.
+    """
+
+    기본간격 = 0.8          # 1배속에서 한 수 사이
 
     def __init__(self, 내덱: str, 상대덱: str, 역할: dict[str, str], 시드: int):
         self.표 = 기본카드표()
@@ -167,10 +174,41 @@ class 대국:
             else:
                 self.역할[자리] = 무작위플레이어(자리, self.난수)
         self.끝: 종료 | None = None
+        self.배속 = 1.0                       # 0 이하면 기다리지 않는다(최대 속도)
+        self.계속 = threading.Event()
+        self.계속.set()
+        self.걸음 = 0                          # 멈춘 채로 「한 수만」 보내 줄 횟수
         self.기록.적기(
             f"{내덱}(나) vs {상대덱}(상대) · 시드 {시드} · 선공 {self.상태.선공}"
         )
         threading.Thread(target=self._돌리기, daemon=True).start()
+
+    def 박자(self, 사람인가: bool) -> None:
+        """AI가 둘 차례면 멈춤·배속을 여기서 본다. 사람 차례면 그냥 지나간다."""
+        if 사람인가:
+            return
+        while not self.계속.is_set():
+            if self.걸음 > 0:
+                self.걸음 -= 1
+                return                         # 「한 수만」 — 박자도 건너뛴다
+            if self.끝 is not None:
+                return
+            time.sleep(0.08)
+        if self.배속 > 0:
+            time.sleep(self.기본간격 / self.배속)
+
+    def 진행조절(self, 배속=None, 멈춤=None, 한걸음: bool = False) -> dict:
+        if 배속 is not None:
+            try:
+                self.배속 = max(0.0, min(64.0, float(배속)))
+            except (TypeError, ValueError):
+                pass
+        if 멈춤 is not None:
+            self.계속.clear() if 멈춤 else self.계속.set()
+        if 한걸음:
+            self.계속.clear()
+            self.걸음 += 1
+        return {"배속": self.배속, "멈춤": not self.계속.is_set()}
 
     def _돌리기(self) -> None:
         상태, 표, 기록 = self.상태, self.표, self.기록
@@ -186,6 +224,7 @@ class 대국:
                 while True:
                     상태.가용수단 = 합법수_생성(상태, 표, 누구, self.상수표[누구])
                     합법수 = sorted(상태.가용수단)
+                    self.박자(누구 in self.사람자리들)
                     고른수 = 나역.수_고르기(상태, 합법수, 누구)
                     if getattr(나역, "기권했나", False):
                         반대 = "상대" if 누구 == "나" else "나"
@@ -424,6 +463,11 @@ class 방:
                 dict(하나.딕(), 번호=번, 판정=self.판정.get(번))
                 for 번, 하나 in enumerate(self.메모들, 1)
             ],
+            "진행": {
+                "배속": self.대국.배속,
+                "멈춤": not self.대국.계속.is_set(),
+                "AI끼리": not self.대국.사람자리들,
+            },
         }
 
     def 답하기(self, 토큰: str, 값) -> bool:
