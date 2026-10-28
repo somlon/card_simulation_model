@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.effects import 효과_읽기, 효과오류
 
-덱들 = ("호박옥", "던전마스터")
+덱들 = ("호박옥", "던전마스터", "격투가", "세리")  # 103회차 — 2단계 둘째 덱을 더했다
 _효과줄 = re.compile(r"^(\d+)\.\s")
 
 

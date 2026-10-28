@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.deck import 대전_준비
 from engine.effects import 효과적용기
 from engine.legalmoves import 합법수_생성
-from engine.players import 무작위플레이어, 필터플레이어
+from engine.players import 무작위플레이어, 필터플레이어, 헤아림플레이어
 from engine.predicates import 덱상수
 from engine.state import 게임상태, 단계, 앞뒤, 표시
 from engine.static import 기본카드표
@@ -50,6 +50,11 @@ from engine.turn import (
 덱상수표 = {
     "호박옥": 덱상수(세금=2, 카운터명="봉인", 벽유지최소=1, 테마="호박옥"),
     "던전마스터": 덱상수(세금=0, 카운터명="봉인", 벽유지최소=0, 테마="던전마스터"),
+    # 101회차 — 격투가(2단계 첫 덱)에는 맵이 아직 없다. engine/room.py 덱상수표와 같은
+    # 이유로 클래스 기본값 그대로 둔다(세금=0 · 카운터명="봉인" · 벽유지최소=0).
+    "격투가": 덱상수(세금=0, 카운터명="봉인", 벽유지최소=0, 테마="격투가"),
+    # 103회차 — 세리(2단계 둘째 덱)도 같은 이유로 클래스 기본값 그대로 둔다.
+    "세리": 덱상수(세금=0, 카운터명="봉인", 벽유지최소=0, 테마="세리"),
 }
 
 단계순서 = (단계.진행, 단계.전투, 단계.정비)
@@ -163,7 +168,8 @@ class 사람플레이어:
             print("   그 번호는 없다.")
 
 
-def 역할_만들기(종류: str, 이름: str, 난수: random.Random, 테마: str, 미리정한수=None):
+def 역할_만들기(종류: str, 이름: str, 난수: random.Random, 테마: str,
+            표=None, 상수표=None, 적용기=None, 미리정한수=None):
     if 종류 == "사람":
         return 사람플레이어(이름, 미리정한수)
     if 종류 == "무작위":
@@ -171,6 +177,12 @@ def 역할_만들기(종류: str, 이름: str, 난수: random.Random, 테마: st
     if 종류 == "필터":
         경로 = Path(__file__).resolve().parent.parent / "maps" / 맵파일[테마]
         return 필터플레이어(이름, 난수, 경로)
+    if 종류 == "헤아림":
+        # 1층 맵이 있는 덱이면 거르기까지 얹는다 — 없으면 시뮬레이션 평가만으로 둔다.
+        경로 = None
+        if 테마 in 맵파일:
+            경로 = Path(__file__).resolve().parent.parent / "maps" / 맵파일[테마]
+        return 헤아림플레이어(이름, 난수, 표, 상수표, 맵경로=경로, 적용기=적용기)
     raise SystemExit(f"모르는 역할: {종류}")
 
 
@@ -188,11 +200,13 @@ def 한판(
     적용기 = 효과적용기(표=표)
     상태, 난수 = 대전_준비(나_테마, 상대_테마, 시드, 표)
     기록 = 기보()
-    역할 = {
-        "나": 역할_만들기(나_역할, "나", 난수, 나_테마, 미리정한수),
-        "상대": 역할_만들기(상대_역할, "상대", 난수, 상대_테마),
-    }
     상수표 = {"나": 덱상수표[나_테마], "상대": 덱상수표[상대_테마]}
+    역할 = {
+        "나": 역할_만들기(나_역할, "나", 난수, 나_테마,
+                     표=표, 상수표=상수표, 적용기=적용기, 미리정한수=미리정한수),
+        "상대": 역할_만들기(상대_역할, "상대", 난수, 상대_테마,
+                      표=표, 상수표=상수표, 적용기=적용기),
+    }
     기록.적기(f"시드 {시드} · 나={나_테마}({나_역할}) vs 상대={상대_테마}({상대_역할})")
     기록.적기(f"선공: {상태.선공}")
 
@@ -257,8 +271,8 @@ def 주문() -> int:
     받기 = argparse.ArgumentParser(description="뉴 네오 듀얼 환경")
     받기.add_argument("--덱", default="호박옥", help="내 덱 테마")
     받기.add_argument("--상대", default="던전마스터", help="상대 덱 테마")
-    받기.add_argument("--나", dest="나역할", default=None, help="사람 · 무작위 · 필터")
-    받기.add_argument("--상대역할", default=None, help="사람 · 무작위 · 필터")
+    받기.add_argument("--나", dest="나역할", default=None, help="사람 · 무작위 · 필터 · 헤아림")
+    받기.add_argument("--상대역할", default=None, help="사람 · 무작위 · 필터 · 헤아림")
     받기.add_argument("--시드", type=int, default=0)
     받기.add_argument("--최대턴", type=int, default=200)
     받기.add_argument("--판수", type=int, default=1, help="자가 대전 반복 횟수")
@@ -268,8 +282,8 @@ def 주문() -> int:
     인수 = 받기.parse_args()
 
     나역할 = 인수.나역할 or ("사람" if 인수.수 is None else "사람")
-    상대역할 = 인수.상대역할 or "무작위"
-    if 인수.나역할 in ("무작위", "필터"):
+    상대역할 = 인수.상대역할 or "헤아림"
+    if 인수.나역할 in ("무작위", "필터", "헤아림"):
         나역할 = 인수.나역할
 
     합계 = {"나": 0, "상대": 0, "미정": 0}

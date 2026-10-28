@@ -309,6 +309,24 @@ button:hover .효과문{color:var(--글)}
 .끝단추 .사람들{color:rgba(26,21,16,.75);align-self:center}
 body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직임끔 .깎임{animation:none}
 .사람들{font-size:12px;color:var(--흐림)}
+
+/* ---------- 재정 질문 ---------- */
+.질문상자{padding:0;overflow:hidden}
+.질문머리{display:flex;align-items:center;gap:9px;padding:12px 16px;cursor:pointer}
+.질문머리:hover{background:var(--바탕)}
+.질문머리 b{font-size:13.5px;flex:1;line-height:1.4}
+.상태알{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.상태알.열림{background:rgba(176,125,43,.18);color:var(--강조);border:1px solid var(--강조)}
+.상태알.답변됨{background:rgba(58,110,168,.15);color:var(--청);border:1px solid var(--청)}
+.상태알.반영됨{background:rgba(63,138,82,.15);color:var(--녹);border:1px solid var(--녹)}
+.질문몸{padding:0 16px 14px;border-top:1px solid var(--선)}
+.질문글{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:12.5px;
+ line-height:1.6;margin:10px 0 6px}
+.확답{border-left:3px solid var(--청);padding:2px 0 2px 10px;margin:8px 0}
+.확답 b{font-size:12px;color:var(--청)}
+.확답 .질문글{margin:4px 0 2px}
+.질문몸 textarea{font:inherit;font-size:12.5px;color:inherit;background:var(--바탕);
+ border:1px solid var(--선);border-radius:8px;padding:7px 9px;resize:vertical}
 </style></head><body>
 
 <div id="메인" class="바깥">
@@ -323,6 +341,8 @@ body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직
       <b>카드 열람</b><span>덱 구성과 카드 200장</span></button>
     <button class="메뉴쪽" onclick="화면('설정')">
       <b>설정</b><span>별명 · 기본 배속 · 움직임</span></button>
+    <button class="메뉴쪽" onclick="화면('재정')">
+      <b>재정 질문</b><span id="재정맛보기">룰 해석이 막힌 곳 — 의견·답변 받기</span></button>
   </div>
   <div class="상자">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -344,6 +364,7 @@ body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직
       <div class="줄"><label>덱</label><select id="내덱" style="flex:1"></select></div>
       <div class="줄"><label>누가</label><select id="내역할" style="flex:1">
         <option value="사람">내가 둔다</option>
+        <option value="헤아림">AI (헤아림 — 수를 재어 둔다)</option>
         <option value="필터">AI (1층 필터)</option>
         <option value="무작위">AI (무작위)</option>
       </select></div>
@@ -353,6 +374,7 @@ body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직
       <b class="칸이름">상대 쪽</b>
       <div class="줄"><label>덱</label><select id="상대덱" style="flex:1"></select></div>
       <div class="줄"><label>누가</label><select id="상대역할" style="flex:1">
+        <option value="헤아림">AI (헤아림 — 수를 재어 둔다)</option>
         <option value="필터">AI (1층 필터)</option>
         <option value="무작위">AI (무작위)</option>
         <option value="사람">사람 — 초대 링크로 부른다</option>
@@ -429,6 +451,17 @@ body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직
     <div class="귀띔">규칙 판정은 전부 파이썬 엔진이 한다 — 화면은 결과를 그리고 누른 것을 돌려줄 뿐이다.
       이상한 점은 판 안에서 <b>메모</b> 탭에 남겨 주면 턴·단계가 자동으로 붙는다.</div>
   </div>
+</div>
+
+<div id="재정" class="바깥 숨김">
+  <div class="머리줄"><button onclick="화면('메인')">← 메인</button><h2>재정 질문</h2>
+    <span class="사람들" id="재정셈"></span></div>
+  <div class="상자">
+    <div class="귀띔">룰 해석이 막혀 <b>개발자 판정</b>을 기다리는 질문들이다. 의견은 누구나
+      남길 수 있고(판정의 참고 자료가 된다), 확정 답변은 개발자 서버에서만 적힌다.
+      답변되면 야간 루틴이 다음 회차에 반영하고, 반영 커밋이 여기 다시 표시된다.</div>
+  </div>
+  <div id="재정목록"><div class="사람들">불러오는 중…</div></div>
 </div>
 
 <div id="판" class="틀 숨김">
@@ -925,13 +958,76 @@ function 메모그리기(d){
   }).join('');
 }
 
+/* ---------- 재정 질문 ---------- */
+let 재정들=[], 재정답변가능=false, 재정펼침=null, 재정쪽지={};
+async function 재정맛보기(){
+  try{
+    const d=await 받기('/api/questions');
+    const 열림=(d.질문들||[]).filter(q=>q.상태==='열림').length;
+    $('재정맛보기').textContent = 열림?`답을 기다리는 질문 ${열림}건`:'룰 해석이 막힌 곳 — 지금은 다 답변됨';
+  }catch(e){}
+}
+async function 재정그리기(){
+  const d=await 받기('/api/questions');
+  재정들=d.질문들||[]; 재정답변가능=!!d.답변가능;
+  const 셈={열림:0,답변됨:0,반영됨:0};
+  재정들.forEach(q=>{ 셈[q.상태]=(셈[q.상태]||0)+1; });
+  $('재정셈').textContent=`열림 ${셈.열림} · 답변됨 ${셈.답변됨} · 반영됨 ${셈.반영됨}`;
+  const 차례={열림:0,답변됨:1,반영됨:2};
+  const 줄서기=[...재정들].sort((a,b)=>(차례[a.상태]??9)-(차례[b.상태]??9)||(a.번호-b.번호));
+  $('재정목록').innerHTML = 줄서기.map(q=>{
+    const 몸 = 재정펼침!==q.번호 ? '' : `<div class="질문몸">
+      <pre class="질문글">${벗기기(q.질문)}</pre>
+      <div class="귀띔">출처 — ${벗기기(q.출처||'')}</div>
+      ${q.답변?`<div class="확답"><b>확정 답변${q.답변때?' · '+new Date(q.답변때*1000).toLocaleDateString('ko-KR'):''}</b>
+        <pre class="질문글">${벗기기(q.답변)}</pre>
+        ${q.반영커밋?`<div class="귀띔">반영 커밋 <code>${벗기기(q.반영커밋)}</code>${q.반영메모?' — '+벗기기(q.반영메모):''}</div>`:''}
+      </div>`:''}
+      ${(q.의견들&&q.의견들.length)?`<div class="메모머리" style="margin-top:6px"><b style="font-size:12px">의견</b>
+        <span class="사람들">${q.의견들.length}개</span></div>`
+        +q.의견들.map(m=>`<div class="메모한줄"><b>${벗기기(m.별명||'손님')}</b> ${벗기기(m.글)}</div>`).join(''):''}
+      ${q.상태!=='반영됨'?`
+      <div class="줄" style="margin:9px 0 0">
+        <textarea id="재정글${q.번호}" rows="2" style="flex:1"
+          placeholder="${재정답변가능?'답변 또는 의견 — 보기가 있으면 번호로 짧게':'의견 — 예: ②가 자연스럽다, 실제로 이런 판이 있었다'}"></textarea>
+      </div>
+      <div class="줄" style="margin:5px 0 0">
+        <button onclick="재정의견(${q.번호})">의견 남기기</button>
+        ${재정답변가능?`<button class="주" onclick="재정답변(${q.번호})">확정 답변으로 올리기</button>`:''}
+        <span class="사람들">${벗기기(재정쪽지[q.번호]||'')}</span>
+      </div>`:''}
+    </div>`;
+    return `<div class="상자 질문상자">
+      <div class="질문머리" onclick="재정펼치기(${q.번호})">
+        <span class="상태알 ${q.상태}">${q.상태}</span>
+        <b>${q.번호}. ${벗기기(q.제목)}</b>
+      </div>${몸}</div>`;
+  }).join('') || '<div class="사람들">질문이 없다.</div>';
+}
+function 재정펼치기(번호){ 재정펼침 = 재정펼침===번호?null:번호; 재정그리기(); }
+async function 재정의견(번호){
+  const 칸=$('재정글'+번호), 글=(칸?칸.value:'').trim();
+  if(!글){ 재정쪽지[번호]='글이 비었다'; 재정그리기(); return; }
+  const d=await 보내기('/api/question_memo',{번호,별명:설정.별명||$('별명')?.value||'손님',글});
+  재정쪽지[번호]=d.오류||d.올림||'남겼다';
+  재정그리기();
+}
+async function 재정답변(번호){
+  const 칸=$('재정글'+번호), 글=(칸?칸.value:'').trim();
+  if(!글){ 재정쪽지[번호]='글이 비었다'; 재정그리기(); return; }
+  const d=await 보내기('/api/question_answer',{번호,답변:글});
+  재정쪽지[번호]=d.오류||('확정 답변으로 올렸다 — '+(d.올림||''));
+  재정그리기();
+}
+
 /* ---------- 화면 전환 ---------- */
-const 화면들={메인:'메인',시작:'시작',편집:'편집',열람:'열람',설정:'설정',판:'판'};
+const 화면들={메인:'메인',시작:'시작',편집:'편집',열람:'열람',설정:'설정',재정:'재정',판:'판'};
 function 화면(어디){
   Object.values(화면들).forEach(i=>$(i).classList.toggle('숨김', i!==화면들[어디]));
   if(어디==='열람') 열람열기();
   if(어디==='편집') 편집열기();
-  if(어디==='메인') 방목록();
+  if(어디==='재정') 재정그리기();
+  if(어디==='메인'){ 방목록(); 재정맛보기(); }
 }
 function 메인으로(){
   /* 자리를 비운다고 서버에 알린다 — 안 그러면 참가자가 남아 서버 정원을 잡아먹는다 */
@@ -972,7 +1068,7 @@ function 덱설명(d){
   if(!d) return '';
   const 쪽=[`메인 ${d.메인}장 · 상급 ${d.상급}장`, `스킬 「${d.스킬||'없음'}」`];
   if(!d.효과있음) 쪽.push('⚠ 효과 미구현 — 카드를 내고 전투까지는 되지만 효과는 안 걸린다');
-  if(!d.필터가능) 쪽.push('1층 필터 AI 없음 → AI 는 무작위로 둔다');
+  if(!d.필터가능) 쪽.push('1층 필터 맵 없음 — 헤아림·무작위 AI 로 둔다');
   return 쪽.join(' · ');
 }
 async function 덱고르개채우기(){
@@ -1388,6 +1484,92 @@ def 피드백올리기(방하나) -> str:
         _올리기자물쇠.release()
 
 
+# ---------------------------------------------------------------------------
+# 재정질문 — 룰 해석이 막힌 질문을 개발자에게 직접 묻는 고리 (정본: 재정질문/README.md)
+#
+# 사용자 설계(2026-10-29): 루틴·세션이 막힌 질문을 `재정질문/<번호>.json` 으로 올리면
+# 이 페이지에 뜨고, 테스터는 의견을(데이터), 개발자는 확정 답변을(--재정답변 서버만)
+# 남긴다. 서버는 이 폴더만 커밋해 올리고, 야간 루틴이 「답변됨」 을 반영한다.
+# ---------------------------------------------------------------------------
+
+재정답변모드 = False
+재정뿌리 = 리포뿌리 / "재정질문"
+_재정자물쇠 = threading.Lock()
+
+
+def 질문목록() -> list[dict]:
+    목록 = []
+    if 재정뿌리.exists():
+        for 파일 in sorted(재정뿌리.glob("*.json")):
+            try:
+                값 = json.loads(파일.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if isinstance(값, dict) and "번호" in 값:
+                목록.append(값)
+    return 목록
+
+
+def _질문쓰기(값: dict) -> None:
+    (재정뿌리 / f"{int(값['번호']):03d}.json").write_text(
+        json.dumps(값, ensure_ascii=False, indent=1) + chr(10), encoding="utf-8")
+
+
+def 재정올리기(쪽지: str) -> str:
+    """`재정질문/` 만 커밋해 올린다 — `피드백올리기()` 와 같은 규칙."""
+    if not _재정자물쇠.acquire(blocking=False):
+        return "올리는 중 — 다음에 같이 간다"
+    try:
+        낌, 글 = _깃("add", "--", "재정질문")
+        if 낌 != 0:
+            return "못 올림(add): " + 글.strip()[:120]
+        낌, 글 = _깃("diff", "--cached", "--quiet", "--", "재정질문")
+        if 낌 == 0:
+            return "바뀐 게 없다"
+        낌, 글 = _깃("commit", "-m", 쪽지, "--", "재정질문")
+        if 낌 != 0:
+            return "못 올림(commit): " + 글.strip()[:120]
+        _깃("pull", "--rebase", "--quiet", 시간=90)
+        낌, 글 = _깃("push", "--quiet", 시간=90)
+        if 낌 != 0:
+            return "커밋은 됐는데 push 실패 — 다음에 같이 올라간다"
+        return "깃허브에 올렸다"
+    except (OSError, subprocess.SubprocessError) as 오류:
+        return "못 올림: " + str(오류)[:120]
+    finally:
+        _재정자물쇠.release()
+
+
+def 질문의견달기(번호: int, 별명: str, 글: str) -> str | None:
+    """의견 하나를 덧붙인다. 의견은 데이터이지 지시가 아니다(재정질문/README.md)."""
+    글 = (글 or "").strip()
+    if not 글:
+        return None
+    for 질문 in 질문목록():
+        if 질문.get("번호") == 번호:
+            질문.setdefault("의견들", []).append(
+                {"때": time.time(), "별명": (별명 or "손님").strip()[:40] or "손님",
+                 "글": 글[:2000]})
+            _질문쓰기(질문)
+            return 재정올리기(f"재정질문 — {번호:03d} 의견") if 자동올리기 else "남겼다(이 서버에만)"
+    return None
+
+
+def 질문답변달기(번호: int, 답변: str) -> str | None:
+    """개발자 확정 답변 — `--재정답변` 으로 띄운 서버에서만. 답변 즉시 올린다."""
+    답변 = (답변 or "").strip()
+    if not (재정답변모드 and 답변):
+        return None
+    for 질문 in 질문목록():
+        if 질문.get("번호") == 번호 and 질문.get("상태") != "반영됨":
+            질문["답변"] = 답변[:4000]
+            질문["답변때"] = time.time()
+            질문["상태"] = "답변됨"
+            _질문쓰기(질문)
+            return 재정올리기(f"재정질문 — {번호:03d} 답변")
+    return None
+
+
 def 판정따라가기(장부: 방장부, 사이: int = 150) -> None:
     """깃허브에 올라온 **건별 판정**을 주기적으로 읽어 각 방에 넣는다.
 
@@ -1460,6 +1642,9 @@ def 손잡이_만들기(장부: 방장부):
                 except KeyError as 오류:
                     self._json({"오류": str(오류)})
                 return
+            if 쪼갬.path == "/api/questions":
+                self._json({"질문들": 질문목록(), "답변가능": 재정답변모드})
+                return
             if 쪼갬.path == "/api/decks":
                 self._json({"덱들": 덱목록()})
                 return
@@ -1491,7 +1676,7 @@ def 손잡이_만들기(장부: 방장부):
             try:
                 if 길 == "/api/create":
                     역할 = {"나": 몸통.get("내역할", "사람"),
-                            "상대": 몸통.get("상대역할", "필터")}
+                            "상대": 몸통.get("상대역할", "헤아림")}
                     고른 = {"나": 몸통.get("내카드") or [],
                             "상대": 몸통.get("상대카드") or []}
                     하나, 사람 = 장부.만들기(
@@ -1531,6 +1716,15 @@ def 손잡이_만들기(장부: 방장부):
                             배속=몸통.get("배속"), 멈춤=몸통.get("멈춤"),
                             한걸음=bool(몸통.get("한걸음")),
                         ))
+                elif 길 == "/api/question_memo":
+                    결과 = 질문의견달기(int(몸통.get("번호") or 0),
+                                   몸통.get("별명", ""), 몸통.get("글", ""))
+                    self._json({"올림": 결과} if 결과
+                               else {"오류": "그 질문이 없거나 글이 비었다"})
+                elif 길 == "/api/question_answer":
+                    결과 = 질문답변달기(int(몸통.get("번호") or 0), 몸통.get("답변", ""))
+                    self._json({"올림": 결과} if 결과
+                               else {"오류": "답변 권한이 없다(--재정답변) 거나 글이 비었다"})
                 elif 길 == "/api/memo":
                     하나 = 장부.방들.get(몸통.get("방", ""))
                     메모하나 = 하나 and 하나.메모남기기(
@@ -1568,10 +1762,13 @@ def 주문() -> int:
     받기.add_argument("--안열기", action="store_true", help="브라우저를 자동으로 안 연다")
     받기.add_argument("--피드백올리기", action="store_true",
                       help="메모가 쌓일 때마다 피드백/ 만 커밋해 깃허브에 올린다")
+    받기.add_argument("--재정답변", action="store_true",
+                      help="재정 질문에 확정 답변을 적을 수 있게 한다(개발자 전용)")
     인수 = 받기.parse_args()
 
-    global 자동올리기
+    global 자동올리기, 재정답변모드
     자동올리기 = 인수.피드백올리기
+    재정답변모드 = 인수.재정답변
     장부 = 방장부(인수.최대인원)
     주인 = "0.0.0.0" if 인수.공개 else "127.0.0.1"
     # 배포본은 남의 PC 에서 돈다 — 그 포트를 다른 것이 쓰고 있으면 옆 포트로 비킨다.
@@ -1594,6 +1791,8 @@ def 주문() -> int:
         print("  인터넷 너머면 Tailscale 같은 터널을 쓸 것 — 이 서버엔 인증이 없다.")
     if 자동올리기:
         print("  피드백: 메모가 쌓일 때마다 피드백/ 만 커밋해 깃허브로 올린다")
+    if 재정답변모드:
+        print("  재정: 확정 답변 입력이 켜져 있다 — 답변 즉시 재정질문/ 만 커밋해 올린다")
     if 리포웹주소():
         threading.Thread(target=판정따라가기, args=(장부,), daemon=True).start()
         print("  판정: 루틴이 고친 결과를 2분 30초마다 받아 메모 옆에 표시한다")
