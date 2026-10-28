@@ -93,7 +93,7 @@ def compile_spec(spec, sent, d):
     kind = kw.get('kind') or KIND.get(T.keyword(sent), 'ignition')
     if not kw.get('kind') and not T.keyword(sent) and d.get('type') == '마법' and spec.key == '1':   # 키워드 없는 카드의 발동은 마법 종류대로
         kind = {'신속': 'quick', '트리거': 'trigger'}.get(d.get('subtype'), kind)
-    num = kw.get('num') or int(spec.key.split('-')[0])
+    num = kw['num'] if kw.get('num') is not None else int(spec.key.split('-')[0])
     installs = []
     if kw.get('cont'):
         installs += [ST.installer(b, num, notes, kw, d) for b in kw['cont']]
@@ -157,6 +157,8 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     if kw.get('pk_granted') is not None: e.pk_granted = kw['pk_granted']
     e.counter_keep = next(((b.k['name'], b.k['n']) for b in conds if b.name == 'cond_counters' and b.k['scope'].get('pred') == 'is_self'), None)   # lib.counter_keep
     e.counter_need = next(((w.k['name'], w.k['n']) for w in whens if w.name == 'when_counter'), None)   # lib.counter_effects
+    e.self_ss = any(b.name == 'special' and b.k.get('ref') == 'SELF' and 'hand' in b.k.get('src_zone', ()) for b in dos)   # 패에서 이 카드 특수소환(lib.zone_share)
+    e.do_steps = tuple(dos)   # 처리 블록(lib.keep_val — 남겨 둘 효과의 가치)
     e.kinds_costs = tuple(b.k for b in costs if b.name == 'kinds')   # 「각각 n장씩」 모으는 코스트(lib.v_kinds — 다른 효과가 쓰면 손해)
     pay = [b for b in costs if b.name not in ('pick', 'keep_link', 'oath')]
     if pay and all(b.k.get('transfer') or b.name == 'mill' for b in pay):
@@ -217,7 +219,7 @@ class _Gen:
 def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=1):
     G = _Gen()
     # cond: 시점 · 조건 · 단계 제한 · 재정 G2(코스트 · 처리 가능)
-    tests = []
+    tests = ['L.can_act_card(g, c)']   # 「이 턴에 효과를 발동할 수 없다」(상태 no_act)
     for b in whens + conds:
         tests.append(f'{G.fn(L.TESTS[b.name])}(g, c, p, ev, {G.const(b.k)})')
     if notes.get('phase_only'):
@@ -226,7 +228,9 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         tests.append(f'L.cool_ok(g, c, p, {num})')
     made = False   # 앞 처리가 자신 필드에 카드를 낸다(특수소환 · 놓기) — 뒤 처리의 「자신 필드의 …」는 그 카드로 할 수 있다
     for b in [x for x in costs if not x.k.get('may')] + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
-        if b in dos and any(x.name == 'combo' for x in costs): continue   # 족보 코스트: 재료를 낸 뒤의 처리 가능 여부는 조합 탐색이 본다(cards8.plan — 비는 자리 · 같은 이름)
+        if b in dos and any(x.name == 'combo' for x in costs): continue
+        if b in dos and b.name == 'special' and 'grave' in L._zones(b.k.get('scope') or {}) and \
+           any(x.k.get('dest') == 'grave' and (x.k.get('scope') or {}).get('side') == 'own' for x in costs): continue   # 코스트로 묘지에 갈 카드도 후보   # 족보 코스트: 재료를 낸 뒤의 처리 가능 여부는 조합 탐색이 본다(cards8.plan — 비는 자리 · 같은 이름)
         if made and b in dos and (b.k.get('scope') or {}).get('side') == 'own' and (b.k.get('scope') or {}).get('zone') in ('field', 'mzone'): continue
         if b in dos and b.name in ('special', 'place'): made = True
         if b.name == 'choice':
@@ -270,7 +274,8 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         vals.append(f'(({_val_expr(G, d2)}) if ({ok}) else 0.0)')
     cvals = [(f'max(0.0, {G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)}) + {_val_expr(G, list(b.k.get("gain", ())))})' if b.k.get('may') else
               f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})') for b in costs if b.name not in ('pick', 'keep_link')]
-    info = dict(places=bool(f['spell_act'] and (kw.get('spell_type') or '') in ('지속', '필드')), num=num, phase_only=bool(notes.get('phase_only')), kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
+    self_ss = any(b.name == 'special' and b.k.get('ref') == 'SELF' and 'hand' in b.k.get('src_zone', ()) for b in dos)
+    info = dict(self_ss=self_ss, places=bool(f['spell_act'] and (kw.get('spell_type') or '') in ('지속', '필드')), num=num, phase_only=bool(notes.get('phase_only')), kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
                                          for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
                 aware=any(b.name in AWARE for b in _flat(dos)))
     v = ' + '.join(vals) or '0.0'

@@ -184,8 +184,8 @@ def pick_cards(g, c, p, pool, n, k):
                 x = ai.pick_target(g, who, theirs, k.get('purpose', 'remove'))
             elif harm and who != p:   # 상대가 자신 필드의 카드를 골라 잃는다(「상대는 자신 필드의 … 1장 골라 파괴한다」) — 덱 지침에서 덜 아끼는 카드
                 x = min(on_f, key=lambda y: (ai.card_pri(g, who, y), value(g, y)))
-            elif harm:
-                x = min(on_f, key=lambda y: value(g, y))
+            elif harm:   # 자신 필드의 카드를 잃는다: 카드 가치 + 이 턴 아직 쓸 수 있는 필드 효과의 가치가 작은 것부터
+                x = min(on_f, key=lambda y: keep_val(g, who, y))
             else:
                 mine = [y for y in on_f if g.side_of(y) == who] or on_f
                 x = max(mine, key=lambda y: value(g, y))
@@ -287,6 +287,14 @@ def subjects(g, c, p, l, k):
     if k.get('all'): return pool
     if k.get('want'): return want_pick(g, c, p, pool, k)
     n = cost_n(g, c, p, k, num(l, k.get('n', 1)))
+    if k.get('feeds') is not None and n == 1 and pool:   # 「패를 버린다. 묘지에서 …를 특수소환한다」 — 버린 카드도 뒤 처리 후보: 되살릴 가치 − 패에 둘 가치가 큰 카드
+        fd = k['feeds']; ai = g.p[p].ai
+        def gain(x):
+            ok = x.is_monster() and match_card(g, c, p, x, dict(fd, side=None, zone=None)) and not x.flags.get('ss_self_only') and not g.rule('no_special', x, p)
+            return (value(g, x) * UNIT + mon_extra(g, x, p) if ok else 0.0) - ai.card_pri(g, p, x)
+        xs = [max(pool, key=gain)]
+        if k.get('as'): refs(l)[k['as']] = xs[0]
+        return xs
     if k.get('spare') is not None:   # 「…를 되돌리고 발동. …를 특수소환한다」 — 뒤 처리에 쓸 가장 좋은 카드는 되도록 남긴다(AI)
         sp = [x for x in cards_in(g, c, p, k['spare']) if x in pool]
         if sp and len(pool) - 1 >= n: pool.remove(max(sp, key=lambda x: value(g, x) * UNIT + mon_extra(g, x, p)))
@@ -496,6 +504,7 @@ def deck_which(sc):
 def can_search(g, c, p, ev, k):
     """발동 판정: 서치할 카드가 정한 매수만큼 있는가(재정 G2) — 같은 이름 규칙 · 덱→패 금지는 엔진(Game.search_cands)"""
     sc = k['scope']; n = n_of(k)
+    if k.get('name_ref'): return True   # 「동일한 이름의 카드」 — 앞에서 정한 카드에 달림(처리 때)
     cs = g.search_cands(p, lambda y: match_card(g, c, p, y, sc), which=deck_which(sc))
     return len(cs) >= (1 if k.get('upto') else n)
 
@@ -524,8 +533,18 @@ def do_search(g, c, p, l, k):
             x = g.p[p].ai.breeding_pick(g, p, cs); g.to_hand(x); g.shuffle(p)
             if x.zone != 'hand': break
             g.L(f'{g.pname(p)} {c.name}: {x} 패에 넣음')
+        elif k.get('name_ref'):   # 「덱에서 동일한 이름의 카드를 패에 넣는다」 — 앞에서 정한 카드(ref)와 같은 이름
+            nm = {y.name for y in ref_cards(g, c, p, l, k['name_ref'])}
+            x = g.search(p, lambda y: y.name in nm and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
         else:
-            x = g.search(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
+            cs = g.search_cands(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc))
+            if not cs: g.L(f'{k.get("why") or c.name}: 대상 없음', 'sys'); x = None
+            else:
+                ai = g.p[p].ai
+                x = max(cs, key=lambda y: (round(hand_pick_val(g, p, y), 1), ai.card_pri(g, p, y)))
+                g.to_hand(x); g.shuffle(p)
+                if x.zone != 'hand': x = None
+                else: g.L(f'{g.pname(p)} {k.get("why") or c.name}: {x} 패에 넣음')
         if x is None: break
         got.append(x)
     if k.get('as') and got: refs(l)[k['as']] = got[0] if len(got) == 1 else got
@@ -604,7 +623,9 @@ def do_release(g, c, p, l, k):
 
 
 def summon_cands(g, c, p, k):
-    return [x for x in cards_in(g, c, p, k['scope']) if (x.is_monster() or k.get('any_card')) and g.can_special(x, p)]
+    """특수소환 후보 — 「다른 카드의 효과로 소환할 수 없다」([제약] flags['ss_self_only'])는 다른 카드의 효과로는 고르지 않는다"""
+    return [x for x in cards_in(g, c, p, k['scope']) if (x.is_monster() or k.get('any_card')) and not (x.flags.get('ss_self_only') and x is not c)
+            and g.can_special(x, p)]
 
 
 def can_special(g, c, p, ev, k):
@@ -648,9 +669,20 @@ def mon_extra(g, x, p):
     return out
 
 
-def summon_pick(g, c, p, pool, why):
-    """특수소환할 몬스터 고르기(B안): 카드 가치 + 가져오는 효과의 가치(mon_extra)가 큰 것, 같으면 덱 지침 우선순위"""
+def summon_pick(g, c, p, pool, why, brief=False):
+    """특수소환할 몬스터 고르기(B안): 카드 가치 + 가져오는 효과의 가치(mon_extra)가 큰 것, 같으면 덱 지침 우선순위.
+    brief: 소환한 뒤 곧바로 묘지로 보낸다(「그 후, 그 카드를 묘지로 보낸다」) — [소환] 효과와 묘지에서의 가치([유언] · 되살릴 가치)로"""
     ai = g.p[p].ai
+    if brief:
+        def bv(x):
+            v = lw_bonus(g, p, x, 'm') + value(g, x) * 0.3 * UNIT
+            for e in x.effects:
+                if e.kind == 'summon' and getattr(e, 'spec', None) is not None and not _LW_DEPTH[0]:
+                    _LW_DEPTH[0] += 1
+                    try: v += max(0.0, e.score(g, x, p, {'kind': 'summon', 'card': x, 'player': p, 'how': 'special'}))
+                    finally: _LW_DEPTH[0] -= 1
+            return v
+        return max(pool, key=lambda x: (round(bv(x), 1), ai.card_pri(g, p, x)))
     return max(pool, key=lambda x: (round(value(g, x) * UNIT + mon_extra(g, x, p), 1), ai.card_pri(g, p, x)))
 
 
@@ -672,7 +704,7 @@ def do_special(g, c, p, l, k):
         while len(done) < n:
             pool = [x for x in summon_cands(g, c, p, k) if x not in done]
             if not pool: break
-            x = summon_pick(g, c, p, pool, k.get('why') or f'{c.name} 특수소환')
+            x = summon_pick(g, c, p, pool, k.get('why') or f'{c.name} 특수소환', k.get('brief'))
             if not g.special_summon(x, p, pos): break
             done.append(x)
         if any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])) and done: g.shuffle(p)
@@ -891,6 +923,9 @@ def do_negate_link(g, c, p, l, k):
     lk = l.ctx.get('evlink')
     if lk is None or lk.negated: return False
     g.negate(lk, destroy=k.get('destroy', False), by=c)
+    x = lk.card
+    if k.get('act_grave') and lk.negated and lk.eff.spell_act and g.on_field(x) and x.is_spell_like() and x.d.get('subtype') not in ('일반', '신속', '트리거'):
+        g.L(f'{x}의 발동 무효 → 묘지로', 'sys'); g.send_grave(x, ('rule', None))   # 「그 발동을 무효로 한다」 — 지속 · 필드 마법 카드의 발동이면 그 카드도 묘지로
     return lk.negated
 
 
@@ -1058,6 +1093,9 @@ def timing(g, c, p, ev, info, v):
     [신속]은 언제 쓰는가가 판단이다: 자신 턴 진행 · 정비 단계(체인 없음)에는 그대로, 상대 발동에 응답할 때는 상대 카드를 없애거나 무효로 하는
     효과(disrupt)만, 자신 전투 단계에는 방해 효과만(상대 몬스터를 치우고 공격), 상대 턴에는 방해 효과를 줄여서 · 상대 종료 단계에는 자원 효과를 줄여서"""
     if info['kind'] == 'lastwill': v = lw_alt(g, c, p, ev, v)
+    if info['kind'] == 'trigger' and c.zone == 'hand':
+        v = yields(g, c, p, ev, info.get('num'), v)
+        if v > 0 and info.get('self_ss'): v = zone_share(g, c, p, v)
     if info.get('places') and c.zone == 'hand': v += place_gain(g, c, p)   # 지속 · 필드 마법의 카드의 발동 — 처리하고 앞면으로 남는다
     if v <= 0 or info['kind'] != 'quick' or info.get('aware') or info.get('phase_only'): return v   # 쓸 수 있는 단계가 정해진 효과는 그때 쓴다
     if any(lk.card is c and lk.eff.num == info.get('num') for lk in g.chain): return 0.0   # 같은 효과를 체인에 거듭 쌓지 않는다(앞 발동이 처리되면 형세가 바뀐다)
@@ -1163,6 +1201,7 @@ CARD_STATUS = {
     'battle_indestr': {'turn': 'battle_indestr_until', 'next': 'battle_indestr_until'},                  # 전투로는 파괴되지 않는다
     'no_pos_change': {'turn': 'no_pos_change_until', 'next': 'no_pos_change_until'},                    # 표시 형식을 변경할 수 없다
     'no_attack': {'turn': 'no_attack_until', 'next': 'no_attack_until'},                                 # 공격할 수 없다
+    'no_act': {'turn': 'no_act_until'},                                                                   # 이 턴에 효과를 발동할 수 없다(build — 모든 조립 효과의 발동 조건)
 }
 PROTECT = ('immune_opp', 'immune_all', 'no_release', 'battle_indestr')
 
@@ -1186,6 +1225,7 @@ def do_status(g, c, p, l, k):
     def f(x):
         if not g.on_field(x) or g.blocked(x, ('effect', c)): return False
         x.flags[key] = True if until == 'perm' else g.turn + (1 if until == 'next' else 0)
+        col = dict(x.flags.get('clear_on_leave') or {}); col.setdefault(key, None); x.flags['clear_on_leave'] = col   # 필드를 벗어나면 풀린다
         g.L(f'{x}: {k.get("label", k["kind"])} ({"필드에 있는 동안" if until == "perm" else "다음 턴 종료 시까지" if until == "next" else "턴 종료 시까지"})')
         return True
     return _each(g, c, p, l, k, f)
@@ -2166,3 +2206,131 @@ def place_gain(g, c, p):
         return 0.0 if g.fieldz.name == c.name else UNIT
     if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
     return PLACE_UP * UNIT
+
+
+# ═══════════════════════ 데이터버그에서 더한 것 ═══════════════════════
+def can_act_card(g, c):
+    """「이 턴에 효과를 발동할 수 없다」(상태 no_act — 콜로니로 특수소환한 몬스터)가 아니면 True"""
+    return c.flags.get('no_act_until', -1) < g.turn
+
+
+_w_lf2 = TESTS['when_left_field']
+
+
+@test('when_left_field')
+def w_left_field3(g, c, p, ev, k):
+    """dest: 벗어난 곳(「필드에서 패로」 — 'hand')"""
+    if k.get('dest') and not (ev_kind(ev, 'leave_field') and ev.get('dest') == k['dest']): return False
+    return _w_lf2(g, c, p, ev, k)
+
+
+def v_negate_summon(g, c, p, ev, k):
+    x = ev.get('card') if isinstance(ev, dict) else None
+    if x is None: return 0.0
+    live = any(e.kind == 'summon' for e in x.effects)
+    return (value(g, x) + (HAND_CARD if live else 0)) * UNIT
+
+
+@block('negate_summon', val=v_negate_summon, threat=1000)
+def do_negate_summon(g, c, p, l, k):
+    """A13 소환 무효 「그 소환을 무효로 하고 파괴한다」(설계도 확정 2026-10-10): 그 소환 사건에 negated — 그 소환의 [소환] 효과는 묻지 않고(엔진 Effect.summon_negate),
+    이미 체인에 오른 그 몬스터의 [소환]은 처리하지 않는다(사용 횟수 반환). 몬스터는 파괴(k['destroy'])"""
+    ev = l.ctx.get('ev'); x = ev.get('card') if isinstance(ev, dict) else None
+    if x is None: return False
+    ev['negated'] = True; g.L(f'{x}의 소환 무효')
+    for lk in g.chain:
+        e2 = lk.ctx.get('ev')
+        if lk.card is x and lk.eff.kind == 'summon' and not lk.negated and isinstance(e2, dict) and e2.get('kind') == 'summon' and e2.get('card') is x:
+            lk.negated = True
+            for kk in lk.ctx.get('opt_keys', []):
+                if g.p[lk.player].opt.get(kk): g.p[lk.player].opt[kk] -= 1
+            g.L(f'  소환이 무효 — {x}의 {lk.eff.num}번 [소환] 효과는 처리되지 않음', 'sys')
+    if k.get('destroy') and g.on_field(x) and x.controller != p: g.destroy(x, ('effect', c))
+    return True
+
+
+def v_mark_turn(g, c, p, ev, k):
+    """이 턴 표시의 가치 — extra_ns(「이 턴에, 자신은 한 번 더 일반소환할 수 있다」): 패에서 일반소환할 수 있는 가장 좋은 몬스터를 낼 가치"""
+    if k.get('what') == 'extra_ns':
+        ms = [x for x in g.p[p].hand if x.type == '몬스터' and not x.flags.get('no_normal') and not x.flags.get('effect_only')]
+        return max([value(g, x) * UNIT + mon_extra(g, x, p) for x in ms] or [0.1 * UNIT])
+    return k.get('val', 1.0) * UNIT
+
+
+@block('mark_turn', val=v_mark_turn)
+def do_mark_turn(g, c, p, l, k):
+    """「이 턴에, …」 — 이 카드에 이 턴 표시(flags[key] = 턴). 카드 단위 설정(status)이 읽는다(패키지 프로그램 — 추가 일반소환)"""
+    c.flags[k['key']] = g.turn; g.L(f'{c.name}: {k.get("label", k["key"])}'); return True
+
+
+def keep_val(g, p, x):
+    """자신 필드의 카드 x를 남겨 둘 가치(B안): 카드 가치 + 이 턴 아직 쓸 수 있는 기동 · [신속] 필드 효과의 가치(한 단계)"""
+    v = value(g, x) * UNIT
+    if _LW_DEPTH[0] or g.side_of(x) != p: return v
+    for e in x.effects:
+        if e.kind in ('ignition', 'quick') and 'field' in e.zones and getattr(e, 'spec', None) is not None and g.opt_ok(p, x, e) and e.cond(g, x, p, None):
+            _LW_DEPTH[0] += 1
+            try: v += max(FIELD_FX * UNIT, v_steps(g, x, p, None, getattr(e, 'do_steps', ())))   # 쓸 수 있는 효과가 낼 것(코스트 빼기 전)
+            finally: _LW_DEPTH[0] -= 1
+    return v
+
+
+@block('once', val=lambda g, c, p, ev, k: v_steps(g, c, p, ev, k['steps']) if g.p[p].opt.get((c.name, k['num']), 0) < 1 else 0.0)
+def do_once(g, c, p, l, k):
+    """「이 카드를 발동했을 때, …한다 (발동 선언을 필요로 하지 않는다)」 — 카드의 발동에 딸린 처리, 그 번호로 1턴 1번(이미 했으면 처리 없음, 발동은 됨)"""
+    key = (c.name, k['num'])
+    if g.p[p].opt.get(key, 0) >= 1: g.L(f'{c.name} {k["num"]}번: 이 턴에 이미 처리함', 'sys'); return True
+    g.p[p].opt[key] = g.p[p].opt.get(key, 0) + 1
+    from blocks import build
+    build.steps_fn(k['steps'])(g, c, p, l)
+    return True
+
+
+TRIG_GUARD = [False]
+
+
+def yields(g, c, p, ev, num, v):
+    """같은 사건 묶음(g.cur_evs)에서 같은 카드의 다른 트리거가 더 큰 가치로 발동할 수 있으면 이 트리거는 양보한다(-1) — 같은 처리를 둘이 다투지 않게"""
+    if TRIG_GUARD[0] or not getattr(g, 'cur_evs', None): return v
+    TRIG_GUARD[0] = True
+    try:
+        for e in c.effects:
+            if e.num == num or e.kind != 'trigger' or c.zone not in e.zones or getattr(e, 'spec', None) is None or not g.opt_ok(p, c, e): continue
+            for ev2 in g.cur_evs:
+                if e.cond(g, c, p, ev2) and e.score(g, c, p, ev2) > v: return -1.0
+    finally: TRIG_GUARD[0] = False
+    return v
+
+
+def zone_share(g, c, p, v):
+    """「패에서 이 카드를 특수소환한다」 트리거들이 빈 몬스터 존을 다툴 때: 지금 같은 사건 묶음으로 발동할 수 있는, 이 카드보다 가치가 큰 다른 패의 카드(이름별)가
+    빈 자리 수 이상이면 양보(-1) — 자리를 약한 몬스터가 먼저 차지하지 않게(B안 — 카드 가치 + 가져오는 효과)"""
+    free = len(g.free_m(p))
+    if free <= 0 or TRIG_GUARD[0] or not getattr(g, 'cur_evs', None): return v
+    mine = value(g, c) * UNIT + mon_extra(g, c, p)
+    better = set()
+    TRIG_GUARD[0] = True
+    try:
+        for x in g.p[p].hand:
+            if x is c or x.name == c.name or x.name in better: continue
+            for e in x.effects:
+                if e.kind != 'trigger' or 'hand' not in e.zones or not getattr(e, 'self_ss', False) or not g.opt_ok(p, x, e): continue
+                if any(e.cond(g, x, p, ev2) for ev2 in g.cur_evs) and value(g, x) * UNIT + mon_extra(g, x, p) > mine:
+                    better.add(x.name); break
+    finally: TRIG_GUARD[0] = False
+    return -1.0 if len(better) >= free else v
+
+
+def hand_pick_val(g, p, x):
+    """서치로 패에 넣을 카드의 가치(B안): 패 1장, 몬스터는 낼 때 가치(카드 가치 + 가져오는 효과)의 절반이 더 크면 그것,
+    패에 들어오면 스스로 나오는 카드(「패에 넣어졌을 때 … 특수소환」)는 더, 같은 이름이 이미 패에 있으면 절반"""
+    v = HAND_CARD * UNIT
+    if x.is_monster(): v = max(v, 0.5 * (value(g, x) * UNIT + mon_extra(g, x, p)))
+    for e in x.effects:
+        sp = getattr(e, 'spec', None)
+        if sp is None or e.kind != 'trigger' or 'hand' not in e.zones or not getattr(e, 'self_ss', False): continue
+        ws = list(sp.kw.get('when', ()))
+        ws += [b for w in ws if w.name == 'when_any' for b in w.k['of']]
+        if any(w.name == 'when_hand_added' and w.k.get('self') for w in ws) and g.opt_ok(p, x, e): v += HAND_CARD * UNIT
+    if any(y.name == x.name for y in g.p[p].hand): v *= 0.5
+    return v

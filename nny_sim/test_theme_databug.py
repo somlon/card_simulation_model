@@ -101,12 +101,14 @@ class HandTrapTest(unittest.TestCase):
         self.assertTrue(g.on_field(fly))
         self.assertEqual(names(g.p[0].hand), [D.COLONY])                         # 「데이터버그」 마법 서치
         g2 = make(Yes)
+        put(g2, D.COLONY, 0, 'upper')   # 재정 G2(블록 체계 2026-10-28): 「특수소환하고, … 서치」는 둘 다 할 수 있어야 발동 — 서치할 마법을 덱에 둔다
         f2 = put(g2, D.FLY, 0, 'main')
         g2.draw(0, 1, 'main'); run(g2)
         self.assertTrue(g2.on_field(f2))                                         # 드로우도 「패에 넣어졌을 때」
 
     def test_fly_second_effect_yields_to_first(self):
         g = make()
+        put(g, D.COLONY, 0, 'upper')   # 1번(특수소환 + 마법 서치)을 할 수 있어야 양보한다(재정 G2 — 블록 체계 2026-10-28)
         fly = put(g, D.FLY, 0, 'main'); g.to_hand(fly)
         x = put(g, D.CATER, 0, 'hand'); g.special_summon(x, 0)
         g.cur_evs = list(g.events)
@@ -311,11 +313,12 @@ class SpellTest(unittest.TestCase):
         l1 = put(g, D.LOADING, 0, 'hand'); l2 = put(g, D.LOADING, 0, 'hand')
         g.act(0, l1, eff(l1, 0))
         self.assertTrue(g.on_field(l1) and l1.faceup)
-        self.assertEqual(names([x for x in g.p[0].hand if x.name != D.LOADING]), [D.ANT])
+        got = names([x for x in g.p[0].hand if x.name != D.LOADING])   # 무엇을 가져올지는 AI(블록 가치 — 2026-10-28 B안)
+        self.assertEqual(len(got), 1); self.assertIn(got[0], (D.ANT, D.HERC))
         self.assertTrue(g.legal(0, l2, eff(l2, 0)))   # 카드의 발동 자체는 1턴 1번이 아니다 (검토 2026-10-13)
         g.act(0, l2, eff(l2, 0))
         self.assertTrue(g.on_field(l2))
-        self.assertEqual(names([x for x in g.p[0].hand]), [D.ANT])   # 같은 턴 두 번째 발동: 1번 서치 없음
+        self.assertEqual(names([x for x in g.p[0].hand]), got)   # 같은 턴 두 번째 발동: 1번 서치 없음
         g.turn += 2; g.p[0].opt = {}
         l3 = put(g, D.LOADING, 0, 'hand')
         g.act(0, l3, eff(l3, 0))

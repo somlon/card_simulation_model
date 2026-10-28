@@ -33,9 +33,10 @@ def note_num(c, hook, num):
 
 def while_fn(k):
     """[지속]의 적용 조건: while_counter — 「이 카드에 X 카운터가 놓여 있는 한」(앞면 · 1개 이상), while_zone — 「이 카드가 Z 존에 존재할 경우」"""
-    wc, wz = k.get('while_counter'), k.get('while_zone')
-    if wc is None and wz is None and not k.get('live'): return lambda g, x: True
-    return lambda g, x: x.faceup and (wc is None or x.counters.get(wc, 0) > 0) and (wz is None or x.zone == wz)
+    wc, wz, wt = k.get('while_counter'), k.get('while_zone'), k.get('while')
+    if wc is None and wz is None and wt is None and not k.get('live'): return lambda g, x: True
+    return lambda g, x: (x.faceup and (wc is None or x.counters.get(wc, 0) > 0) and (wz is None or x.zone == wz)
+                         and (wt is None or L.TESTS[wt.name](g, x, x.controller, None, wt.k)))
 
 
 def add_rule(c, key, fn, num):
@@ -198,7 +199,7 @@ def k_grave_redirect(c, num, k, notes, kw):
 def k_card_flag(c, num, k, notes, kw):
     """[지속] 카드 자신의 상태 플래그(엔진이 읽는 것) — 'attack_all'(상대 몬스터 전부에 공격 선언) 등. lasting: 한 번 적용하면 그 턴 동안 계속(c.cont_lasting)"""
     v = k.get('value', True)
-    if k.get('while_counter') or k.get('while_zone') or k.get('live'):   # 조건부 [지속] · live: 무효면 꺼짐 — 그때그때 계산(Game.flag), 무효면 꺼짐
+    if k.get('while_counter') or k.get('while_zone') or k.get('live') or k.get('while'):   # 조건부 [지속] · live: 무효면 꺼짐 — 그때그때 계산(Game.flag), 무효면 꺼짐
         w = while_fn(k)
         c.flags[k['key']] = (lambda g, x, v=v, w=w: (v if w(g, x) and not g.is_neg(x) else None))
         if k.get('while_counter'): c.counter_guard = set(getattr(c, 'counter_guard', None) or ()) | {k['while_counter']}
@@ -404,3 +405,26 @@ def k_lw_replace(c, num, k, notes, kw):
         if g.replace(link, rep, src):
             g.L(f'판단[{g.pname(p)}] {src.name}: {x}의 [유언]을 「{k.get("label", "…")}」로 변경', 'decision')
     chain_hook(c, 'on_event', on_ev)
+
+
+# ═══════════════════════ 데이터버그에서 더한 것 ═══════════════════════
+@kind('extra_normal_turn')
+def k_extra_normal_turn(c, num, k, notes, kw):
+    """「이 턴에, 자신은 한 번 더 일반소환할 수 있다」 — 처리로 이 카드에 붙은 이 턴 표시(flags[flag] — lib.do_mark_turn)가 있는 턴에 추가 일반소환 권리"""
+    flag, n = k['flag'], k.get('n', 1)
+    c.extra_normal = lambda g, src, p, x: n if p == src.controller and src.flags.get(flag) == g.turn else 0
+
+
+@kind('shared_hint')
+def k_shared_hint(c, num, k, notes, kw):
+    """AI 훅(ai.use_shared — wants_shared): 이 카드의 효과 조건 「자신 필드에 「X」 몬스터가 n장」을 공유 존까지 채워 맞출 때 — 그 효과를 이 턴 아직 쓸 수 있고,
+    이 몬스터로 n장이 되고, 그 뒤 일반소환할 상급 몬스터(레벨 5 이상)가 패에 있을 때"""
+    to, n = k['to'], k['n']
+    def wants_shared(g, p, x):
+        if c.controller != p or c.negated or not L.match_card(g, c, p, x, to): return None
+        e = next((e for e in c.effects if e.num == num), None)
+        if e is None or g.turn_player != p or g.phase != '진행' or not g.opt_ok(p, c, e): return None
+        if len(L.cards_in(g, c, p, to)) != n - 1: return None
+        if not any(y is not x and y.type == '몬스터' and not y.flags.get('no_normal') and not y.flags.get('effect_only') and y.level >= 5 for y in g.p[p].hand): return None
+        return f'{c.name} 조건(「{to.get("group")}」 몬스터 {n}장)'
+    c.wants_shared = wants_shared
