@@ -216,6 +216,11 @@ class HeuristicAI:
     def pick_discard(self, g, p, hand):
         return min(hand, key=lambda c: (self.card_pri(g, p, c), value(g, c)))
 
+    def keep_trigger(self, g, p, c, e):
+        """함께 고른 트리거를 차례로 발동하기 직전에 다시 확인한다: 앞의 발동으로 덱이 줄어 이 발동의 행동 세금으로 바로 지게 되었으면
+        발동하지 않는다(강제 효과는 그대로 — cards.act_score와 같은 판단, engine.Game.triggers)"""
+        return e.mandatory or not g.tax_ruin(p, c, e)
+
     def choose_triggers(self, g, p, cands):
         out = []; sc = []
         for c, e, ev in cands:

@@ -217,6 +217,15 @@ class TaxRuinTest(unittest.TestCase):
         on_field(g, '세리 - 델레가토르', 0)
         self.assertFalse(g.tax_ruin(0, r, e))                          # 상대가 대신 낸다
 
+    def test_trigger_rechecked_before_activation(self):
+        # 함께 고른 트리거를 차례로 발동할 때, 앞의 발동으로 덱이 줄어 세금으로 지게 된 발동은 하지 않는다 (강제 효과는 그대로)
+        g = make('세제', '데이터버그 패키지 프로그램')
+        r = card(g, '격투가 래빗 풋', 0, 'hand'); x = card(g, '던전마스터 트랩퍼', 0, 'grave')
+        self.assertTrue(g.keep_trigger(0, r, eff(r, 1)))
+        keep_decks(g, 0, 0, 0)
+        self.assertFalse(g.keep_trigger(0, r, eff(r, 1)))
+        self.assertTrue(g.keep_trigger(0, x, eff(x, 3)))
+
     def test_mandatory_not_vetoed(self):
         g = make('세제', '데이터버그 패키지 프로그램')
         keep_decks(g, 0, 0, 0)

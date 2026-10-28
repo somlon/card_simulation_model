@@ -1313,7 +1313,7 @@ class Game:
             pre = [(c, e, ev) for c in self.field_cards(q) for e in c.effects if getattr(e, 'summon_negate', False)
                    for ev in evs if ev.get('kind') == 'summon' and not ev.get('negated') and self.legal(q, c, e, ev)]
             for c, e, ev in self.p[q].ai.choose_triggers(self, q, pre) if pre else ():
-                if not ev.get('negated') and self.legal(q, c, e, ev) and self.activate(q, c, e, ev): self.priority(1 - q)
+                if not ev.get('negated') and self.legal(q, c, e, ev) and self.keep_trigger(q, c, e) and self.activate(q, c, e, ev): self.priority(1 - q)
         prev_grace = getattr(self, 'lw_grace', frozenset())
         self.lw_grace = prev_grace | frozenset(c.uid for q in (tp, 1 - tp) for c, e, _ in collect(q) if e.kind == 'lastwill')
         for p in (tp, 1 - tp):
@@ -1330,13 +1330,18 @@ class Game:
                 order2.append((c, e, ev))
             order = order2
             for c, e, ev in order:
-                if self.legal(p, c, e, ev):
+                if self.legal(p, c, e, ev) and self.keep_trigger(p, c, e):
                     if self.activate(p, c, e, ev): built = True; last = p
         self.lw_grace = prev_grace
         # 조건이 채워진 효과는 번갈아 하지 않는다: 턴 플레이어가 다 선언한 뒤 상대가 이어서 선언하고, 마지막에 선언한 쪽의 상대부터
         # 번갈아 응답한다 (설계도 확정 2026-10-08 — 예전에는 늘 비턴 플레이어부터)
         if built: self.priority(1 - last)
         elif self.events: self.triggers(depth + 1)
+
+    def keep_trigger(self, p, c, e):
+        """AI가 함께 고른 트리거를 발동하기 직전에 그래도 발동할지 (앞의 발동으로 상황이 바뀌었을 때 — HeuristicAI.keep_trigger, 없으면 그대로)"""
+        f = getattr(self.p[p].ai, 'keep_trigger', None)
+        return f is None or f(self, p, c, e)
 
     def after_action(self, actor):
         """행동(소환 등) 뒤: 트리거 → 없으면 상대에게 우선권"""
