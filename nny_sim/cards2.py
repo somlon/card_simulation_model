@@ -1,7 +1,7 @@
 """카드 구현 2차: 공용 8종 · 격투가 11종 (격투가는 2026-10-08 카드 자료로 갱신 — 아래 격투가 절 머리말).
 번성충 기생 축 6종은 사용자 지시(2026-10-13)로 카드 풀에서 삭제되어 구현도 지움 (git 기록에 남아 있음)."""
 from engine import Effect, link_targets
-from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO, text_attrs, granted_lines
+from cards import card, best, value, own_turn, main_ok, opp_cards, oath, last_opp_link, threat, cause_card, ev_is, bsc_common, field_pick, VETO, text_attrs, granted_lines, hand_add
 
 
 def targets(g, p, cands, src=None):
@@ -97,7 +97,7 @@ def _(c):
 @card('사기 감지')
 def _(c):
     c.effects = [Effect(1, 'trigger', ('hand', 'field'), spell_act=True,
-        cond=lambda g, c, p, ev: ev_is(ev, 'added_to_hand') and ev['prev'] in ('main', 'upper') and ev['player'] == 1 - p and ev['card'].zone == 'hand',
+        cond=lambda g, c, p, ev: (h := hand_add(ev)) is not None and h[2] in ('main', 'upper') and h[1] == 1 - p and h[0].zone == 'hand',   # 드로우 포함 (사용자 답변 2026-10-28)
         res=lambda g, c, p, l: l.ctx['ev']['card'].zone == 'hand' and (g.L(f'{l.ctx["ev"]["card"]} 묘지로'), g.send_grave(l.ctx['ev']['card'])),
         score=lambda g, c, p, ev: 40 + 10 * value(g, ev['card']) if isinstance(ev, dict) and 'card' in ev else 40, threat=700)]
 

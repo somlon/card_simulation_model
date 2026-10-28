@@ -165,9 +165,19 @@ class Game:
                        'untargetable_opp', 'immune_opp_untargeted', 'immune_opp')
     def mod_applies(self, c, src):
         """src의 [지속] 증감(atk_mod · def_mod)이 c에 적용되는가: 자기 자신 · 무효화된 카드 · 뒷면 카드(내성 비활성, Q45)는 그대로,
-        내성 플래그가 있으면 Game.immune으로 판정"""
-        if src is c or self.is_neg(c) or not c.faceup or not any(k in c.flags for k in self.MOD_IMMUNE_KEYS): return True
-        return not self.immune(c, src.controller, src)
+        내성 플래그가 있으면 Game.immune으로 판정 (Game.receives — 카드가 받는 [지속] 규칙과 같은 판정)"""
+        return self.receives(c, src)
+    def receives(self, x, src, rules=True):
+        """x가 src의 [지속]을 받는가 — 자기 자신 · 무효화된 카드 · 뒷면 카드(내성 비활성, Q45)는 받고, 내성 플래그가 있으면 Game.immune으로 판정.
+        「다른 카드의 효과를 받지 않는다」 카드는 자기편 카드의 이로운 [지속]도 받지 않는다(사용자 답변 2026-10-27) — 공격력 · 수비력 증감(mod_applies)과 같은 판정"""
+        if src is x or self.is_neg(x) or not x.faceup or not any(k in x.flags for k in self.MOD_IMMUNE_KEYS): return True
+        return not self.immune(x, src.controller, src, rules=rules)
+    # 카드가 받는 [지속] 규칙 — 규칙 함수의 첫 인자가 그 규칙을 받는 카드: 파괴 내성 · 효과 내성 부여 · 직접공격 · 2회 공격 · 공격 대상이 되지 않음.
+    # 받는 카드가 규칙을 주는 카드의 효과를 받지 않으면 적용하지 않는다(Game.receives). 플레이어가 받는 규칙(금지 · 코스트 배수 등)은 해당 없음
+    CARD_RULES = frozenset({'indestructible', 'immune', 'direct_attack', 'double_attack', 'no_battle_target'})
+    def rule_reaches(self, key, a, src):
+        if key not in self.CARD_RULES or not a or not isinstance(a[0], Card): return True
+        return self.receives(a[0], src, rules=key != 'immune')
     def atk(self, c):
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
         for src in self.srcs_with('atk_mod'):
@@ -181,7 +191,7 @@ class Game:
             f = src.def_mod
             if self.mod_applies(c, src) and self.mod_on(src, 'def_mod'): v += f(self, src, c)
         return max(0, v)
-    def immune(self, c, by, src=None):
+    def immune(self, c, by, src=None, rules=True):
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
         카드 자신의 [지속]이 정한 내성(무효화되면 사라짐):
           flags['immune_except'] = 카드명 — 「그 카드 이외의 카드의 효과를 받지 않는다」 (자기 자신의 효과는 받는다)
@@ -189,7 +199,8 @@ class Game:
           flags['immune_others'] — 「다른 카드의 효과를 받지 않는다」 (자신 · 상대 모두). src를 모르면 받지 않는 것으로 본다
           flags['immune_opp'] — 「이 카드는 상대의 효과를 받지 않는다」 [지속] (조건부면 callable — Game.flag). 발동하는 효과 · 아닌 효과([지속]) 모두
         뒷면 카드는 대상 지정 효과의 대상이 되지 않는다(정본 1-1, 사용자 답변 2026-10-22 Q45) — 자신 · 상대의 효과 모두, 대상을 지정하지 않는 효과는 받는다.
-        뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45)"""
+        뒷면 몬스터 자신의 효과는 모두 비활성 — 위 내성 플래그도 앞면일 때만 (Q45).
+        rules=False: 마지막의 내성 부여 [지속] 규칙(rule 'immune')은 보지 않는다 — 그 규칙 자신을 받을지 판정할 때(Game.rule_reaches)"""
         if self.on_field(c) and not c.faceup and by is not None:
             # 단 뒷면 마법은 예외적으로 제거 효과(그 카드를 파괴 · 묘지로 · 제외 · 패 · 덱으로)의 대상이 될 수 있다 — 다른 계열의 대상 효과는 불가
             # (Effect.removal_text — cards.Impl.attach, 사용자 답변 2026-10-23 PDF Q6)
@@ -215,7 +226,7 @@ class Game:
         if c.flags.get('immune_opp_until', -1) >= self.turn: return True
         if c.flags.get('immune_opp_perm') and self.on_field(c): return True
         if c.flags.get('immune_all_until', -1) >= self.turn: return True
-        return self.rule('immune', c, by)
+        return rules and self.rule('immune', c, by)
 
     def in_group(self, x, name):
         """x가 「name」 카드인가 (내성 「「X」 카드 이외의 카드의 효과를 받지 않는다」 판정): 카드군(groups).
@@ -437,7 +448,7 @@ class Game:
             n = self.cont_num(src, 'rule:' + key)
             if unlimited and self.cont_limit(src, n) is not None: continue
             if not self.cont_ready(src, n): continue
-            if f(self, src, *a) and (not use or self.cont_use(src, n, why or key, choose)): return True
+            if f(self, src, *a) and self.rule_reaches(key, a, src) and (not use or self.cont_use(src, n, why or key, choose)): return True
         return False
 
     # ── 존 이동 ──
@@ -868,7 +879,7 @@ class Game:
                 self.L(f'{pl.name} {"메인" if deck == "main" else "상급"} 덱이 비어 드로우하지 못함', 'sys'); return
             c = src.pop(); c.zone = 'hand'; pl.hand.append(c)
             self.L(f'{pl.name} 드로우 ({"상급" if src is pl.upper else "메인"}) {c}', 'draw')
-            self.emit('draw', player=p, card=c)
+            self.emit('draw', player=p, card=c, prev='upper' if src is pl.upper else 'main')
 
     def mill(self, p, n, deck=None, why='', fallback=False, chooser=None):
         """p의 덱 위에서부터 n장 제외 (제외 존은 앞면 공개, §10-7). 반환: 실제 제외 매수

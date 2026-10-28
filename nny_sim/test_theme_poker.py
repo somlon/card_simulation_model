@@ -185,6 +185,14 @@ class AllInTest(unittest.TestCase):
         self.assertIsNotNone(t.flags.get('level_set')); self.assertIsNotNone(t.flags.get('attr_set'))
         self.assertTrue(a.zone == 'grave' and b.zone == 'grave')
 
+    def test_pair_not_granted_to_immune_monster(self):
+        # 「다른 카드의 효과를 받지 않는」 몬스터는 자기편 스킬(올인 2번)의 부여 효과도 받지 않는다 (사용자 답변 2026-10-27)
+        g = make()
+        a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand'); mon(g, '솔루나 시아', 1)
+        self.assertTrue(g.legal(0, a, eff(a, 21)))
+        a.flags['immune_all_until'] = g.turn   # 고대의 봉인이 남기는 표시: 턴 종료 시까지 다른 카드의 효과를 받지 않는다
+        self.assertFalse(g.legal(0, a, eff(a, 21)))
+
     def test_pair_needs_skill(self):
         g = make()
         a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand'); mon(g, '솔루나 시아', 1)
@@ -261,13 +269,14 @@ class SpellTest(unittest.TestCase):
         run(g)
         self.assertEqual(x.zone, 'banish')
 
-    def test_hammer_ignores_draw(self):
+    def test_hammer_includes_draw(self):
+        # 「덱 또는 묘지에서 카드를 패에 넣었을 경우」에 드로우도 든다 (사용자 답변 2026-10-28 — cards.hand_add)
         g = make(ai=Yes)
         h = spell(g, '포커짐승들의 쇠망치', 0, faceup=False); h.set_turn = 1
         x = put(g, '솔루나 시아', 1, 'main')
         g.turn_player = 1
-        g.draw(1, 1); run(g)
-        self.assertEqual(x.zone, 'hand')
+        g.draw(1, 1, 'main'); run(g)
+        self.assertEqual(x.zone, 'banish')
 
 
 class MonsterTest(unittest.TestCase):

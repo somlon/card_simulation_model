@@ -105,6 +105,13 @@ def cause_card(ev):
     ca = ev.get('cause')
     return ca[1] if ca else None
 def ev_is(ev, kind): return isinstance(ev, dict) and ev.get('kind') == kind
+def hand_add(ev):
+    """「패에 넣었을 때」 사건이면 (카드, 넣은 플레이어, 출발 영역), 아니면 None — 효과로 덱 · 묘지에서 패에 넣기(added_to_hand)와
+    드로우(draw — 턴 시작 드로우 포함, 라운드 시작 패 · 멀리건 제외) 모두 (사용자 답변 2026-10-28: 「패에 넣었을 때」에 드로우 포함 —
+    데이터버그 플라이 · 사기 감지 · 염원 · 트랩: 거짓 샘물 · 포커짐승들의 쇠망치)"""
+    if ev_is(ev, 'added_to_hand'): return ev['card'], ev['player'], ev['prev']
+    if ev_is(ev, 'draw') and ev.get('turn', 0) >= 1: return ev['card'], ev['player'], ev.get('prev', 'main')
+    return None
 
 
 # ── 카드 텍스트 판정 (여러 카드가 같은 문구를 쓰는 규칙은 텍스트에서 한 번에 판정한다 — CLAUDE.md R6) ──

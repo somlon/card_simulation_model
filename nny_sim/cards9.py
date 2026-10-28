@@ -58,7 +58,7 @@ ASSUME:
   특수소환하지 못하면 「그 후」 이하도 없다. 「그 2장」(재정) 중 상대 카드는 필드에 있을 때만 — 마법 존의 마법 카드는 세트 상태로 필드에 남는다
   (일반 · 신속 · 트리거 마법도 처리 후 묘지로 가지 않음). 패 · 묘지 · 스킬 존에서 발동한 효과면 깜짝상자만 뒷면이 된다.
   발동하려면 자신의 덱에 「던전마스터 깜짝상자」가 있고 특수소환할 자리가 있어야 한다.
-- 트랩: 거짓 샘물 「카드를 패에 넣었을 때」 = 덱 · 묘지에서 효과로 패에 넣은 사건(added_to_hand — 드로우 제외, 사기 감지와 같음).
+- 트랩: 거짓 샘물 「카드를 패에 넣었을 때」 = 덱 · 묘지에서 효과로 패에 넣은 사건과 드로우(턴 시작 드로우 포함 — 사용자 답변 2026-10-28, cards.hand_add).
   「카드를 효과로 제거」 = 필드의 카드를 필드에서 벗어나게 함(파괴 · 묘지 · 제외 · 덱 · 패 · 효과에 의한 릴리스) — 코스트는 포함하지 않음.
   「필드」 = 몬스터 존(공유 존 포함) · 마법 존 · 필드 존, 패 · 묘지 · 스킬 존은 들지 않는다 (사용자 답변 2026-10-22 Q37 — 지금 구현과 같음).
 - 트랩 리페어 시스템: 「3장까지」는 1 ~ 3장(최소 1장 — 사용자 답변 2026-10-22, 시골쥐 2번과 같은 규칙), AI가 최대한(덱으로 되돌릴 가치가 큰 순).
@@ -88,7 +88,7 @@ ASSUME:
 - 사건 'flip'(뒷면 → 앞면, 이 모듈이 낸다 — 엔진 변경 아님).
 """
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, field_pick
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, field_pick, hand_add
 from cards2 import targets
 
 DM = '던전마스터'; TRAP = '트랩'; DARK = '다크'
@@ -572,7 +572,8 @@ def _(c):
 @card(SPRING)
 def _(c):
     def cond(g, c, p, ev):
-        return ev_is(ev, 'added_to_hand') and ev['player'] == 1 - p
+        h = hand_add(ev)   # 드로우 포함 (사용자 답변 2026-10-28)
+        return h is not None and h[1] == 1 - p
     def res(g, c, p, l):
         q = 1 - p; t0 = g.turn; name = c.name
         def guard(g2):   # 「상대는 전투로 몬스터를 파괴할 수 없다」 = 이 턴 동안 자신 필드의 몬스터는 전투로 파괴되지 않는다
