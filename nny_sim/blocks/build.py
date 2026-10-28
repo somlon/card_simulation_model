@@ -14,7 +14,9 @@ from blocks import text as T, lib as L, dsl as D, status as ST
 
 KIND = {'신속': 'quick', '트리거': 'trigger', '유언': 'lastwill', '소환': 'summon', '전투': 'battle', '지속': 'cont', '제약': 'restrict', '': 'ignition'}
 SPELL_ACT_SUB = ('일반', '신속', '트리거')
-DISRUPT = {'destroy', 'move', 'release', 'negate_link', 'negate_card'}
+DISRUPT = {'destroy', 'move', 'release', 'negate_link', 'negate_card', 'equip', 'equip_card'}
+# 가치 함수가 그때 상황을 직접 보는 블록(쓸 때가 아니면 가치가 0 이하) — 점수의 시점 보정을 하지 않는다
+AWARE = {'no_attack', 'floating', 'replace', 'status', 'negate_link', 'negate_chain', 'no_damage'}
 
 
 class TemplateMismatch(Exception):
@@ -132,7 +134,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     conds = list(kw.get('cond', ()))
     fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw)
     e = Effect(num, kind, f['zones'], cond=fns['cond'], cost=fns['cost'] if costs else None, res=fns['res'], score=fns['score'],
-               opt=f['opt'], mandatory=f['mandatory'], threat=kw.get('threat', threat_of(dos)),
+               opt=f['opt'], mandatory=f['mandatory'], threat=kw.get('threat', threat_of(dos + [b for b in costs if b.name != 'pick'])),
                label=kw.get('label', ''), spell_act=f['spell_act'])
     for a in ('no_resp', 'unnegatable', 'hand_ok', 'facedown_ok'):
         if notes.get(a) or kw.get(a): setattr(e, a, True)
@@ -183,13 +185,14 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw):
         tests.append(f'{G.fn(L.TESTS[b.name])}(g, c, p, ev, {G.const(b.k)})')
     if notes.get('phase_only'):
         tests.append(f'g.phase == {notes["phase_only"]!r}')
-    for b in costs + [x for x in dos if not x.k.get('may')]:
+    for b in costs + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
         if b.name == 'choice':
             tests.append(f'{G.fn(L.TESTS["cond_any_option"])}(g, c, p, ev, {G.const(b.k)})'); continue
         if b.name in ('branch',) or b.name not in L.BLOCKS: continue
         bd = L.BLOCKS[b.name]
         if bd.can is L._always: continue
-        tests.append(f'{G.fn(bd.can)}(g, c, p, ev, {G.const(b.k)})')
+        k = dict(b.k, cost=True) if b in costs and b.name != 'pick' else b.k
+        tests.append(f'{G.fn(bd.can)}(g, c, p, ev, {G.const(k)})')
         if b.name != 'pick' and 'ref' in b.k: continue
     src = ['def cond(g, c, p, ev):', '    return ' + (' and '.join(tests) if tests else 'True')]
     # cost
@@ -204,9 +207,10 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw):
     vals = [_val_expr(G, dos)]
     cvals = [f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})' for b in costs if b.name not in ('pick', 'keep_link')]
     info = dict(kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
-                                         for b in _flat(dos)), spell_act=f['spell_act'], mandatory=f['mandatory'])
+                                         for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
+                aware=any(b.name in AWARE for b in _flat(dos)))
     v = ' + '.join(vals) or '0.0'
-    cv = (' - (' + ' + '.join(cvals) + ')') if cvals else ''
+    cv = (' + ' + ' + '.join(cvals)) if cvals else ''   # 코스트 블록의 가치는 「그 코스트로 바뀌는 형세」 — 자신 자원이면 음수, 상대 카드를 쓰면 양수
     src += ['def score(g, c, p, ev):', f'    return L.timing(g, c, p, ev, {G.const(info)}, {v}{cv})']
     code = '\n'.join(src)
     exec(compile(code, f'<blocks {spec.code} {spec.key}>', 'exec'), G.ns)
@@ -260,7 +264,9 @@ def _steps(G, steps, depth):
                 out += _steps(G, b.k['other'], depth + 1)
             continue
         call = f'{G.fn(L.BLOCKS[b.name].run)}(g, c, p, l, {G.const(b.k)})'
-        if b.k.get('may'):
+        if b.k.get('soft'):   # 고를 것이 없으면 건너뛰고 다음 처리로(숨은 정보를 확인한 뒤 고르기 · 정리 처리)
+            out.append(f'{pad}{call}')
+        elif b.k.get('may'):
             out.append(f'{pad}if L.wants(g, c, p, l, {G.const(b)}): {call}')
         else:
             out.append(f'{pad}if not {call}: return')
@@ -309,3 +315,19 @@ def do_grant(g, c, p, l, k):
 
 
 L.block('grant', can=L.can_subjects, val=lambda g, c, p, ev, k: 2.0 * L.UNIT, threat=600)(do_grant)
+
+
+# ═══════════════════════ 체인 밖 처리 (지연 효과 · [지속] 처리 · 장착 해제) ═══════════════════════
+_STEPS = {}
+
+
+def steps_fn(steps):
+    """처리 블록 목록 → 함수 f(g, c, p, l) (코드 생성 · 블록 목록마다 한 번)"""
+    key = id(steps)
+    hit = _STEPS.get(key)
+    if hit is not None and hit[0] is steps: return hit[1]
+    G = _Gen()
+    src = ['def run(g, c, p, l):'] + (_steps(G, list(steps), 1) or ['    pass'])
+    exec(compile('\n'.join(src), '<blocks steps>', 'exec'), G.ns)
+    _STEPS[key] = (steps, G.ns['run'])
+    return G.ns['run']

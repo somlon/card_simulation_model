@@ -77,3 +77,44 @@ def place_effect(c):
         if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
         return 3.0 * L.UNIT
     return Effect(0, 'ignition', ('hand', 'field'), spell_act=True, score=sc, threat=400, label='카드 발동(놓기)')
+
+
+# ═══════════════════════ 카드 자신의 규칙 · 공격력 증감 · 종료 처리 · 장착 해제 ═══════════════════════
+@kind('self_rule')
+def k_self_rule(c, num, k, notes, kw):
+    """이 카드 자신에게만 걸리는 엔진 규칙 — 'direct_attack'(「이 카드는 상대 몬스터가 존재해도 직접공격할 수 있다」) · 'double_attack' …"""
+    add_rule(c, k['key'], lambda g, src, x, *a: x is src, num)
+
+
+@kind('stat_mod')
+def k_stat_mod(c, num, k, notes, kw):
+    """[지속] 공격력 · 수비력 증감 — 받는 카드(to: 집합 조건, 이 카드 컨트롤러 기준) × 양(amt, 또는 per: 집합 조건들의 카드 수 × amt)"""
+    to, amt, per = k['to'], k['amt'], k.get('per')
+    def mod(g, src, x):
+        p = src.controller
+        if not (g.on_field(x) and x.faceup and L.match_card(g, src, p, x, to) and x.controller in L.sides(p, to.get('side', 'own'))): return 0
+        if per is None: return amt
+        return amt * sum(len(L.cards_in(g, src, p, sc)) for sc in per)
+    setattr(c, 'def_mod' if k.get('stat') == 'def' else 'atk_mod', mod)
+    note_num(c, 'def_mod' if k.get('stat') == 'def' else 'atk_mod', num)
+
+
+@kind('end_process')
+def k_end_process(c, num, k, notes, kw):
+    """[지속] 「(각 턴 · 자신 턴)의 종료 시에, …한다」 — 발동이 아닌 종료 단계 처리(Game.play_turn의 end_process, 체인 · 1턴 1회 발동 없음)"""
+    steps, whose = tuple(k['steps']), k.get('whose', 'both')
+    def end_process(g, c):
+        p = c.controller
+        if whose != 'both' and (g.turn_player == p) != (whose == 'own'): return
+        L.steps_run(g, c, p, steps)
+    chain_hook(c, 'end_process', end_process)
+    note_num(c, 'end_process', num)
+
+
+@kind('host_leave')
+def k_host_leave(c, num, k, notes, kw):
+    """「이 카드가 장착된 몬스터가 필드에서 벗어났을 경우, …」 — 장착 대상이 떠날 때 처리(engine._remove의 on_host_leave)"""
+    steps = tuple(k['steps'])
+    def host_leave(g, e, host):
+        g.L(f'{e} 장착 몬스터 {host} 이탈 → 처리', 'sys'); L.steps_run(g, e, e.controller, steps)
+    c.on_host_leave = host_leave
