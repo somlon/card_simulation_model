@@ -317,6 +317,7 @@ UNIT = 15.0          # 카드 가치(cards.value) 1 = 15점 — 예전 손 점�
 HAND_CARD = 2.0      # 패 1장(서치)의 가치 (cards.value 단위)
 DRAW_CARD = 1.6      # 드로우 1장의 가치
 LETHAL = 1000.0      # 결착(상대 HP 0)
+SELF_DISCARD = 0.5   # 처리로 이 카드 자신을 패에서 버릴 때 잃는 가치(그 카드 가치의 비율)
 HP_UNIT = 50.0       # 대미지 50 = 1점
 
 
@@ -379,18 +380,30 @@ def v_among(g, c, p, k):
     return min(1.0, f * n)
 
 
+LW_FLAT = 0.7 * HAND_CARD    # [유언] 가치를 블록으로 셀 수 없을 때(옛 함수 · 중첩 미리 보기)의 기대 가치 (카드 가치 단위)
+_LW_DEPTH = [0]
+
+
 def lw_bonus(g, p, x, prev):
-    """묘지로 가면 발동할 [유언]이 있는 자신 카드의 기대 가치(그 [유언]의 단서 — 덱 · 필드에서 보내졌을 때 등은 블록 시점 조건으로 본다)"""
+    """묘지로 가면 발동할 [유언]이 있는 자신 카드의 기대 가치 — 조립된 [유언]은 그 블록 가치(B안, 한 단계까지 — 그 안의 [유언]은 고정값),
+    옛 함수는 고정값. [유언]의 단서(덱 · 필드에서 보내졌을 때 발동하지 않음)는 보내지기 전 영역 prev로 본다"""
+    best = 0.0
     for e in x.effects:
         if e.kind != 'lastwill': continue
         sp = getattr(e, 'spec', None)
-        if sp is not None:
-            from blocks import text as T
-            nt = T.notes(T.sentences(x.d).get(sp.key, ''))
-            if nt.get('not_from_deck') and prev in ('main', 'upper'): continue
-            if nt.get('not_from_field') and prev in FIELD_Z: continue
-        return 0.7 * HAND_CARD * UNIT
-    return 0.0
+        if sp is None:
+            best = max(best, LW_FLAT * UNIT); continue
+        from blocks import text as T
+        nt = T.notes(T.sentences(x.d).get(sp.key, ''))
+        if nt.get('not_from_deck') and prev in ('main', 'upper'): continue
+        if nt.get('not_from_field') and prev in FIELD_Z: continue
+        if _LW_DEPTH[0]:
+            best = max(best, LW_FLAT * UNIT); continue
+        _LW_DEPTH[0] += 1
+        try: v = e.score(g, x, p, {'kind': 'to_grave', 'card': x, 'prev': prev})
+        finally: _LW_DEPTH[0] -= 1
+        best = max(best, v)
+    return min(best, LETHAL / 10)
 
 
 def deck_need(g, q):
@@ -410,8 +423,13 @@ def v_move(g, c, p, ev, k):
     out = 0.0
     for x in xs:
         mine = g.side_of(x) == p
+        if x is c and spent_spell(c) and dest != 'hand':   # 발동한 일반 · 신속 · 트리거 마법 자신 — 처리 뒤 어차피 묘지로 가는 카드
+            out += deck_need(g, p) if dest == 'deck' else 0.0
+            continue
         if g.on_field(x):
             out += v_loss(g, p, [x]) * (0.8 if dest == 'hand' else 1.0)
+        elif x is c and x.zone == 'hand' and dest == 'grave' and not k.get('cost'):
+            out -= SELF_DISCARD * value(g, x) * UNIT   # 「이 카드를 패에서 버린다」가 효과의 처리 — 버리는 것이 이 카드의 쓰임(잃는 것은 필드에 낼 가치의 일부)
         elif x.zone == 'hand':
             out += (-1.0 if mine else 1.0) * HAND_CARD * UNIT * 0.8
         elif dest == 'hand':
@@ -422,6 +440,10 @@ def v_move(g, c, p, ev, k):
             out += (-0.1 if mine else 0.1) * UNIT
         if mine and dest == 'grave': out += lw_bonus(g, p, x, x.zone)
     return out
+
+
+def spent_spell(c):
+    return c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') and not c.flags.get('as_spell')
 
 
 def th_move(k):
@@ -515,7 +537,13 @@ def v_mill(g, c, p, ev, k):
     return out
 
 
-@block('mill', val=v_mill, threat=lambda k: 600 if k.get('who') in ('opp', 'both') else 100)
+def can_mill(g, c, p, ev, k):
+    """「메인 덱 위에서부터 n장을 묘지로 보낸다」: 메인 덱에 n장 있어야 발동(재정 G2). 덱 위 제외(세리)는 부족분 규칙 · 덱아웃이 있어 늘 발동"""
+    if k.get('dest') != 'grave' or k.get('cost'): return True
+    return len(g.p[p if k.get('who', 'self') == 'self' else 1 - p].main) >= n_of(k)
+
+
+@block('mill', can=can_mill, val=v_mill, threat=lambda k: 600 if k.get('who') in ('opp', 'both') else 100)
 def do_mill(g, c, p, l, k):
     """A2 이동 「덱 위 보내기」 — dest 'banish'(제외, Game.mill) · 'grave'(메인 덱 위에서 묘지로, Game.dump).
     who 'self' · 'opp' · 'both'(「서로 자신의 덱의 …」 — 각자 고름), deck 'main' · 'upper' · None(덱 미지정 — 고르는 쪽: 주어, §6-7),
@@ -558,9 +586,11 @@ def can_special(g, c, p, ev, k):
 def v_special(g, c, p, ev, k):
     if not g.free_m(p) and g.shared is not None: return 0.0
     if 'ref' in k:
-        xs = [c] if k['ref'] == 'SELF' else []
+        xs = [c] if k['ref'] == 'SELF' else [ev['card']] if k['ref'] == 'EV' and isinstance(ev, dict) and ev.get('card') is not None else []
     else:
-        xs = sorted(summon_cands(g, c, p, k), key=lambda x: -value(g, x))[:n_of(k)]
+        prev = g.src; g.src = c   # 미리 보기도 이 효과가 소환하는 것으로 판정(「스킬 카드의 효과로만」 · 같은 이름 규칙 — Game.can_special)
+        try: xs = sorted(summon_cands(g, c, p, k), key=lambda x: -value(g, x))[:n_of(k)]
+        finally: g.src = prev
     return sum(value(g, x) for x in xs) * UNIT
 
 
@@ -572,7 +602,9 @@ def do_special(g, c, p, l, k):
         xs = ref_cards(g, c, p, l, k['ref'])
         if k['ref'] == 'SELF':
             xs = [x for x in xs if x.zone in k.get('src_zone', ('hand', 'grave', 'main', 'upper', 'banish'))]
-        done = [x for x in xs if g.special_summon(x, p, pos)]
+        rs = k.get('ref_scope')
+        if rs is not None: xs = [x for x in xs if x in cards_in(g, c, p, rs)]
+        done = [x for x in xs if (k['ref'] == 'SELF' or g.can_special(x, p)) and g.special_summon(x, p, pos)]
     else:
         n = 99 if k.get('all') else num(l, k.get('n', 1)); done = []
         while len(done) < n:
@@ -818,6 +850,7 @@ def timing(g, c, p, ev, info, v):
     [신속]은 언제 쓰는가가 판단이다: 자신 턴 진행 · 정비 단계(체인 없음)에는 그대로, 상대 발동에 응답할 때는 상대 카드를 없애거나 무효로 하는
     효과(disrupt)만, 자신 전투 단계에는 방해 효과만(상대 몬스터를 치우고 공격), 상대 턴에는 방해 효과를 줄여서 · 상대 종료 단계에는 자원 효과를 줄여서"""
     if v <= 0 or info['kind'] != 'quick' or info.get('aware'): return v
+    if any(lk.card is c and lk.eff.num == info.get('num') for lk in g.chain): return 0.0   # 같은 효과를 체인에 거듭 쌓지 않는다(앞 발동이 처리되면 형세가 바뀐다)
     own = g.turn_player == p
     if g.chain and g.chain[-1].player != p: return v if info['disrupt'] else 0.0
     if own:
@@ -825,6 +858,12 @@ def timing(g, c, p, ev, info, v):
         return 0.8 * v if g.phase == '전투' and info['disrupt'] else 0.0
     if g.phase == '종료': return 0.6 * v
     return 0.7 * v if info['disrupt'] else 0.0
+
+
+def wants_cost(g, c, p, l, k):
+    """「…하고 발동할 수도 있다」 코스트를 낼지 — 코스트 가치 + 그 코스트로 더 얻는 처리(k['gain'])의 가치가 양수일 때"""
+    ev = l.ctx.get('ev')
+    return BLOCKS[k['blk']].val(g, c, p, ev, k) + v_steps(g, c, p, ev, k.get('gain', ())) > 0
 
 
 def wants(g, c, p, l, b):
@@ -1103,6 +1142,7 @@ def do_place(g, c, p, l, k):
     for _ in range(n):
         if 'ref' in k:   # 앞에서 정한 그 카드(희생의 성녀 · 기적의 전조)
             pool = [x for x in ref_cards(g, c, p, l, k['ref']) if x.zone not in FIELD_Z and (x.type == '필드' or g.free_s(p))]
+            if k.get('ref_scope') is not None: pool = [x for x in pool if x in cards_in(g, c, p, k['ref_scope'])]
         else:
             pool = [x for x in pick_pool(g, c, p, k['scope'], l) if x.type == '필드' or g.free_s(p)]
         if not pool: break
@@ -1116,7 +1156,7 @@ def do_place(g, c, p, l, k):
             if k.get('set') and k.get('act_this_turn'): x.flags['act_this_turn'] = g.turn
             g.L(f'{src}{x} {"세트" if k.get("set") else "앞면으로 놓음"}')
         done += 1
-    if done and 'scope' in k and any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])): g.shuffle(p)
+    if done and k.get('scope') is not None and any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])): g.shuffle(p)
     return done == n or (k.get('upto') and done > 0)
 
 
@@ -1337,7 +1377,7 @@ def kinds_pick(g, c, p, k):
     """「「A」 · 「B」 … 카드를 각각 n장씩」(per) · 「합계 n장 (같은 종류는 1장까지)」(total) — 고를 카드 목록, 못 고르면 None.
     두플리카토르(코스트 매수 2배)면 각각 2n장 · 합계 2n장(같은 종류 2장까지 — ASSUME). 카드 1장은 한 종류에만 쓴다"""
     m = 2 if k.get('cost') and g.rule('cost_double', p) else 1
-    pool = cards_in(g, c, p, k['scope'])
+    pool = [x for x in cards_in(g, c, p, k['scope']) if not g.on_field(x) or value(g, x) <= KINDS_FIELD_MAX]
     ai = g.p[p].ai; out = []
     if 'per' in k:
         for a in k['groups']:
@@ -1354,7 +1394,30 @@ def kinds_pick(g, c, p, k):
     return out if len(out) >= total else None
 
 
-@block('kinds', can=lambda g, c, p, ev, k: kinds_pick(g, c, p, k) is not None, val=lambda g, c, p, ev, k: 0.0, threat=0)
+KINDS_FIELD_MAX = 2.0   # AI: 「자신 필드/묘지에서 … 제외」 코스트에 쓰는 필드의 카드는 카드 가치가 이 이하인 것만(기적의 영웅 같은 큰 카드는 남김)
+
+
+def kinds_progress(g, c, p, k, without=()):
+    """「각각 n장씩」 코스트를 얼마나 모았는가(0 ~ 1) — 종류마다 min(장수, n) / n 의 평균"""
+    pool = [x for x in cards_in(g, c, p, k['scope']) if x not in without]
+    need = k['per'] * (2 if g.rule('cost_double', p) else 1)
+    return sum(min(need, sum(1 for x in pool if grp(x, a))) / need for a in k['groups']) / len(k['groups'])
+
+
+def v_kinds(g, c, p, ev, k):
+    """코스트로 제외하는 카드의 가치 + 다른 효과가 「각각 n장씩」 모으는 카드를 쓰면 그 효과까지 모은 만큼 손해(모은 비율 감소 × 그 효과 점수)"""
+    xs = kinds_pick(g, c, p, k) or []
+    v = sum(-value(g, x) * UNIT if g.on_field(x) else -0.1 * UNIT for x in xs)
+    if not xs or 'per' in k: return v
+    for e in list(c.effects) + (list(g.p[p].skill.effects) if g.p[p].skill is not None and g.p[p].skill is not c else []):
+        for k2 in getattr(e, 'kinds_costs', ()):
+            if 'per' not in k2: continue
+            drop = kinds_progress(g, c, p, k2) - kinds_progress(g, c, p, k2, xs)
+            if drop > 0: v -= drop * max(0.0, e.score(g, c, p, ev))
+    return v
+
+
+@block('kinds', can=lambda g, c, p, ev, k: kinds_pick(g, c, p, k) is not None, val=v_kinds, threat=0)
 def do_kinds(g, c, p, l, k):
     """S1 고르기(종류별 매수) + 이동 — 코스트 「… 카드를 각각 2장씩 제외하고」 · 「합계 3장 제외하고 (같은 종류는 1장까지)」"""
     xs = kinds_pick(g, c, p, k)
@@ -1375,23 +1438,44 @@ def cool_set(g, c, p, num):
     return True
 
 
-# 코인 효과 변경(행운의 도적 2번 등 — 「자신의 「X」 카드의 효과를 「…」로 변경할 수 있다」 [지속]): 처리 때 바꿀지
+# A15 효과 변경 [지속](「자신의 「X」 카드의 효과를 「…」로 변경할 수 있다」 — status.k_swap): 처리 때 바꿀지
 SWAP_DECK_THIN = 12    # AI: 메인 덱이 이만큼 이하로 얇으면 바꾼다(덱아웃 방지 — 예전 coin_replace_pick과 같은 기준)
+SWAP_KEEP = 2 * UNIT   # AI: 원래 효과의 점수가 이 이상이면 바꾸지 않는다
 
 
-def swap_ok(g, c, p, k):
-    if not g.p[p].main or len(g.p[p].main) > SWAP_DECK_THIN: return False
-    if not g.rule(k['rule'], p): return False
-    if not g.rule(k['rule'], p, use=True, choose=False, why=f'{c.name} 효과 변경'): return False
-    g.L(f'판단[{g.pname(p)}] {c}의 효과를 「{k.get("label", "…")}」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
-    return True
+def swapped(g, c, p, l):
+    """처리 시작 때: 이 효과를 바꿀 수 있는 [지속](규칙 'effect_swap' — 받는 카드 c)이 있고 AI가 바꾸기로 하면 바뀐 처리만 하고 True.
+    바뀐 효과는 그 카드 자신의 효과(재정 Q59)이고 원래 처리는 하지 않는다(코인 1번을 바꾸면 코인은 패에 남는다 — 사용자 답변 2026-10-20)"""
+    for src in g.srcs_with('rule:effect_swap'):
+        f = src.rules.get('effect_swap')
+        if f is None or src.controller != p or not f(g, src, p, c): continue
+        if not g.p[p].main or len(g.p[p].main) > SWAP_DECK_THIN: return False
+        if l.eff is not None and l.eff.score(g, c, p, l.ctx.get('ev')) >= SWAP_KEEP: return False   # 원래 효과가 큰 것(기적의 영웅 특수소환 등)은 그대로
+        if not g.rule('effect_swap', p, c, use=True, choose=False, why=f'{c.name} 효과 변경'): return False
+        g.L(f'판단[{g.pname(p)}] {src.name}: {c}의 효과를 「{f.label}」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
+        from blocks import build
+        build.steps_fn(f.steps)(g, c, p, l)
+        return True
+    return False
 
 
 def deck_pick_grave(g, c, p, l, k):
-    """「메인 덱에서 카드 1장을 묘지로 보낸다」(위에서부터가 아님) — AI: [유언]이 있는 카드 · 우선순위 높은 카드"""
-    if not g.p[p].main: return False
-    x = max(g.p[p].main, key=lambda x: (any(e.kind == 'lastwill' for e in x.effects), g.p[p].ai.card_pri(g, p, x)))
-    g.deck_to_grave(p, x, c.name); return True
+    """「메인 덱에서 카드 n장을 묘지로 보낸다」(위에서부터가 아님) — AI: [유언] 기대 가치가 큰 카드 · 우선순위 높은 카드"""
+    done = 0
+    for _ in range(num(l, k.get('n', 1))):
+        if not g.p[p].main: break
+        x = max(g.p[p].main, key=lambda x: (lw_bonus(g, p, x, 'main'), g.p[p].ai.card_pri(g, p, x)))
+        g.deck_to_grave(p, x, c.name); done += 1
+    return done > 0
 
 
 BLOCKS['deck_pick_grave'] = BlockDef('deck_pick_grave', deck_pick_grave, _always, lambda g, c, p, ev, k: 5.0, lambda k: 100)
+
+
+@test('cond_ev_back')
+def t_ev_back(g, c, p, ev, k):
+    """「묘지로 보내진 카드에 따라 … 자신 필드에 특수소환 · 놓는다 · 세트한다」를 할 수 있는가 — 몬스터는 특수소환할 수 있어야, 마법은 놓을 자리(필드 마법은 필드 존)"""
+    x = ev.get('card') if isinstance(ev, dict) else None
+    if x is None: return False
+    if x.is_monster(): return g.can_special(x, p)
+    return x.type == '필드' or bool(g.free_s(p))

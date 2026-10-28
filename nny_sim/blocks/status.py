@@ -161,8 +161,10 @@ def k_exclusive(c, num, k, notes, kw):
 # ═══════════════════════ 솔루나에서 더한 것 ═══════════════════════
 @kind('effect_only')
 def k_effect_only(c, num, k, notes, kw):
-    """[제약] 「이 카드는 카드의 효과로만 소환할 수 있다」 — 소환 조건이라 패 · 덱 · 묘지에서도 판정(flags['effect_only'] — 일반소환 불가)"""
+    """[제약] 「이 카드는 카드의 효과로만 소환할 수 있다」 — 소환 조건이라 패 · 덱 · 묘지에서도 판정(flags['effect_only'] — 일반소환 불가).
+    by='skill': 「스킬 카드의 효과로만 특수소환할 수 있다」(flags['ss_by_skill_only'] — Game.can_special)"""
     c.flags['effect_only'] = True
+    if k.get('by') == 'skill': c.flags['ss_by_skill_only'] = True
 
 
 @kind('grave_redirect')
@@ -188,3 +190,25 @@ def k_field_limit(c, num, k, notes, kw):
         from cards import grp
         return any(grp(x, a) and sum(1 for m in g.monsters(p) if m is not x and grp(m, a) and m.is_monster()) >= cap for a in groups)
     add_rule(c, 'no_special', lim, num); add_rule(c, 'field_limit', lim, num)
+
+
+# ═══════════════════════ 소원의 분수에서 더한 것 ═══════════════════════
+@kind('swap')
+def k_swap(c, num, k, notes, kw):
+    """[지속] A15 효과 변경 「자신의 「X」 카드의 효과를 「…」로 변경할 수 있다」 — 규칙 'effect_swap'(받는 카드 x). 처리 때 바꿀지는 lib.swapped(AI),
+    바뀐 처리 = k['steps']"""
+    to = k['to']
+    def fn(g, src, q, x):
+        return q == src.controller and x.controller == q and L.match_card(g, src, q, x, to)
+    fn.steps, fn.label = tuple(k['steps']), k.get('label', '…')
+    add_rule(c, 'effect_swap', fn, num)
+
+
+@kind('rule_to')
+def k_rule_to(c, num, k, notes, kw):
+    """[지속] 카드에 걸리는 엔진 규칙(CARD_RULES — 'double_attack' 등)을 집합 조건(to, 이 카드 컨트롤러 기준)에 맞는 필드의 카드에
+    (「자신 필드의 「용기」 몬스터는 2회 공격할 수 있다」). 받는 카드의 내성은 엔진 공통(Game.rule_reaches)"""
+    to = k['to']
+    def fn(g, src, x, *a):
+        return g.on_field(x) and x.controller in L.sides(src.controller, to.get('side', 'own')) and L.match_card(g, src, src.controller, x, to)
+    add_rule(c, k['key'], fn, num)

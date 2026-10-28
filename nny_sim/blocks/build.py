@@ -135,8 +135,8 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
         costs.insert(0, D.B('keep_link', **wa.k))
     dos = scoped(costs, list(kw.get('do', ())))
     conds = list(kw.get('cond', ()))
-    fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows_of(spec, d))
-    e = Effect(num, kind, f['zones'], cond=fns['cond'], cost=fns['cost'] if costs else None, res=fns['res'], score=fns['score'],
+    fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows_of(spec, d), num)
+    e = Effect(num, kind, f['zones'], cond=fns['cond'], cost=fns['cost'] if costs or notes.get('cooldown') else None, res=fns['res'], score=fns['score'],
                opt=f['opt'], mandatory=f['mandatory'], threat=kw.get('threat', threat_of(dos + [b for b in costs if b.name != 'pick'])),
                label=kw.get('label', ''), spell_act=f['spell_act'])
     for a in ('no_resp', 'unnegatable', 'hand_ok', 'facedown_ok'):
@@ -144,6 +144,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     for a in ('owner_only', 'procedure', 'opt_per_card', 'summon_negate', 'exclusive'):
         if kw.get(a): setattr(e, a, kw[a])
     if kw.get('grant_of'): e.grant_of = kw['grant_of']
+    e.kinds_costs = tuple(b.k for b in costs if b.name == 'kinds')   # 「각각 n장씩」 모으는 코스트(lib.v_kinds — 다른 효과가 쓰면 손해)
     pay = [b for b in costs if b.name not in ('pick', 'keep_link', 'oath')]
     if pay and all(b.k.get('transfer') or b.name == 'mill' for b in pay):
         # 델레가토르 1번: 상대가 대신 낼 수 있는 코스트만으로 된 효과 — 상대(q)가 낼 수 있는가(engine.Game.transfer_ok)
@@ -200,7 +201,7 @@ class _Gen:
         name = f'F{self.n}'; self.n += 1; self.ns[name] = f; return name
 
 
-def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=()):
+def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=1):
     G = _Gen()
     # cond: 시점 · 조건 · 단계 제한 · 재정 G2(코스트 · 처리 가능)
     tests = []
@@ -208,7 +209,9 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=()):
         tests.append(f'{G.fn(L.TESTS[b.name])}(g, c, p, ev, {G.const(b.k)})')
     if notes.get('phase_only'):
         tests.append(f'g.phase == {notes["phase_only"]!r}')
-    for b in costs + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
+    if notes.get('cooldown'):   # 「이 효과의 사용 후, 다음 턴까지 자신은 이 효과를 사용할 수 없다」(F05 — 발동하면 사용한 것)
+        tests.append(f'L.cool_ok(g, c, p, {num})')
+    for b in [x for x in costs if not x.k.get('may')] + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
         if b.name == 'choice':
             tests.append(f'{G.fn(L.TESTS["cond_any_option"])}(g, c, p, ev, {G.const(b.k)})'); continue
         if b.name in ('branch',) or b.name not in L.BLOCKS: continue
@@ -220,14 +223,19 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=()):
     src = ['def cond(g, c, p, ev):', '    return ' + (' and '.join(tests) if tests else 'True')]
     # cost
     src += ['def cost(g, c, p, l):']
+    if notes.get('cooldown'): src.append(f'    L.cool_set(g, c, p, {num})')
     for b in costs:
         k = dict(b.k); k['cost'] = b.name != 'pick'
-        src.append(f'    if not {G.fn(L.BLOCKS[b.name].run)}(g, c, p, l, {G.const(k)}): return False')
+        call = f'{G.fn(L.BLOCKS[b.name].run)}(g, c, p, l, {G.const(k)})'
+        if b.k.get('may'):   # 「…하고 발동할 수도 있다」 — 낼지는 AI(코스트 가치 + 더 얻는 처리), 내지 않아도 발동
+            src.append(f'    if L.wants_cost(g, c, p, l, {G.const(dict(k, blk=b.name))}): {call}')
+        else:
+            src.append(f'    if not {call}: return False')
     src.append('    return True')
     # res — 딸린 효과(follows)는 조건을 처리 시작 때 보고(「n번 효과 처리 시에 … 경우」), 본 처리 뒤에 처리한다(1턴 횟수는 그 번호로)
     if follows:
         src += ['def _main(g, c, p, l):'] + (_steps(G, dos, 1) or ['    pass'])
-        src += ['def res(g, c, p, l):']
+        src += ['def res(g, c, p, l):', '    if L.swapped(g, c, p, l): return']
         for i, (n2, opt2, c2, d2) in enumerate(follows):
             ok = [f'L.follow_ok(g, c, p, {n2}, {opt2!r})'] + [f'{G.fn(L.TESTS[b.name])}(g, c, p, l, {G.const(b.k)})' for b in c2]
             src.append(f'    _f{i} = ' + ' and '.join(ok))
@@ -237,14 +245,15 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=()):
             src.append(f'        L.follow_use(g, c, p, {n2}); g.L(f"  {n2}번 처리 (1번 처리 시 조건 충족 — 별도 발동 없음)")')
             src += _steps(G, d2, 2) or ['        pass']
     else:
-        src += ['def res(g, c, p, l):'] + (_steps(G, dos, 1) or ['    pass'])
+        src += ['def res(g, c, p, l):', '    if L.swapped(g, c, p, l): return'] + (_steps(G, dos, 1) or ['    pass'])
     # score (B안)
     vals = [_val_expr(G, dos)]
     for n2, opt2, c2, d2 in follows:   # 딸린 효과: 지금 조건이 맞고 이 턴 아직 쓰지 않았으면 그 가치도
         ok = ' and '.join([f'L.follow_ok(g, c, p, {n2}, {opt2!r})'] + [f'{G.fn(L.TESTS[b.name])}(g, c, p, ev, {G.const(b.k)})' for b in c2])
         vals.append(f'(({_val_expr(G, d2)}) if ({ok}) else 0.0)')
-    cvals = [f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})' for b in costs if b.name not in ('pick', 'keep_link')]
-    info = dict(kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
+    cvals = [(f'max(0.0, {G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)}) + {_val_expr(G, list(b.k.get("gain", ())))})' if b.k.get('may') else
+              f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})') for b in costs if b.name not in ('pick', 'keep_link')]
+    info = dict(num=num, kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
                                          for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
                 aware=any(b.name in AWARE for b in _flat(dos)))
     v = ' + '.join(vals) or '0.0'

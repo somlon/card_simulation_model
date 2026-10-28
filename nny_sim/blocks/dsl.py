@@ -142,8 +142,19 @@ def alt_normal(scope, n): return B('alt_normal', scope=scope, n=n)
 def exclusive(*nums): return B('exclusive', nums=nums)
 def mill(n, who='self', **k): return B('mill', n=n, who=who, **k)
 def control(**k): return B('control', **k)
-def effect_only(): return B('effect_only')
+def effect_only(by=None): return B('effect_only', by=by)
 def grave_redirect(cont=False): return B('grave_redirect', cont=cont)
 def card_flag(key, lasting=False, value=True): return B('card_flag', key=key, lasting=lasting, value=value)
 def field_limit(*groups, n=1): return B('field_limit', groups=groups, n=n)
 def ev_card(**f): return B('cond_ev_card', filter=S(**f))
+def swap(to, steps, label=''): return B('swap', to=to, steps=tuple(steps), label=label)
+def rule_to(key, to): return B('rule_to', key=key, to=to)
+def deck_to_grave(n=1): return B('deck_pick_grave', n=n)
+def kinds(scope, groups, dest='banish', **k): return B('kinds', scope=scope, groups=tuple(groups), dest=dest, **k)
+
+
+def recycle(group=None, n=1):
+    """「묘지(에서 · 의) 이 카드와 「X」(또는 다른) 카드 n장을 덱으로 되돌린다」 — 둘 다 할 수 있어야 발동(G2), 함께 되돌릴 카드는 다시 쓸 카드(harm=False)"""
+    f = dict(group=group) if group else {}
+    return [to_deck(ref='SELF', ref_scope=S('own', 'grave'), harm=False),
+            to_deck(scope=S('own', 'grave', not_self=True, **f), n=n, harm=False, shuffle=True)]
