@@ -266,6 +266,9 @@
     - 2026-10-28 ⑩ 던전마스터 완료 — `model/block-system` 144023a: t_dgms 18종, 뒷면 전환 · 뒤집기 · 재배치 · [유언] 변경 [지속] · 자동 파괴 [지속] · 처리로 붙는 보호,
       B안 보정(파괴 · 릴리스의 [유언] 가치 · 서치 가치 · 세트 가치 · 지속 마법 발동의 놓이는 가치). 테스트 353개 통과, 스모크 시드 11 · 23 오류 0 · 중단 0,
       던전마스터 88매치 직전 커밋 55 → 53승(기준선 `model/main` 64 — 앞 테마 이전으로 상대가 바뀐 영향, PR 보고에 적을 것). 다음 ⑪ 데이터버그.
+    - 2026-10-28 ⑪ 데이터버그 완료 — `model/block-system` d5eb589: t_dtbg 23종(모든 카드 조립표 완료), 소환 절차 · 소환 무효 · 「이 턴 효과 발동 불가」 상태 · 같은 이름 서치,
+      B안 서치 고르기 · 자신 카드 남길 가치 · 트리거 양보. 테스트 353개 통과(플라이 1번 G2 · 로딩 서치 AI 선택 2건 보정), 스모크 시드 11 · 23 오류 0 · 중단 0,
+      **데이터버그 88매치 직전 51 → 39승(기준선 60)** — AI 실험으로 회복 안 됨, G2 · B안 차이로 보고 CHANGES.md · PR에 명시. 다음 ⑫ 옛 카드 함수 삭제.
   - **새 세션 할 일 (2026-10-28 인계):**
     - 컨테이너 준비: `cd /home/user/card_simulation_model && git fetch origin model/block-system model/main data/main && git checkout model/block-system`
       → 카드 풀 · 덱(제외 목록 .git/info/exclude 에 이미 있음): `git archive origin/data/main nny_sim | tar -x`
