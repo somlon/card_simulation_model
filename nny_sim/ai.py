@@ -2,7 +2,7 @@
 모든 판단은 로그에 '판단' 항목으로 남는다(후보와 점수, 선택).
 덱별 지침은 DECK_POLICY에 모은다: 시작 패 배분 / 드로우 덱 선택 / 멀리건 / 서치 우선순위.
 """
-from cards import value, VETO
+from cards import value, VETO, act_score
 import json, os, random as _r
 
 LEARN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'learned')
@@ -219,7 +219,7 @@ class HeuristicAI:
     def choose_triggers(self, g, p, cands):
         out = []; sc = []
         for c, e, ev in cands:
-            s = 100 if e.mandatory else (e.score(g, c, p, ev) if e.score else 1)
+            s = 100 if e.mandatory else act_score(g, c, e, p, ev, 1)
             sc.append((f'{c.name}#{e.num}', s))
             if s > 0: out.append((s, c, e, ev))
         out.sort(key=lambda x: -x[0])
@@ -272,7 +272,7 @@ class HeuristicAI:
     def respond(self, g, p, opts):
         best = None; sc = []
         for c, e in opts:
-            s = e.score(g, c, p, g.chain) if e.score else 0
+            s = act_score(g, c, e, p, g.chain, 0)
             if s > 0: s -= self.spend_cost(g, p, c, respond=True)
             if s > 0: sc.append((f'{c.name}#{e.num}', s))
             if s > 0 and (best is None or s > best[0]): best = (s, c, e)
@@ -304,7 +304,7 @@ class HeuristicAI:
                 acts.append((s, lab.split(':')[0], pay[1], pay))
             for c, e in g.options(p, ('ignition', 'quick')):
                 if (c.uid, e.num) in failed: continue
-                s = e.score(g, c, p, None) if e.score else 0
+                s = act_score(g, c, e, p, None, 0)
                 acts.append((s, 'act', c, e))
             if g.free_s(p):
                 for c in g.p[p].hand:

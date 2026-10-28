@@ -12,6 +12,10 @@
 - 세제 2 · 3번(「서로가 … 제외하고 발동」)은 상대도 발동할 수 있다(발동한 플레이어가 자신의 덱으로 코스트를 내고 드로우) — 엔진 Effect.either_player.
 - 이탈세 2번 「필드에서 벗어나게 하는 효과」 = 필드에 있는 카드를 필드가 아닌 위치로 이동시키는 효과(말 그대로) — cards.moves_off_field.
 - 두플리카토르(코스트 2배)는 카드 매수로 지불하는 모든 코스트(재정 정리 2026-10-17 — dupcost.py). 프로쿠라토르 2번 「제외 존의 카드를 전부」는 매수가 없어 그대로.
+재정 (사용자 답변 2026-10-27 · 10-28):
+- 세 - 아이라리움 1번 · 세제 1번 · 취득세 1번(「서로가 …할 때마다, 그 플레이어는 자신의 덱의 위에서부터 카드를 n장 제외한다」)은 그 행동을 하는 플레이어가 내는
+  코스트다 — 두플리카토르 · 델레가토르 적용, 두 덱을 합쳐도 모자라면 지불한 플레이어가 덱아웃 패배. 엔진 공통 규칙(engine.Game.pay_tax · tax_before)이
+  카드 텍스트에서 읽은 세금(cards.action_taxes)으로 처리하므로 이 파일의 세 카드는 [지속] 사건 처리를 두지 않는다.
 """
 import math
 from engine import Effect
@@ -178,10 +182,7 @@ def _(c):
     c.flags['exclusive_nums'] = (3, 4)
 
 @card('취득세')
-def _(c):
-    def on_ev(g, src, ev):
-        if ev['kind'] == 'summon' and ev['how'] == 'special': g.mill(ev['player'], 2, None, '취득세')
-    c.on_event = on_ev
+def _(c):   # 1번 [지속] 특수소환 세금은 엔진 공통 규칙 (engine.Game.pay_tax — 카드 텍스트에서 읽음)
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda *a: 45, threat=500), spell_lastwill()]
 
 @card('스키푸스')
@@ -206,11 +207,7 @@ def _(c):
         res=res, score=lambda g, c, p, ev: 30 if own_turn(g, p) and len(g.p[p].main) <= 12 else 0, threat=100), spell_lastwill()]
 
 @card('세 - 아이라리움')
-def _(c):
-    def on_ev(g, src, ev):   # 2026-10-08: 드로우 · 덱에서 패에 넣기 모두 — 그 플레이어가 자신의 덱 위 2장 (덱 미지정 → 덱 주인이 고름)
-        if (ev['kind'] == 'added_to_hand' and ev['prev'] in ('main', 'upper')) or ev['kind'] == 'draw':
-            g.mill(ev['player'], 2, None, '아이라리움')
-    c.on_event = on_ev
+def _(c):   # 1번 [지속] 드로우 · 덱→패 세금은 엔진 공통 규칙 (engine.Game.pay_tax — 카드 텍스트에서 읽음)
     c.rules = {'seri_lw_one': lambda g, src, p: p == src.controller}
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 55, threat=600)]
 
@@ -221,10 +218,7 @@ def _(c):
     c.effects = [Effect(0, 'ignition', ('hand',), spell_act=True, score=lambda g, c, p, ev: 0 if (g.fieldz and g.fieldz.controller == p) else 50, threat=600)]
 
 @card('세제')
-def _(c):
-    def on_ev(g, src, ev):
-        if ev['kind'] == 'activate': g.mill(ev['player'], 1, None, '세제')
-    c.on_event = on_ev
+def _(c):   # 1번 [지속] 효과의 발동 세금은 엔진 공통 규칙 (engine.Game.pay_tax — 카드 텍스트에서 읽음)
     def res2(g, c, p, l): g.draw(p, 2, 'main')
     def res3(g, c, p, l): g.draw(p, 1, 'upper')
     def can_tax_draw(g, p, n, deck, draws):

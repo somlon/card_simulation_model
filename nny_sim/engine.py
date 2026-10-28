@@ -97,7 +97,7 @@ def link_targets(link):
     처리 시에 고르는 「고르고」 효과는 대상을 지정하지 않는 효과로 본다 (호박옥의 수호자 - 마르모르 · 카르분쿨루스, 각성의 태동)"""
     out = []
     for k, v in link.ctx.items():
-        if k in ('ev', 'opt_keys', 'from_zone'): continue
+        if k in ('ev', 'opt_keys', 'from_zone', 'taxed'): continue
         if isinstance(v, Card): out.append(v)
         elif isinstance(v, (list, tuple)): out += [x for x in v if isinstance(x, Card)]
     return out
@@ -550,9 +550,10 @@ class Game:
         if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p, use=True, why='덱에서 패에 넣지 못하게 함'):
             self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음 (그 효과는 무효가 아님 — 횟수는 그대로 소모)', 'sys'); return
         if self.stays(c, cause): return
+        owner = c.owner if p is None else p
+        if c.zone in ('main', 'upper'): self.tax_before(owner, 'draw', keep=c)   # 행동 세금 (아이라리움 1번 — Game.tax_before)
         prev = c.zone; ctrl = c.controller
         was_field = self._remove(c)
-        owner = c.owner if p is None else p
         c.controller = owner; c.zone = 'hand'; c.faceup = True; self.p[owner].hand.append(c)
         if prev in ('main', 'upper', 'grave'):
             self.emit('added_to_hand', card=c, prev=prev, player=owner)
@@ -681,6 +682,7 @@ class Game:
             self.L(f'{c}: 자신의 효과로 같은 이름의 카드를 덱에서 특수소환할 수 없음 (정본 3-6 f)', 'sys'); return False
         if pos is None: pos = self.summon_pos(c, p, 'special')
         if pos == 'def' and not self.def_allowed(p): pos = 'atk'
+        self.tax_before(p, 'special', keep=c)   # 행동 세금 (취득세 1번 — Game.tax_before)
         prev = c.zone
         self._remove(c)
         self.place_monster(c, p, pos)
@@ -815,6 +817,8 @@ class Game:
         if cause[0] == 'effect' and self.rule('no_deck_to_hand', p, use=True, why='효과로 덱에서 패에 넣지 못하게 함 (드로우)'):
             self.L(f'{self.p[p].name}: 효과로 드로우할 수 없음 (덱에서 패에 넣을 수 없다)', 'sys'); return
         pl = self.p[p]
+        first = pl.main if deck == 'main' else pl.upper if deck == 'upper' else None
+        if n > 0 and (first is None or first or not (pl.main or pl.upper)): self.tax_before(p, 'draw')   # 행동 세금 (Game.tax_before)
         for _ in range(n):
             if deck == 'main': src = pl.main
             elif deck == 'upper': src = pl.upper
@@ -1055,6 +1059,52 @@ class Game:
             raise GameOver(p, f'{self.p[q].name} 대신 지불한 덱 코스트 {n}장 중 {k}장 — 덱이 음수가 되어 패배')
         return k
 
+    # ── 행동 세금 (「서로가 …할 때마다, 그 플레이어는 자신의 덱의 위에서부터 카드를 n장 제외한다」 [지속] — 세 - 아이라리움 1번 · 세제 1번 · 취득세 1번) ──
+    # 사용자 답변(2026-10-27 · 10-28): 그 행동을 하는 플레이어가 내는 코스트다. 행동 1번에 n장, 두플리카토르면 2배, 델레가토르면 상대가 대신 낸다.
+    # 덱이 모자라도 발동 · 행동할 수 있고, 메인 · 상급 덱을 합쳐도 모자라면 지불한 플레이어가 덱아웃으로 패배한다(고른 덱이 모자라면 다른 덱에서 채운다).
+    # 내는 때: 효과의 발동('activate')은 발동할 때. 자신이 발동한 효과의 처리에서 반드시 하는 드로우 · 덱에서 패에 넣기('draw') · 특수소환('special')도
+    # 발동할 때(Effect.sure_acts — cards.sure_acts가 텍스트로 판정). 그 밖(조건 · 선택이 붙은 처리, 상대 효과로 하는 행동, 턴 시작 드로우,
+    # [지속] · 발동 선언이 없는 처리)은 그 행동을 하는 플레이어가 행동 직전에 낸다(Game.tax_before) — 한 발동의 처리 안에서는 플레이어 · 행동마다 1번.
+    # 세금의 행동 · 매수는 카드 텍스트에서 읽는다(cards.action_taxes → 카드의 action_tax).
+    def taxes(self, *acts):
+        """지금 적용되는 acts 행동 세금 [(카드, 효과 번호, 매수)] — 「서로가」이므로 두 플레이어 모두에게"""
+        return [(src, num, n) for src in self.continuous_sources() for num, a, n in (getattr(src, 'action_tax', None) or ())
+                if a in acts and self.cont_ready(src, num)]
+
+    def pay_tax(self, p, act):
+        """p가 act 행동의 세금을 지금 낸다 (지불자는 Game.cost_payer — 델레가토르면 상대)"""
+        for src, num, n in self.taxes(act):
+            if not self.cont_use(src, num, f'{act} 세금'): continue
+            k = n * 2 if self.rule('cost_double', p) else n
+            q = self.cost_payer(p); why = f'{src.name} {num}번 코스트'
+            if k != n: self.L(f'두플리카토르: 코스트 {k}장으로', 'sys')
+            if q != p: self.L(f'델레가토르: 코스트를 {self.pname(q)}가 대신 지불', 'sys')
+            got = self.mill(q, k, None, why, fallback=True)
+            if got < k: raise GameOver(1 - q, f'{self.p[q].name} 덱아웃 — {why} {k}장 중 {got}장')
+
+    def tax_before(self, p, act, keep=None):
+        """p가 act 행동을 하기 직전에 내는 세금. 발동할 때 이미 낸 행동(link.ctx['taxed'])은 다시 내지 않고, 한 발동의 처리 안에서는
+        플레이어 · 행동마다 1번이다. keep: 덱에서 옮기려고 이미 고른 카드 — 세금으로 제외되지 않게 지불하는 동안 덱에서 빼 둔다"""
+        if not self.taxes(act): return
+        l = getattr(self, 'acting_link', None)
+        if l is not None:
+            done = l.ctx.setdefault('taxed', set())
+            if (p, act) in done: return
+            done.add((p, act))
+        lst = getattr(self.p[keep.owner], keep.zone) if keep is not None and keep.zone in ('main', 'upper') else None
+        if lst is not None: i = lst.index(keep); lst.pop(i)
+        try: self.pay_tax(p, act)
+        finally:
+            if lst is not None: lst.insert(min(i, len(lst)), keep)
+
+    def tax_ruin(self, p, c, e):
+        """AI 판단용: c의 효과 e를 발동할 때 내는 행동 세금으로 p가 바로 덱아웃 패배하는가 (규칙상 발동할 수는 있다 — cards.act_score)"""
+        if getattr(e, 'procedure', False): return False
+        k = sum(n for _, _, n in self.taxes('activate', *getattr(e, 'sure_acts', ())))
+        if not k or self.cost_payer(p) != p: return False
+        if self.rule('cost_double', p): k *= 2
+        return k > len(self.p[p].main) + len(self.p[p].upper)
+
     # ── 두플리카토르 (세리 - 두플리카토르 1번 [지속]: 서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배) ──
     # 카드 매수로 지불하는 코스트에 Effect.cost_spec = (동작, 후보 함수, 원래 매수 중 후보에서 내는 매수, 늘어나는 매수)를 단다.
     # 정본 3-6 f 재정: 「이 카드를 포함한 n장」이면 이 카드를 뺀 나머지만 2배. 코스트가 「이 카드」만이면 2배가 되지 않는다
@@ -1110,6 +1160,10 @@ class Game:
         # e.procedure: 소환 절차(「…해야만 패에서 특수소환할 수 있다」 — 데이터버그 더 바이러스 · 더 딜리트, 2026-10-12 추가)는 효과의 발동이 아니다 —
         # 발동 횟수 · 발동 사건을 남기지 않는다 (no_resp · unnegatable과 함께 쓴다). 표시가 없는 효과는 그대로
         proc = getattr(e, 'procedure', False)
+        if not proc:   # 행동 세금: 효과의 발동 · 처리에서 반드시 하는 행동은 발동할 때 코스트로 낸다 (Game.pay_tax)
+            sure = tuple(sorted(getattr(e, 'sure_acts', ())))
+            for act in ('activate',) + sure: self.pay_tax(p, act)
+            if sure: link.ctx['taxed'] = {(p, act) for act in sure}
         if not proc: self.act_count[(p, self.turn)] = self.act_count.get((p, self.turn), 0) + 1
         self.chain.append(link)
         if not proc: self.emit('activate', link=link, player=p)
@@ -1154,12 +1208,18 @@ class Game:
             if link.negated:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 무효', 'res')
             elif link.replaced:
-                self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 처리 치환', 'res'); self.deferring_hp(link.replaced, self, link)
+                self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 처리 치환', 'res')
+                prev_act = getattr(self, 'acting_link', None); self.acting_link = link   # 행동 세금의 처리 단위 (Game.tax_before)
+                try: self.deferring_hp(link.replaced, self, link)
+                finally: self.acting_link = prev_act
             else:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 처리', 'res')
                 self.src = c; self.src_eff = e
                 prev_res = getattr(self, 'resolving_link', None); self.resolving_link = link   # 처리 중인 발동 (Game.targeted_by) — 엔진의 resolving(불린)과 다른 이름
-                if e.res: self.deferring_hp(e.res, self, c, p, link)
+                prev_act = getattr(self, 'acting_link', None); self.acting_link = link     # 행동 세금의 처리 단위 (Game.tax_before)
+                try:
+                    if e.res: self.deferring_hp(e.res, self, c, p, link)
+                finally: self.acting_link = prev_act
                 self.resolving_link = prev_res
                 self.src = None; self.src_eff = None
             if e.spell_act and self.on_field(c) and c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') \

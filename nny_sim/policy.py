@@ -16,7 +16,7 @@
 """
 import json, os, math
 from ai import HeuristicAI, INTERFERE, LEARN_DIR, p_skill
-from cards import value, VETO
+from cards import value, VETO, act_score
 
 A = 20.0   # 축소 강도 (가상 판수)
 
@@ -295,7 +295,7 @@ class LearnedAI(HeuristicAI):
     def choose_triggers(self, g, p, cands):
         out = []
         for c, e, ev in cands:
-            s = e.score(g, c, p, ev) if e.score else 1
+            s = act_score(g, c, e, p, ev, 1)
             if e.mandatory: out.append((1.0, c, e, ev)); continue
             if s <= VETO: continue   # 규칙상 발동할 수 있으나 AI는 쓰지 않는 경우
             go = self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', s, True), ('안 함', 0, False)])
@@ -309,7 +309,7 @@ class LearnedAI(HeuristicAI):
         for c, e in opts:
             lab = f'{c.name}#{e.num}'
             if lab in seen: continue
-            s = e.score(g, c, p, g.chain) if e.score else 0
+            s = act_score(g, c, e, p, g.chain, 0)
             if s <= VETO: continue
             seen.add(lab)
             cand.append((lab, s, (c, e)))
@@ -346,7 +346,7 @@ class LearnedAI(HeuristicAI):
             for c, e in g.options(p, ('ignition', 'quick')):
                 lab = f'발동:{c.name}#{e.num}'
                 if lab in seen or (c.uid, e.num) in failed: continue
-                s = e.score(g, c, p, None) if e.score else 0
+                s = act_score(g, c, e, p, None, 0)
                 if s <= VETO: continue
                 seen.add(lab); acts.append((lab, s, ('act', c, e)))
             if g.free_s(p):
