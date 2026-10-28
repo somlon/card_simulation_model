@@ -91,6 +91,8 @@ def match_card(g, c, p, x, sc):
             if not _OPS[cmp_[0]](v, cmp_[1]): return False
     cn = sc.get('counter')   # 카운터 이름 또는 (이름, 최소 개수)
     if cn is not None and (x.counters.get(cn[0], 0) < cn[1] if isinstance(cn, tuple) else x.counters.get(cn, 0) <= 0): return False
+    hs = sc.get('name_has')   # 「「X」를 소환한다」 — 카드명 줄임 표기(이름에 X가 든 카드)
+    if hs is not None and hs not in x.name: return False
     nh = sc.get('name_not_has')   # 「「X」 이외의 몬스터」 — 이름에 X가 든 카드 제외(카드명 줄임 표기)
     if nh is not None and nh in x.name: return False
     at = sc.get('attr')
@@ -252,7 +254,11 @@ def pick(g, c, p, l, k):
     n = pick_n(g, c, p, l, k)
     upto = k.get('upto') or 'n_count' in k
     if n <= 0 or len(pool) < (1 if upto else n): return False
-    xs = pick_cards(g, c, p, pool, min(n, len(pool)), k)
+    if k.get('picker') == 'mark':   # 레벨 · 속성 부여의 대상: 족보 계획(cards8.plan_mark)이 고른 카드, 쓸 곳이 없으면 이 카드(뒤에 릴리스해 드로우)
+        t = _mark_plan(g, p)[1]
+        xs = [t if t in pool else c if c in pool else pool[0]]
+    else:
+        xs = pick_cards(g, c, p, pool, min(n, len(pool)), k)
     dst = l.ctx if k.get('targeted') else refs(l)
     dst[k['ref']] = xs[0] if n == 1 and not upto else xs
     g.L(('대상: ' if k.get('targeted') else '고름: ') + ', '.join(map(str, xs)))
@@ -1836,3 +1842,123 @@ def w_sent_grave2(g, c, p, ev, k):
         a = ca[1] if ca[0] == 'battle' else None
         if not (isinstance(a, Card) and a.controller != p and g.on_field(a) and a.faceup): return False
     return _w_sg(g, c, p, ev, k)
+
+
+# ═══════════════════════ 포커짐승들에서 더한 것 ═══════════════════════
+# 족보 재료 고르기 · 레벨/속성 부여 계획은 조합 탐색 공용 함수(cards8 — 재료 풀 · 족보 찾기 · 부여 계획)를 쓴다.
+# 재료 매수 · 상대 카드 사용 여부는 그 효과 문장에서 읽는다(cards8.combo_sizes · combo_opp_ok).
+def hand_quick_src(g, p):
+    """[지속] 「자신 「X」 몬스터의 [신속] 효과를 패에서도 발동할 수 있다 (1턴에 n번까지)」 — 이 턴 아직 쓸 수 있는 그 카드(규칙 pk_hand_quick)"""
+    for s in g.srcs_with('rule:pk_hand_quick'):
+        f = s.rules.get('pk_hand_quick')
+        if f is None or not f(g, s, p): continue
+        lim = getattr(s, 'hand_quick_n', 1)
+        if g.p[p].opt.get((s.name, s.hand_quick_num), 0) < lim: return s
+    return None
+
+
+def can_combo(g, c, p, ev, k):
+    import cards8
+    if c.zone == 'hand' and not k.get('hand_ok') and hand_quick_src(g, p) is None: return False
+    return cards8.plan(g, c, p, k['kind']) is not None
+
+
+def v_combo(g, c, p, ev, k):
+    """족보 코스트의 가치(B안): 재료를 잃는 손익(cards8.mat_cost — 상대 카드를 쓰면 이득) — 얻는 것은 처리 블록이 센다"""
+    import cards8
+    r = cards8.plan(g, c, p, k['kind'])
+    return -sum(m.cost for m in r[1]) * UNIT if r else 0.0
+
+
+@block('combo', can=can_combo, val=v_combo, threat=0)
+def do_combo(g, c, p, l, k):
+    """족보 코스트 「…를 포함하는 … n장을 릴리스(덱으로 되돌리)고 발동」 — 재료는 AI가 조합 탐색으로 고른다(cards8.plan). 패에서 발동한 것이
+    원래 패에서 쓸 수 없는 [신속]이면 패 허가 [지속]의 1턴 횟수를 쓴다(무효화되면 돌려받음 — opt_keys)"""
+    import cards8
+    r = cards8.plan(g, c, p, k['kind'], fresh=True)
+    if r is None: return False
+    if l.ctx.get('from_zone') == 'hand' and not k.get('hand_ok'):
+        s = hand_quick_src(g, p)
+        if s is None: return False
+        key = (s.name, s.hand_quick_num)
+        l.ctx.setdefault('opt_keys', []).append(key)   # 엔진이 발동 횟수로 센다(무효화되면 돌려받음)
+        g.L(f'{s.name}: 패에서 [신속] 발동', 'sys')
+    g.L(f'{cards8.KIND_LABEL[k["kind"]]} 완성')
+    cards8.pay(g, c, p, r[1], cards8.MODE[k['kind']])
+    return True
+
+
+def _mark_plan(g, p):
+    import cards8
+    return cards8._memo(g, ('mark', p), lambda: cards8.plan_mark(g, p, cards8.mark_cands(g, p)))
+
+
+def v_grant_la(g, c, p, ev, k):
+    import cards8
+    v, t, _, _ = _mark_plan(g, p)
+    d = v - cards8.best_play(g, p)
+    return d * UNIT if t is not None and d > 0.3 else 0.0
+
+
+@block('grant_la', val=v_grant_la, threat=300)
+def do_grant_la(g, c, p, l, k):
+    """「그 카드에 원하는 레벨과 원하는 속성을 부여한다」 — 처리 때 족보 가치가 가장 큰 레벨 · 속성(cards8.plan_grant). 필드에 있는 동안만"""
+    import cards8
+    xs = [x for x in subjects(g, c, p, l, k) if g.on_field(x) and not g.blocked(x, ('effect', c))]
+    if not xs: return False
+    _, lv, at = cards8.plan_grant(g, p, xs[0])
+    return cards8.grant(g, xs[0], lv, at, c) is not False
+
+
+def v_joker(g, c, p, ev, k):
+    import cards8
+    v = cards8._memo(g, ('joker', p), lambda: cards8.plan_joker(g, p, c)[0])
+    d = v - cards8.best_play(g, p)
+    return d * UNIT if d > 0.3 else 0.0
+
+
+@block('joker', can=lambda g, c, p, ev, k: (bool(g.free_m(p)) or g.shared is None) and not g.rule('no_special', c, p), val=v_joker, threat=400)
+def do_joker(g, c, p, l, k):
+    """「레벨과 속성을 선언한다. 이 카드는 해당 레벨과 속성을 가진 몬스터로 취급되어 원하는 자신 필드에 특수소환한다」 — 선언은 족보 가치(cards8.plan_joker)"""
+    import cards8
+    if not g.on_field(c): g.L(f'{c}이(가) 필드에 없음 — 처리 없음', 'sys'); return False
+    _, lv, at = cards8.plan_joker(g, p, c)
+    c.flags.pop('clear_on_leave', None)
+    c.flags.update(as_monster=True, level_set=lv, attr_set=at)
+    g.L(f'{c}: 레벨 {lv} · {at} 속성 선언 — 몬스터로 취급 (공격력 0 / 수비력 0)')
+    if g.special_summon(c, p):
+        c.flags['stay'] = True
+        c.flags['clear_on_leave'] = {'as_monster': None, 'level_set': None, 'attr_set': None}
+        return True
+    for x in ('as_monster', 'level_set', 'attr_set'): c.flags.pop(x, None)
+    return False
+
+
+def v_take_grant(g, c, p, ev, k):
+    import cards8
+    ts = cards8.steal_cands(g, p)
+    return 1.6 * max(value(g, t) for t in ts) * UNIT if ts else 0.0
+
+
+@block('take_grant', can=lambda g, c, p, ev, k: True, val=v_take_grant, threat=900)
+def do_take_grant(g, c, p, l, k):
+    """「상대 필드의 카드 1장을 골라 속성과 레벨을 부여하여 컨트롤을 옮긴다」 — 처리 때 고름(비대상), 부여는 족보 가치(cards8.plan_grant)"""
+    import cards8
+    ts = cards8.steal_cands(g, p)
+    if not ts: g.L('컨트롤을 옮길 상대 카드 없음', 'sys'); return False
+    t = g.p[p].ai.pick_target(g, p, ts, 'steal')
+    if g.blocked(t, ('effect', c)) or not cards8.take_control(g, t, p): return False
+    g.L(f'{t} 컨트롤 획득')
+    _, lv, at = cards8.plan_grant(g, p, t)
+    cards8.grant(g, t, lv, at, c)
+    return True
+
+
+_w_aev = TESTS['when_activated_ev']
+
+
+@test('when_activated_ev')
+def w_activated_ev2(g, c, p, ev, k):
+    """group: 발동한 카드가 「X」 카드(「자신이 「X」 효과를 발동할 때마다」)"""
+    if k.get('group') and not (ev_kind(ev, 'activate') and grp(ev['link'].card, k['group'])): return False
+    return _w_aev(g, c, p, ev, k)

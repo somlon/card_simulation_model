@@ -34,7 +34,7 @@ def note_num(c, hook, num):
 def while_fn(k):
     """[지속]의 적용 조건: while_counter — 「이 카드에 X 카운터가 놓여 있는 한」(앞면 · 1개 이상), while_zone — 「이 카드가 Z 존에 존재할 경우」"""
     wc, wz = k.get('while_counter'), k.get('while_zone')
-    if wc is None and wz is None: return lambda g, x: True
+    if wc is None and wz is None and not k.get('live'): return lambda g, x: True
     return lambda g, x: x.faceup and (wc is None or x.counters.get(wc, 0) > 0) and (wz is None or x.zone == wz)
 
 
@@ -203,7 +203,7 @@ def k_grave_redirect(c, num, k, notes, kw):
 def k_card_flag(c, num, k, notes, kw):
     """[지속] 카드 자신의 상태 플래그(엔진이 읽는 것) — 'attack_all'(상대 몬스터 전부에 공격 선언) 등. lasting: 한 번 적용하면 그 턴 동안 계속(c.cont_lasting)"""
     v = k.get('value', True)
-    if k.get('while_counter') or k.get('while_zone'):   # 조건부 [지속] — 그때그때 계산(Game.flag), 무효면 꺼짐
+    if k.get('while_counter') or k.get('while_zone') or k.get('live'):   # 조건부 [지속] · live: 무효면 꺼짐 — 그때그때 계산(Game.flag), 무효면 꺼짐
         w = while_fn(k)
         c.flags[k['key']] = (lambda g, x, v=v, w=w: (v if w(g, x) and not g.is_neg(x) else None))
         if k.get('while_counter'): c.counter_guard = set(getattr(c, 'counter_guard', None) or ()) | {k['while_counter']}
@@ -295,3 +295,50 @@ def k_next_act_replace(c, num, k, notes, kw):
         src.flags['replace_pending'] = link
         g.L(f'{src.name}: {link.card}의 효과는 무효 — 「{k.get("label", "…")}」로 변경됨', 'sys')
     chain_hook(c, 'on_event', on_ev)
+
+
+# ═══════════════════════ 포커짐승들에서 더한 것 ═══════════════════════
+@kind('stat_per')
+def k_stat_per(c, num, k, notes, kw):
+    """[지속] 공격력 · 수비력 증감 「… 1장당 n 올린다」 — 받는 카드(to: 이 카드 컨트롤러 기준 집합, self_only: 이 카드), 세는 카드: 필드(서로)의 앞면 카드 중
+    count=('attr', 속성) 그 속성을 가진 카드 / ('same', 'attr') 받는 카드와 같은 속성 / ('same', 'level') 받는 카드와 같은 레벨의 몬스터.
+    받는 카드 자신도 센다(사용자 답변 2026-10-22 — 빼는 경우는 텍스트에 「이외」 · 「다른」). 속성은 부여 · 「모두로 취급」 포함(cards8.attrs)"""
+    to, amt, cnt_, st = k.get('to'), k['amt'], k['count'], k.get('stat', 'atk')
+    def mod(g, src, x):
+        import cards8
+        if k.get('self_only'):
+            if x is not src: return 0
+        elif not (g.on_field(x) and x.faceup and L.match_card(g, src, src.controller, x, to) and x.controller in L.sides(src.controller, to.get('side', 'own'))): return 0
+        fu = [y for y in g.all_field() if y.faceup]
+        if cnt_[0] == 'attr': return amt * sum(1 for y in fu if cnt_[1] in cards8.attrs(g, y))
+        if cnt_[1] == 'attr':
+            a = cards8.attrs(g, x)
+            return amt * sum(1 for y in fu if cards8.attrs(g, y) & a) if a else 0
+        if not x.level: return 0
+        return amt * sum(1 for y in fu if y.is_monster() and y.level == x.level)
+    setattr(c, 'def_mod' if st == 'def' else 'atk_mod', mod)
+    note_num(c, 'def_mod' if st == 'def' else 'atk_mod', num)
+
+
+@kind('extra_normal')
+def k_extra_normal(c, num, k, notes, kw):
+    """[지속] 「자신은 (1턴에 n번까지) 「X」 몬스터를 추가로 일반소환할 수 있다」 — 권리(Game.extra_normal_left)"""
+    n, to = k.get('n', 1), k.get('to')
+    c.extra_normal = lambda g, src, p, x: n if p == src.controller and (x is None or to is None or L.match_card(g, src, p, x, to)) else 0
+
+
+@kind('whenever')
+def k_whenever(c, num, k, notes, kw):
+    """[지속] 「…할 때마다 …한다」 — 사건이 시점 블록(k['when'])에 맞을 때마다 처리(발동 아님)"""
+    w, steps = k['when'], tuple(k['steps'])
+    def on_ev(g, src, ev):
+        if L.TESTS[w.name](g, src, src.controller, ev, w.k):
+            g.L(f'{src.name} {num}번: 처리', 'sys'); L.steps_run(g, src, src.controller, steps, ev)
+    chain_hook(c, 'on_event', on_ev)
+
+
+@kind('hand_quick')
+def k_hand_quick(c, num, k, notes, kw):
+    """[지속] 「자신 「X」 몬스터의 [신속] 효과를 패에서도 발동할 수 있다」 — 규칙 pk_hand_quick, 1턴 횟수는 단서(「1턴에 n번까지」)"""
+    add_rule(c, 'pk_hand_quick', lambda g, src, p, *a: p == src.controller, num)
+    c.hand_quick_n = notes.get('opt') or 1; c.hand_quick_num = num

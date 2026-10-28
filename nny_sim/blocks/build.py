@@ -43,12 +43,18 @@ def attach(c):
             proto = _CACHE[ck] = compile_spec(spec, sent, c.d)
         if proto.effect is not None: effects.append(proto.effect)
         for inst in proto.installs: inst(c)
+    from cards import grp
+    for group, lst in D.CONT_GRANTS.items():   # 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속] — 그 카드군 카드마다 붙이고, 발동은 부여가 적용될 때만
+        if grp(c, group):
+            effects += [cont_granted_effect(code, key, num) for code, key, num in lst]
+    if c.type == '몬스터' and (c.d.get('level') or 0) >= 5 and any(e.kind == 'summon' for e in effects):
+        c.ns_value = ns_value_of(c)   # 제물 일반소환의 가치(ai.extra_summon_options): [소환] 효과 가치를 더한다(B안)
     import cards
     tax = cards.action_taxes(c.d)            # [지속] 행동 세금 (engine.Game.taxes)
     if tax: c.action_tax = tax
     effects += [e for e in c.effects if e.num == 0]     # 카드를 놓기만 하는 발동(지속 · 필드 마법 — status.place_effect)
     c.effects = sorted(effects, key=lambda e: e.num)
-    if c.type in ('필드',) or (c.type == '마법' and c.d.get('subtype') == '지속'):
+    if (c.type in ('필드',) or (c.type == '마법' and c.d.get('subtype') == '지속')) and not any(sp.kw.get('no_place') for sp in specs.values()):
         if not any(e.num == 0 for e in c.effects): c.effects.insert(0, ST.place_effect(c))
     return True
 
@@ -144,6 +150,8 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     for a in ('owner_only', 'procedure', 'opt_per_card', 'summon_negate', 'exclusive'):
         if kw.get(a): setattr(e, a, kw[a])
     if kw.get('grant_of'): e.grant_of = kw['grant_of']
+    if kw.get('pk_kind'): e.pk_kind = kw['pk_kind']; e.pk_hand = bool(notes.get('hand_ok'))   # 족보 효과(cards8.best_play · combo_text)
+    if kw.get('pk_granted') is not None: e.pk_granted = kw['pk_granted']
     e.counter_keep = next(((b.k['name'], b.k['n']) for b in conds if b.name == 'cond_counters' and b.k['scope'].get('pred') == 'is_self'), None)   # lib.counter_keep
     e.counter_need = next(((w.k['name'], w.k['n']) for w in whens if w.name == 'when_counter'), None)   # lib.counter_effects
     e.kinds_costs = tuple(b.k for b in costs if b.name == 'kinds')   # 「각각 n장씩」 모으는 코스트(lib.v_kinds — 다른 효과가 쓰면 손해)
@@ -215,6 +223,7 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         tests.append(f'L.cool_ok(g, c, p, {num})')
     made = False   # 앞 처리가 자신 필드에 카드를 낸다(특수소환 · 놓기) — 뒤 처리의 「자신 필드의 …」는 그 카드로 할 수 있다
     for b in [x for x in costs if not x.k.get('may')] + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
+        if b in dos and any(x.name == 'combo' for x in costs): continue   # 족보 코스트: 재료를 낸 뒤의 처리 가능 여부는 조합 탐색이 본다(cards8.plan — 비는 자리 · 같은 이름)
         if made and b in dos and (b.k.get('scope') or {}).get('side') == 'own' and (b.k.get('scope') or {}).get('zone') in ('field', 'mzone'): continue
         if b in dos and b.name in ('special', 'place'): made = True
         if b.name == 'choice':
@@ -393,3 +402,46 @@ def steps_fn(steps):
     exec(compile('\n'.join(src), '<blocks steps>', 'exec'), G.ns)
     _STEPS[key] = (steps, G.ns['run'])
     return G.ns['run']
+
+
+def ns_value_of(c):
+    """제물 일반소환의 가치(ai.extra_summon_options 훅): [소환] 효과 가치(B안)와 공격력 기준 중 큰 쪽 — 결착이면 최우선"""
+    from cards import VETO
+    def nv(g, p, ts, cost, c=c):
+        v = sum(max(0.0, e.score(g, c, p, {'kind': 'summon', 'card': c, 'player': p, 'how': 'normal'})) for e in c.effects if e.kind == 'summon')
+        if v >= L.LETHAL / 2: return 500
+        by_eff = 20 + 15 * v / L.UNIT - 12 * cost if v > 0 else VETO
+        gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
+        by_atk = 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO
+        return max(by_eff, by_atk)
+    return nv
+
+
+_CG = {}
+
+
+def cont_granted_effect(code, key, num):
+    """[지속] 효과 부여: 조립표 (code, key)의 효과를 번호 num으로 — 받는 카드가 자신 필드의 앞면 몬스터이고, 부여하는 카드(code)가 그 플레이어의
+    스킬 존 · 필드에서 적용 중이고, 받는 카드가 그 효과를 받을 때만 발동(무효면 쓸 수 없음 — 엔진 zone_ok). 부여받은 효과는 카드마다 1턴 1번(재정 G3)"""
+    ck = (code, key, num)
+    e = _CG.get(ck)
+    if e is None:
+        import copy
+        from cards import POOL
+        d = next(x for x in POOL.values() if x.get('code') == code)
+        spec = D.TABLE[code][key]
+        base = compile_spec(spec, T.sentences(d)[key], d).effect
+        e = copy.copy(base); e.num = num; e.opt_per_card = True
+        def src_of(g, p, _code=code):
+            for x in ([g.p[p].skill] if g.p[p].skill else []) + g.field_cards(p):
+                if x.d.get('code') == _code and g.cont_active(x): return x
+            return None
+        def cond(g, c, p, ev, _b=base.cond):
+            s = src_of(g, p)
+            return (s is not None and c.is_monster() and g.on_field(c) and c.controller == p and c.faceup and g.receives(c, s) and _b(g, c, p, ev))
+        e.cond = cond
+        for a in ('pk_kind',):
+            if spec.kw.get(a): setattr(e, a, spec.kw[a])
+        if spec.kw.get('pk_granted') is not None: e.pk_granted = spec.kw['pk_granted']
+        _CG[ck] = e
+    return e

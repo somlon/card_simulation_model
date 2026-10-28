@@ -170,3 +170,12 @@ def alt(first, other): return B('alt', first=first, alt=other)
 def face_down(pos=None, **k): return B('face_down', pos=pos, **k)
 def show_set(scope, show, pick=1): return B('show_set', scope=scope, show=show, pick=pick)
 def self_counters_ge(name, n): return B('cond_counters', scope=S('own', ('field', 'skill'), pred='is_self'), name=name, n=n)
+def combo(kind, hand_ok=False): return B('combo', kind=kind, hand_ok=hand_ok)
+def stat_per(amt, count, to=None, stat='atk', self_only=False): return B('stat_per', amt=amt, count=count, to=to, stat=stat, self_only=self_only)
+
+
+CONT_GRANTS = {}   # 카드군 → [(부여하는 카드 코드, 효과 키, 효과 번호)] — 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속] (build.attach)
+
+
+def cont_grant(code, key, group, num):
+    CONT_GRANTS.setdefault(group, []).append((code, key, num))
