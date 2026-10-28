@@ -232,6 +232,9 @@
     ③ 재정 문서 PR #80 갱신 ④ 블록 통합판 27개판 PDF(옛 생성 스크립트는 세션 스크래치에서 사라짐 — 이전 세션 기록에서 되살리거나 다시 작성) ⑤ ⑤ · ⑧ 설명 ⑥ PR · 보고 · 루틴 끄기.
   - 진행 기록:
     - 2026-10-28 시작 — 답변 기록 · 루틴 생성.
+    - 2026-10-28 ① 완료 — `model/kind-index` ff4d867 → PR #81(기준 `model/action-tax-cost`, #79 머지 뒤 `model/main`으로): Game.hook_index · srcs_with · ix_note,
+      같은 시드 1,100판(시드 11 · 23 · 37) 기록 동일 · 24 ~ 27% 빠름, 테스트 342개 통과. 블록 PDF용 옛 생성 스크립트(blocks.html · ann.py · survey.py · consolidate.py · gen2.py)는
+      이전 세션(session_016w2Gxny1G67zJxAoJUWAY6) 기록에서 되살려 39개판 16쪽 재현 확인(세션 스크래치 blocks/).
 
 - **【완료 — 2026-10-28, PR #79 · #80 사용자 머지 대기 · 루틴 끔】 아이라리움 · 행동 세금 코스트 (재정 ① 엔진 반영, 사용자 답변 2026-10-27 · 10-28, 세션 session_018Feff8QEzA4jsTvuLo2jMu):**
   - 매시 루틴 「아이라리움 · 행동 세금 코스트 자동 이어하기(매시)」(trig_01JZ3EdGF9N8eyMt5SWxDVw2, 이 세션, 매시 56분).
