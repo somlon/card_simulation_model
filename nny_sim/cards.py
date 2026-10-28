@@ -38,6 +38,8 @@ class Impl:
         if f: f(c)
         else: c.flags['unimplemented'] = True
         import dupcost; dupcost.apply(c)   # 두플리카토르 코스트 명세 (Effect.cost_spec)
+        tax = action_taxes(c.d)            # [지속] 행동 세금 (engine.Game.taxes)
+        if tax: c.action_tax = tax
         for e in c.effects:
             line = next((l for l in c.d['text'].split('\n') if l.startswith(f'{e.num}.')), c.d['text'] if len(c.effects) == 1 else '')
             text_attrs(e, line, c.name)
@@ -63,6 +65,8 @@ def text_attrs(e, line, name):
     if line: e.removal_text = e.targets_text and removal_text(line)
     # 처리의 첫 단계가 드로우인가('self' / 'opp' — 드로우하는 쪽) — 「효과로 덱에서 패에 넣을 수 없다」면 발동할 수 없다 (engine.Game.legal)
     e.draw_first = draw_first_text(line)
+    # 처리에서 발동한 플레이어가 반드시 하는 행동 — 행동 세금을 발동할 때 코스트로 낸다 (engine.Game.pay_tax, 사용자 답변 2026-10-28)
+    e.sure_acts = sure_acts(line) if e.num else frozenset()   # 0번 = 카드를 놓기만 하는 발동 (텍스트는 [지속] 문장)
 
 def granted_lines(d):
     """카드 자료 d의 텍스트에서 부여하는 효과의 「-」 항목들 (앞의 「-」는 뗀다)"""
@@ -171,6 +175,54 @@ def draw_first_text(line):
     m = _DRAW_FIRST.match(body)
     if not m: return None
     return 'opp' if m.group(1) and m.group(1).startswith('상대') else 'self'
+
+# ── 행동 세금: 「서로가 …할 때마다, 그 플레이어는 자신의 덱의 위에서부터 카드를 n장 제외한다」 [지속] (세 - 아이라리움 1번 · 세제 1번 · 취득세 1번) ──
+# 행동하는 플레이어가 내는 코스트다 (사용자 답변 2026-10-27 · 10-28 — engine.Game.pay_tax). 「…할 때마다」 구절의 말로 행동 종류를 정한다
+_TAX = _re_t.compile(r'서로가 ([^,]*?) 때마다, 그 플레이어는 자신의 덱의 위에서부터 카드를 (\d+)장 제외한다')
+_TAX_ACTS = (('드로우', 'draw'), ('패에 카드를 넣', 'draw'), ('효과를 발동', 'activate'), ('특수소환', 'special'))
+
+def action_taxes(d):
+    """카드 자료 d의 [지속] 행동 세금 [(효과 번호, 행동, 매수)] — 행동: 'draw'(드로우 · 덱에서 패에 넣기) · 'activate'(효과의 발동) · 'special'(특수소환)"""
+    out = []
+    for l in (d.get('text') or '').split('\n'):
+        m = _re_t.match(r'^(\d+)\.\s*\[지속\]', l); t = m and _TAX.search(l)
+        if not t: continue
+        for a in dict.fromkeys(a for k, a in _TAX_ACTS if k in t.group(1)):
+            out.append((int(m.group(1)), a, int(t.group(2))))
+    return out
+
+# 처리에서 반드시 하는 행동: 드로우 · 덱에서 패에 넣기 / 특수소환
+_SURE = {'draw': _re_t.compile(r'드로우(한다|하고)|덱(?: 맨)?(?: 위)?에서[^.]*?패에 넣(는다|고)'),
+         'special': _re_t.compile(r'특수소환(한다|하고)')}
+# 처리 때 그 행동을 하지 않을 수 있는 표시: 조건(문장 앞머리 — 문장 전체에 걸린다) / 선택 · 수량(그 행동의 구절에만 걸린다)
+_IF = _re_t.compile(r'경우|때마다')
+_CHOICE = _re_t.compile(r'까지|거나|만큼|그 중|수 있다|수도 있다|/')
+_NO_DECL = _re_t.compile(r'발동 선언을 필요로 하지 않는다|별도의 발동 처리를 필요로 하지 않는다')
+
+def sure_acts(line):
+    """효과 문장 line의 처리에서 발동한 플레이어가 반드시 하는 행동('draw' · 'special')의 집합 — 그 행동 세금은 발동할 때 코스트로 낸다
+    (사용자 답변 2026-10-28 「확정된 것만 발동 때」, engine.Game.activate). 조건이 붙은 문장(「…경우」 · 「…때마다」), 선택 · 수량이 붙은 구절
+    (「…까지」 · 「…거나」 · 「그 수만큼」 · 「그 중」 · 「…할 수 있다」 · 「덱/묘지」 — 「…고」로 나눈 구절 단위: 「3장까지 덱으로 되돌리고 1장 드로우한다」의 드로우는 반드시),
+    상대가 하는 행동(「상대는 …」), 바꾼 뒤의 효과 문장(「「…」로 변경한다」), 발동 선언이 없는 효과는 빼고 — 그 행동은 실제로 할 때 직전에 낸다(engine.Game.tax_before)"""
+    if not line or _NO_DECL.search(line) or _re_t.match(r'^\d+\.\s*\[지속\]', line): return frozenset()   # [지속]은 발동하지 않는다
+    t = _re_t.sub(r'\([^)]*\)', '', _re_t.sub(r'^\d+\.\s*', '', line))
+    # 바꾼 뒤의 효과 문장(노린재 · 이탈세 2번 · 깜짝상자 1번) — 안에 겹친 카드 이름 「」는 먼저 다른 괄호로 바꿔 둔다
+    t = _re_t.sub(r'「([^「」]*)」', lambda m: m.group(0) if _re_t.search(r'다\.?$', m.group(1)) else f'⟨{m.group(1)}⟩', t)
+    t = _re_t.sub(r'「[^「」]*다\.?」', '', t)
+    parts = _re_t.split(r'발동(?:한다|할 수도 있다)?\.', t, maxsplit=1)
+    body = _re_t.sub(r'^\s*(\[[^\]]*\]\s*)+', '', parts[1] if len(parts) > 1 else t)
+    out = set()
+    for s in _re_t.split(r'\.', body):
+        if not s.strip() or _IF.search(s) or _re_t.match(r'\s*상대(는| 플레이어는)', s): continue
+        for cl in _re_t.split(r'(?<=고),?\s+', s):
+            if not _CHOICE.search(cl): out.update(a for a, rx in _SURE.items() if rx.search(cl))
+    return frozenset(out)
+
+def act_score(g, c, e, p, ev, default):
+    """AI가 보는 효과 점수 (e.score, 없으면 default). 발동할 때 내는 행동 세금으로 p가 바로 덱아웃 패배하면(engine.Game.tax_ruin) 고르지 않는다(VETO) —
+    규칙상 발동할 수 있지만(사용자 답변 2026-10-27) 스스로 지는 발동이다. 강제 효과는 그대로 발동한다"""
+    if not e.mandatory and g.tax_ruin(p, c, e): return VETO
+    return e.score(g, c, p, ev) if e.score else default
 
 def removal_text(line):
     """효과 문장(그 번호 줄만 — 부여하는 「- …」 하위 효과는 보지 않음)의 처리 부분에서, 발동한 쪽 자신의 카드(「자신 필드 …」 · 「이 카드 …」)를
