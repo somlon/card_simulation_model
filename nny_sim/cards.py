@@ -34,6 +34,8 @@ class Impl:
     pool = POOL
     @staticmethod
     def attach(c):
+        import blocks
+        if blocks.attach(c): return   # 조립표가 있는 카드는 블록으로 조립 (blocks/README.md) — 없으면 아래 옛 카드 함수
         f = IMPL.get(c.name)
         if f: f(c)
         else: c.flags['unimplemented'] = True

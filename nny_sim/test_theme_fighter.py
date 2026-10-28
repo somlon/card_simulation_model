@@ -6,7 +6,9 @@ import season as SE
 from ai import HeuristicAI
 from cards import Impl, granted_lines
 from engine import Game, Card
-import cards2 as F
+from blocks.build import granted_effect
+
+CER_FLAG, CER_BASE = 'grant:FGTR-007:1-a', 30   # 세레모니 부여 [전투]: 받은 수 · 효과 번호 30 + k
 
 DECKS = SE.load_decks()
 ME = '투기장의 규칙'
@@ -105,6 +107,7 @@ class MonsterTest(unittest.TestCase):
         g = make(ai=Yes)
         li = mon(g, LION, 0); o = mon(g, '솔루나 시아', 1); x = put(g, ENTRY, 0, 'main')
         g.p[0].hp = 3000
+        g.p[0].skill.negated = True   # 스킬 1번 [전투] 드로우가 먼저 처리되어 서치할 카드를 뽑으면 재정 G2로 회복 · 추가 공격도 하지 않는다
         win(g, li, o); run(g)
         self.assertEqual(x.zone, 'hand'); self.assertEqual(g.p[0].hp, 4000); self.assertEqual(li.extra_attacks, 1)
 
@@ -141,8 +144,8 @@ class SpellTest(unittest.TestCase):
         t = mon(g, TIGER, 0); o = mon(g, '솔루나 시아', 1)
         c1 = spell(g, CER, 0, faceup=False); c1.set_turn = 1
         win(g, t, o); run(g)
-        self.assertEqual(t.flags.get('ceremony'), 1); self.assertGreaterEqual(t.extra_attacks, 1)
-        self.assertTrue(any(e.num == F.CER_BASE + 1 for e in t.effects))
+        self.assertEqual(t.flags.get(CER_FLAG), 1); self.assertGreaterEqual(t.extra_attacks, 1)
+        self.assertTrue(any(e.num == CER_BASE + 1 for e in t.effects))
         # 영구: 다음 자신 턴에도 공격 횟수 +1
         for m in g.monsters(0) + g.monsters(1): m.attacks_made = 0; m.extra_attacks = m.flags.get('perm_extra_attacks', 0)
         self.assertEqual(t.extra_attacks, 1)
@@ -151,10 +154,11 @@ class SpellTest(unittest.TestCase):
         c2 = spell(g, CER, 0, faceup=False); c2.set_turn = 1
         o2 = mon(g, '솔루나 시엘', 1)
         g.events = []; win(g, t, o2); run(g)
-        self.assertEqual(t.flags.get('ceremony'), 2); self.assertEqual(t.flags.get('perm_extra_attacks'), 2)
+        self.assertEqual(t.flags.get(CER_FLAG), 2); self.assertEqual(t.flags.get('perm_extra_attacks'), 2)
+        self.assertTrue(any(e.num == CER_BASE + 2 for e in t.effects))
         # 필드를 벗어나면 사라진다
         g.send_grave(t)
-        self.assertIsNone(t.flags.get('ceremony')); self.assertIsNone(t.flags.get('perm_extra_attacks'))
+        self.assertIsNone(t.flags.get(CER_FLAG)); self.assertIsNone(t.flags.get('perm_extra_attacks'))
 
     def test_perm_extra_attacks_survive_turn_reset(self):
         g = make()   # Idle AI — play_turn이 아무 행동 없이 턴을 진행
@@ -166,7 +170,7 @@ class SpellTest(unittest.TestCase):
 
     def test_ceremony_granted_battle_effect(self):
         g = make(ai=Yes)
-        t = mon(g, LION, 0); t.flags['ceremony'] = 1; t.effects.append(F.cer_effect(1))
+        t = mon(g, LION, 0); t.flags[CER_FLAG] = 1; t.effects.append(granted_effect('FGTR-007', '1-a', 1, CER_BASE + 1))
         o = mon(g, '솔루나 시아', 1); x = mon(g, '솔루나 시엘', 1); hp = g.p[1].hp
         win(g, t, o); run(g)
         self.assertEqual(g.p[1].hp, hp - 1000); self.assertEqual(x.zone, 'grave')
@@ -177,10 +181,16 @@ class SpellTest(unittest.TestCase):
         g.act(0, en, eff(en, 1))
         self.assertEqual(x.zone, 'm'); self.assertEqual(x.flags.get('immune_opp_until'), g.turn)
 
-    def test_entry_adds_to_hand_when_summon_useless(self):
-        g = make(); mon(g, RABBIT, 0); x = put(g, TIGER, 0, 'upper'); g.phase = '종료'   # 자신 턴 종료 단계 · 필드에 몬스터 있음
+    def test_entry_picks_more_valuable_option(self):
+        # 「패에 넣거나 특수소환한다」 — B안(2026-10-28): 할 수 있는 선택지 중 블록 가치가 큰 쪽. 필드에 나온 몬스터의 가치가 패 1장보다 크다
+        g = make(); mon(g, RABBIT, 0); x = put(g, TIGER, 0, 'upper'); g.phase = '종료'
         en = put(g, ENTRY, 0, 'hand'); g.act(0, en, eff(en, 1))
-        self.assertEqual(x.zone, 'hand')
+        self.assertEqual(x.zone, 'm')
+        g2 = make(); y = put(g2, TIGER, 0, 'upper')
+        for _ in range(5): mon(g2, RABBIT, 0)
+        g2.shared = mon(g2, RABBIT, 1)   # 놓을 자리가 없으면 패에 넣는다
+        en2 = put(g2, ENTRY, 0, 'hand'); g2.act(0, en2, eff(en2, 1))
+        self.assertEqual(y.zone, 'hand')
 
     def test_entry_summons_beside_existing_monster_before_battle(self):
         g = make(); mon(g, RABBIT, 0); x = put(g, ELEPH, 0, 'upper')
@@ -191,7 +201,7 @@ class SpellTest(unittest.TestCase):
         g = make(ai=Yes)
         r = mon(g, RHINO, 0); r.flags['ceremony'] = 1
         cer = Impl.pool[CER]
-        r.effects.append(F.cer_effect(1, granted_lines(cer)[0], cer['name']))   # 세레모니 「-」 항목 문장으로 성질을 단다 — 제거 효과라 뒷면 마법도 대상 (PDF Q6)
+        r.flags[CER_FLAG] = 1; r.effects.append(granted_effect('FGTR-007', '1-a', 1, CER_BASE + 1))   # 세레모니 「-」 항목 문장으로 성질을 단다 — 제거 효과라 뒷면 마법도 대상 (PDF Q6)
         o = mon(g, '솔루나 시아', 1); a = mon(g, '솔루나 시엘', 1); b = spell(g, '태양과 달의 마력', 1, False)
         win(g, r, o); run(g)
         self.assertEqual(sum(1 for x in (a, b) if x.zone == 'grave'), 2)   # 라이노 2번 · 부여 [전투]가 서로 다른 카드 (검토 F2)
@@ -258,11 +268,13 @@ class SkillTest(unittest.TestCase):
         g = make()
         sk = g.p[0].skill
         one = put(g, COUNTER, 0, 'hand')
-        self.assertFalse(g.legal(0, sk, eff(sk, 3)))   # 1장뿐이면 되돌리지 않는다 (검토 F3)
+        # 「원하는 수까지」(1 ~ N장): 1장뿐이어도 규칙상 발동할 수 있다 — AI는 여분이 없으면 쓰지 않는다(점수 0, 검토 F3)
+        self.assertTrue(g.legal(0, sk, eff(sk, 3))); self.assertLessEqual(eff(sk, 3).score(g, sk, 0, None), 0)
         two = put(g, COUNTER, 0, 'hand'); three = put(g, COUNTER, 0, 'hand')
-        if not g.legal(0, sk, eff(sk, 3)): self.skipTest('AI가 여분을 버릴 카드로 보지 않음')
+        if eff(sk, 3).score(g, sk, 0, None) <= 0: self.skipTest('AI가 여분을 버릴 카드로 보지 않음')
         n0 = len(g.log); g.act(0, sk, eff(sk, 3))
-        self.assertTrue(any('2장 덱으로' in e['m'] for e in g.log[n0:]))   # 3장 중 여분 2장만 (1장은 남김) — 같은 수 드로우
+        back = [e for e in g.log[n0:] if e['m'].endswith('덱으로')]; drawn = [e for e in g.log[n0:] if e['k'] == 'draw']
+        self.assertEqual((len(back), len(drawn)), (2, 2))   # 3장 중 여분 2장만 덱으로(1장은 남김) — 같은 수 드로우
         self.assertEqual(len(g.p[0].hand), 3)
 
     def test_rule_2_searches_a_different_name(self):
