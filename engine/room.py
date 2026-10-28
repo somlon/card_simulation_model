@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .deck import 대전_준비
+from .deck import 공용태그, 대전_준비, 덱_만들기
 from .effects import 효과적용기
 from .legalmoves import 합법수_생성
 from .players import 무작위플레이어, 필터플레이어
@@ -43,6 +43,7 @@ from .turn import (
 from .view import 기보_효과문, 보드_딕, 수_갈래들, 수_효과문
 
 맵파일 = {"호박옥": "호박옥_봉인의_계약.yaml", "던전마스터": "던전마스터_셔플.yaml"}
+효과뿌리 = Path(__file__).resolve().parent.parent / "cards" / "효과"
 단계순서 = (단계.진행, 단계.전투, 단계.정비)
 최대인원_기본 = 5
 
@@ -52,6 +53,49 @@ from .view import 기보_효과문, 보드_딕, 수_갈래들, 수_효과문
     "던전마스터": 덱상수(세금=0, 카운터명="봉인", 벽유지최소=0, 테마="던전마스터"),
 }
 맵뿌리 = Path(__file__).resolve().parent.parent / "maps"
+
+
+def 덱목록() -> list[dict]:
+    """고를 수 있는 덱과 그 상태. **없는 것을 있다고 하지 않는다.**
+
+    - `필터가능` — 1층 필터 AI 는 그 덱의 맵이 있어야 둔다(지금은 두 덱뿐).
+      나머지 덱은 무작위 AI 와 사람만 맡을 수 있다.
+    - `효과` — `cards/효과/<덱>.yaml` 이 있는 덱만 효과가 실제로 적용된다. 없는 덱은
+      카드를 내고 전투까지는 되지만 효과는 「미구현」으로 기보에 남는다. 덱 전용 상수
+      (세금·벽)도 선언된 두 덱 말고는 기본값(없음)이다 — **추측으로 채우지 않았다.**
+    """
+    표 = 기본카드표()
+    테마들 = sorted({표[이름].theme for 이름 in 표.이름들()} - {공용태그})
+    나온것 = []
+    for 테마 in 테마들:
+        덱 = 덱_만들기(테마, 표)
+        나온것.append({
+            "이름": 테마,
+            "메인": len(덱.메인덱),
+            "상급": len(덱.상급덱),
+            "스킬": 덱.스킬,
+            "필터가능": 테마 in 맵파일,
+            "효과있음": (효과뿌리 / f"{테마}.yaml").exists(),
+            "상수선언됨": 테마 in 덱상수표,
+        })
+    return 나온것
+
+
+def 카드목록() -> list[dict]:
+    """카드 열람용 전수 목록. `data/card_pool.json` 그대로이고 고치지 않는다."""
+    표 = 기본카드표()
+    나온것 = []
+    for 이름 in 표.이름들():
+        정의 = 표[이름]
+        몬 = bool(정의.몬스터인가)
+        나온것.append({
+            "이름": 이름, "덱": 정의.theme, "종류": 정의.type,
+            "색": 정의.color, "레벨": 정의.level if 몬 else None,
+            "공": 정의.atk if 몬 else None, "수": 정의.df if 몬 else None,
+            "텍스트": 정의.text or "",
+        })
+    나온것.sort(key=lambda 하나: (하나["덱"], -(하나["레벨"] or 0), 하나["이름"]))
+    return 나온것
 
 
 class 사람자리:
@@ -159,7 +203,10 @@ class 대국:
         self.상태, self.난수 = 대전_준비(내덱, 상대덱, 시드, self.표)
         self.기록 = 기보()
         self.덱 = {"나": 내덱, "상대": 상대덱}
-        self.상수표 = {"나": 덱상수표[내덱], "상대": 덱상수표[상대덱]}
+        # 선언 안 된 덱은 기본값(세금 0 · 벽 0) — "그 덱 전용 규칙을 아직 안 적었다"는
+        # 뜻이고, 추측으로 채우지 않는다. 그런 덱은 효과도 대부분 미구현이다.
+        self.상수표 = {"나": 덱상수표.get(내덱, 덱상수()),
+                       "상대": 덱상수표.get(상대덱, 덱상수())}
         self.사람자리들: dict[str, 사람자리] = {}
         self.역할: dict[str, object] = {}
         for 자리 in ("나", "상대"):
@@ -169,28 +216,43 @@ class 대국:
                 한자리.보드만들기 = (lambda 쪽=자리: 보드_딕(self.상태, self.표, 쪽))
                 self.사람자리들[자리] = 한자리
                 self.역할[자리] = 한자리
-            elif 종류 == "필터":
+            elif 종류 == "필터" and self.덱[자리] in 맵파일:
                 self.역할[자리] = 필터플레이어(자리, self.난수, 맵뿌리 / 맵파일[self.덱[자리]])
+            elif 종류 == "필터":
+                # 맵이 없는 덱은 1층 필터가 둘 수 없다 — 조용히 무작위로 떨어진다.
+                self.역할[자리] = 무작위플레이어(자리, self.난수)
             else:
                 self.역할[자리] = 무작위플레이어(자리, self.난수)
         self.끝: 종료 | None = None
         self.배속 = 1.0                       # 0 이하면 기다리지 않는다(최대 속도)
         self.계속 = threading.Event()
         self.계속.set()
-        self.걸음 = 0                          # 멈춘 채로 「한 수만」 보내 줄 횟수
+        self.걸음 = 0                          # 멈춘 채로 보내 줄 「한 걸음」 횟수
+        self.걸음기준 = 0                      # 그 걸음을 시작할 때의 기보 줄 수
+        self.걸음남은 = 0                      # 기보가 안 늘어도 더 볼 자리 수(헛도는 것 방지)
+        self.걸음상한 = 24
         self.기록.적기(
             f"{내덱}(나) vs {상대덱}(상대) · 시드 {시드} · 선공 {self.상태.선공}"
         )
         threading.Thread(target=self._돌리기, daemon=True).start()
 
     def 박자(self, 사람인가: bool) -> None:
-        """AI가 둘 차례면 멈춤·배속을 여기서 본다. 사람 차례면 그냥 지나간다."""
+        """AI가 둘 차례면 멈춤·배속을 여기서 본다. 사람 차례면 그냥 지나간다.
+
+        「한 걸음」은 **기보가 실제로 한 줄 늘 때까지** 보내 준다(사용자 보고
+        2026-10-28). 전에는 "수를 고르는 자리" 하나만 통과시켜서, 둘 수가 없어 단계만
+        넘어가는 자리에 걸리면 눌러도 화면이 그대로라 고장처럼 보였다. 판이 멈춰 있을
+        때를 대비해 `걸음상한` 번까지만 보고 포기한다.
+        """
         if 사람인가:
             return
         while not self.계속.is_set():
             if self.걸음 > 0:
-                self.걸음 -= 1
-                return                         # 「한 수만」 — 박자도 건너뛴다
+                if len(self.기록.줄) > self.걸음기준 or self.걸음남은 <= 0:
+                    self.걸음 -= 1             # 눈에 보이는 변화가 생겼다(또는 포기)
+                else:
+                    self.걸음남은 -= 1
+                return
             if self.끝 is not None:
                 return
             time.sleep(0.08)
@@ -208,6 +270,8 @@ class 대국:
         if 한걸음:
             self.계속.clear()
             self.걸음 += 1
+            self.걸음기준 = len(self.기록.줄)
+            self.걸음남은 = self.걸음상한
         return {"배속": self.배속, "멈춤": not self.계속.is_set()}
 
     def _돌리기(self) -> None:
@@ -284,6 +348,36 @@ class 방:
             if self.역할설정[자리] == "사람" and 자리 not in 찬자리:
                 return 자리
         return None
+
+    def 방장토큰(self) -> str | None:
+        """방을 만든 사람. 나가면 그 다음으로 들어온 사람이 이어받는다."""
+        return next(iter(self.참가자들), None)
+
+    def 다시하기(self, 토큰: str, 내덱=None, 상대덱=None, 역할=None) -> bool:
+        """같은 방에서 새 판. **방장만** 누를 수 있고, 메모와 판정은 그대로 둔다.
+
+        덱·역할을 안 주면 하던 그대로 다시 한다. 자리는 다시 배정한다 — 사람 자리가
+        늘거나 줄 수 있기 때문이다.
+        """
+        if 토큰 != self.방장토큰():
+            return False
+        새역할 = dict(self.역할설정)
+        if 역할:
+            for 자리 in ("나", "상대"):
+                if 역할.get(자리):
+                    새역할[자리] = 역할[자리]
+        self.역할설정 = 새역할
+        self.대국 = 대국(내덱 or self.대국.덱["나"], 상대덱 or self.대국.덱["상대"],
+                         새역할, random.randrange(1 << 20))
+        찬자리: set[str] = set()
+        for 하나 in self.참가자들.values():
+            하나.자리 = None
+            for 자리 in ("나", "상대"):
+                if 새역할[자리] == "사람" and 자리 not in 찬자리:
+                    하나.자리 = 자리
+                    찬자리.add(자리)
+                    break
+        return True
 
     def 들이기(self, 별명: str) -> 참가자:
         if len(self.참가자들) >= self.최대인원:
@@ -458,6 +552,8 @@ class 방:
                 {"별명": 하나.별명, "자리": 하나.자리} for 하나 in self.참가자들.values()
             ],
             "정원": self.최대인원,
+            "방장인가": 토큰 == self.방장토큰(),
+            "역할설정": dict(self.역할설정),
             "기다리는자리": 기다리는자리,
             "메모들": [
                 dict(하나.딕(), 번호=번, 판정=self.판정.get(번))

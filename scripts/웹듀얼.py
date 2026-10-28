@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -37,7 +38,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from engine.room import 방장부
+from engine.room import 덱목록, 방장부, 카드목록
 
 쪽_HTML = r"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -68,11 +69,43 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
  border-radius:8px;padding:7px 9px}
 .숨김{display:none!important}
 
-/* ---------- 로비 ---------- */
-.로비{max-width:620px;margin:8vh auto;padding:0 18px}
-.로비 h1{font-size:22px;margin:0 0 4px} .로비 p{color:var(--흐림);margin:0 0 20px}
+/* ---------- 바깥 화면(메인 · 시작 · 열람 · 설정) ---------- */
+.바깥{max-width:660px;margin:6vh auto;padding:0 18px}
+.바깥.넓게{max-width:1200px;margin:3vh auto}
+.바깥 h1{font-size:24px;margin:0 0 4px} .바깥 p{color:var(--흐림);margin:0 0 20px}
+.바깥 h2{font-size:17px;margin:0}
+.머리줄{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.큰메뉴{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;
+ margin-bottom:16px}
+.메뉴쪽{display:flex;flex-direction:column;gap:3px;align-items:flex-start;
+ padding:15px 16px;border-radius:12px;background:var(--판);box-shadow:var(--그림자)}
+.메뉴쪽 b{font-size:15px} .메뉴쪽 span{font-size:11.5px;color:var(--흐림)}
+.메뉴쪽:hover{border-color:var(--강조);transform:translateY(-1px)}
+.두쪽{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:620px){.두쪽{grid-template-columns:1fr}}
+.칸이름{display:block;font-size:12px;color:var(--흐림);margin-bottom:8px;letter-spacing:.03em}
+button.큼{padding:10px 18px;font-size:14px}
+.켜기{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--흐림);min-width:0}
+.열람틀{display:grid;grid-template-columns:200px minmax(0,1fr) 300px;gap:12px;
+ align-items:start}
+@media (max-width:900px){.열람틀{grid-template-columns:1fr}}
+.덱칸,.목록칸,.상세칸{max-height:72vh;overflow:auto}
+.덱줄{display:flex;justify-content:space-between;align-items:baseline;gap:6px;
+ padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.덱줄:hover{background:var(--바탕)}
+.덱줄.켬{background:var(--강조);color:#1a1510;font-weight:700}
+.덱줄 .잔수{font-size:10.5px;opacity:.75;font-variant-numeric:tabular-nums}
+.덱표{font-size:9.5px;padding:0 5px;border-radius:999px;border:1px solid var(--선);
+ color:var(--흐림);margin-left:4px}
+.목록줄{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:7px;
+ cursor:pointer;font-size:12.5px;border-left:3px solid transparent}
+.목록줄:hover{background:var(--바탕)}
+.목록줄.켬{background:var(--바탕);border-left-color:var(--강조)}
+.목록줄 .작게{font-size:10.5px;color:var(--흐림);margin-left:auto;white-space:nowrap}
+.상세칸 pre{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:12px;
+ line-height:1.55;margin:6px 0 0}
 .상자{background:var(--판);border:1px solid var(--선);border-radius:12px;padding:16px;
- box-shadow:var(--그림자);margin-bottom:14px}
+ box-shadow:var(--그림자);margin-bottom:12px}
 .줄{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:9px}
 .줄 label{min-width:68px;color:var(--흐림);font-size:13px}
 .방줄{display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -101,7 +134,7 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
  color:var(--흐림)}
 .단계알.켬{background:var(--강조);color:#1a1510;border-color:transparent;font-weight:700}
 
-.매트{background:var(--매트);border:1px solid var(--매트선);border-radius:12px;
+.매트{position:relative;background:var(--매트);border:1px solid var(--매트선);border-radius:12px;
  padding:9px 10px;box-shadow:var(--그림자);display:flex;flex-direction:column;gap:6px;
  width:fit-content;max-width:100%}
 .쪽머리{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#eee}
@@ -143,6 +176,33 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
  border-color:#4a506a}
 .카드.수비{transform:rotate(0deg)} .카드.수비 .밑::after{content:"수비"}
 .카드.고름{outline:2px solid var(--강조);outline-offset:1px}
+
+/* 카드게임다운 움직임 둘 — 카드가 판에 놓일 때, 그리고 맞을 때.
+   수를 가리거나 늦추지 않는다(애니메이션은 0.4초 안에 끝나고 판정과 무관하다). */
+@keyframes 내려놓기{
+  0%  {transform:translateY(-14px) scale(.86) rotate(-4deg);opacity:0}
+  60% {transform:translateY(2px)   scale(1.04) rotate(0);   opacity:1}
+  100%{transform:none;opacity:1}
+}
+.카드.갓놓임{animation:내려놓기 .34s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes 맞음{
+  0%,100%{transform:none}
+  18%{transform:translateX(-5px)} 38%{transform:translateX(5px)}
+  58%{transform:translateX(-3px)} 78%{transform:translateX(2px)}
+}
+.매트.맞음{animation:맞음 .42s ease-in-out}
+.매트.맞음 .hp{color:var(--상대쪽);text-shadow:0 0 12px rgba(216,118,111,.7)}
+@keyframes 피튀김{
+  0%{opacity:0;transform:translate(-50%,-6px) scale(.9)}
+  25%{opacity:1;transform:translate(-50%,-14px) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-34px) scale(1)}
+}
+.깎임{position:fixed;z-index:70;pointer-events:none;
+ font-weight:800;font-size:17px;color:var(--상대쪽);text-shadow:0 1px 6px rgba(0,0,0,.6);
+ animation:피튀김 1.1s ease-out forwards}
+@media (prefers-reduced-motion:reduce){
+  .카드.갓놓임,.매트.맞음,.깎임{animation:none}
+}
 .카드.할수있음{box-shadow:0 0 0 1px var(--강조) inset}
 .카드[draggable="true"]{cursor:grab}
 .카드.끌림{opacity:.45}
@@ -223,38 +283,27 @@ button .효과문{display:block;margin-top:3px;font-size:11.5px;color:var(--흐�
  line-height:1.45;white-space:normal}
 button:hover .효과문{color:var(--글)}
 .끝판{grid-column:1/-1;background:var(--강조);color:#1a1510;border-radius:10px;
- padding:12px 15px;font-weight:700}
+ padding:11px 15px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.끝말{font-weight:700}
+.끝말 .사람들{color:rgba(26,21,16,.7);font-weight:400}
+.끝단추{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.끝단추 button{background:rgba(255,255,255,.75);border-color:transparent;color:#1a1510}
+.끝단추 button.주{background:#1a1510;color:var(--강조)}
+.끝단추 .사람들{color:rgba(26,21,16,.75);align-self:center}
+body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직임끔 .깎임{animation:none}
 .사람들{font-size:12px;color:var(--흐림)}
 </style></head><body>
 
-<div id="로비" class="로비">
-  <h1>뉴 네오 — 듀얼</h1>
+<div id="메인" class="바깥">
+  <h1>뉴 네오</h1>
   <p>자작 TCG 「뉴 네오」 대전 환경. 규칙 판정은 전부 파이썬 엔진이 한다.</p>
-  <div class="상자">
-    <div class="줄"><label>별명</label><input id="별명" value="" placeholder="아무거나" style="flex:1"></div>
-    <div class="줄"><label>내 덱</label>
-      <select id="내덱"><option>호박옥</option><option>던전마스터</option></select>
-      <label>상대 덱</label>
-      <select id="상대덱"><option>던전마스터</option><option>호박옥</option></select>
-    </div>
-    <div class="줄"><label>내 쪽</label>
-      <select id="내역할">
-        <option value="사람">내가 둔다</option>
-        <option value="필터">AI (1층 필터)</option>
-        <option value="무작위">AI (무작위)</option>
-      </select>
-      <label>상대</label>
-      <select id="상대역할">
-        <option value="필터">AI (1층 필터)</option>
-        <option value="무작위">AI (무작위)</option>
-        <option value="사람">사람 — 초대 링크로 부른다</option>
-      </select>
-    </div>
-    <div class="줄" style="margin-bottom:2px">
-      <span class="사람들">양쪽 다 AI 로 두면 구경만 하는 방이 된다 — 배속·멈춤으로 보면서 메모를 남길 수 있다.</span>
-    </div>
-    <div class="줄"><button class="주" onclick="방만들기()">방 만들기</button>
-      <span id="로비말" style="color:var(--흐림);font-size:12px"></span></div>
+  <div class="큰메뉴">
+    <button class="메뉴쪽" onclick="화면('시작')">
+      <b>게임 시작</b><span>혼자 두기 · AI끼리 구경 · 사람 둘</span></button>
+    <button class="메뉴쪽" onclick="화면('열람')">
+      <b>카드 열람</b><span>덱 구성과 카드 200장</span></button>
+    <button class="메뉴쪽" onclick="화면('설정')">
+      <b>설정</b><span>별명 · 기본 배속 · 움직임</span></button>
   </div>
   <div class="상자">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -262,6 +311,76 @@ button:hover .효과문{color:var(--글)}
       <span class="사람들" id="정원말"></span>
     </div>
     <div id="방목록"></div>
+  </div>
+</div>
+
+<div id="시작" class="바깥 숨김">
+  <div class="머리줄"><button onclick="화면('메인')">← 메인</button><h2>게임 시작</h2></div>
+  <div class="상자">
+    <div class="줄"><label>별명</label><input id="별명" placeholder="아무거나" style="flex:1"></div>
+  </div>
+  <div class="두쪽">
+    <div class="상자">
+      <b class="칸이름">내 쪽</b>
+      <div class="줄"><label>덱</label><select id="내덱" style="flex:1"></select></div>
+      <div class="줄"><label>누가</label><select id="내역할" style="flex:1">
+        <option value="사람">내가 둔다</option>
+        <option value="필터">AI (1층 필터)</option>
+        <option value="무작위">AI (무작위)</option>
+      </select></div>
+      <div class="귀띔" id="내덱말"></div>
+    </div>
+    <div class="상자">
+      <b class="칸이름">상대 쪽</b>
+      <div class="줄"><label>덱</label><select id="상대덱" style="flex:1"></select></div>
+      <div class="줄"><label>누가</label><select id="상대역할" style="flex:1">
+        <option value="필터">AI (1층 필터)</option>
+        <option value="무작위">AI (무작위)</option>
+        <option value="사람">사람 — 초대 링크로 부른다</option>
+      </select></div>
+      <div class="귀띔" id="상대덱말"></div>
+    </div>
+  </div>
+  <div class="상자">
+    <div class="줄" style="margin:0">
+      <button class="주 큼" onclick="방만들기()">이 설정으로 시작</button>
+      <span id="로비말" class="사람들"></span>
+    </div>
+  </div>
+</div>
+
+<div id="열람" class="바깥 넓게 숨김">
+  <div class="머리줄"><button onclick="화면('메인')">← 메인</button><h2>카드 열람</h2>
+    <input id="찾기" placeholder="카드 이름·텍스트로 찾기" oninput="열람그리기()" style="flex:1;max-width:280px">
+  </div>
+  <div class="열람틀">
+    <div class="상자 덱칸"><b class="칸이름">덱 구성</b><div id="덱목록"></div></div>
+    <div class="상자 목록칸"><div class="사람들" id="열람셈"></div><div id="카드목록"></div></div>
+    <div class="상자 상세칸" id="열람상세"><div class="메타">카드를 누르면 원문이 여기 뜬다.</div></div>
+  </div>
+</div>
+
+<div id="설정" class="바깥 숨김">
+  <div class="머리줄"><button onclick="화면('메인')">← 메인</button><h2>설정</h2></div>
+  <div class="상자">
+    <div class="줄"><label>별명</label><input id="설정별명" placeholder="아무거나" style="flex:1"></div>
+    <div class="줄"><label>기본 배속</label>
+      <select id="설정배속">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+        <option value="2">2×</option><option value="4">4×</option><option value="0">최대</option>
+      </select>
+      <span class="귀띔">AI끼리 두는 판을 열 때 처음 속도</span>
+    </div>
+    <div class="줄"><label>움직임</label>
+      <label class="켜기"><input type="checkbox" id="설정애니" checked> 카드 내려놓기·타격 효과를 쓴다</label>
+    </div>
+    <div class="줄" style="margin:0"><button class="주" onclick="설정저장()">저장</button>
+      <span id="설정말" class="사람들"></span></div>
+  </div>
+  <div class="상자">
+    <b class="칸이름">이 프로그램에 대해</b>
+    <div class="귀띔">규칙 판정은 전부 파이썬 엔진이 한다 — 화면은 결과를 그리고 누른 것을 돌려줄 뿐이다.
+      이상한 점은 판 안에서 <b>메모</b> 탭에 남겨 주면 턴·단계가 자동으로 붙는다.</div>
   </div>
 </div>
 
@@ -353,15 +472,17 @@ async function 참가(이름){
   들어가기(d.방, d.토큰);
 }
 function 들어가기(이름, 표){
-  방=이름; 토큰=표; 마지막그림=''; 현재진행={}; 마지막판정수=0;
+  방=이름; 토큰=표; 마지막그림=''; 현재진행={}; 마지막판정수=0; 지난판=null; 갓놓인것=new Set();
   $('끝자리').innerHTML='';
   history.replaceState(null,'',`?방=${이름}`);
-  $('로비').classList.add('숨김'); $('판').classList.remove('숨김');
+  화면('판');
   뽑기();
 }
 
 /* ---------- 판 상태 ---------- */
 let 현재보드=null, 수표=null, 끄는중=null, 메뉴=null, 마지막그림='', 리포주소=null;
+let 지난판=null, 갓놓인것=new Set();   /* 애니메이션용 — 규칙과 무관하다 */
+let 현재덱={나:'호박옥',상대:'던전마스터'};
 let 내자리='나', 적자리='상대', 지금질문=null;
 
 /* 합법수를 제스처별로 묶는다. 색인이 그대로 답할 번호다. */
@@ -441,12 +562,13 @@ function 카드칸(c, 자리글, ㅇ){
   const 뱃=c.카운터?`<span class="뱃지">${c.카운터}</span>`:'';
   const 뒤=c.뒷면?' 뒤':'';
   const 고름=(고른카드===c.이름)?' 고름':'';
+  const 갓=(ㅇ&&갓놓인것.has(`${ㅇ.쪽}/${ㅇ.존}/${ㅇ.i}/${c.이름}`))?' 갓놓임':'';
   const 표시=c.표시==='수비'?'수':(c.표시==='공격'?'공':'');
   const 쓸수=ㅇ&&ㅇ.쪽===내자리?카드수들(c.이름,ㅇ):[];
   const 끌것=끌기갈래(c,ㅇ);
   const 고를수있나=지금질문&&지금질문.종류==='고르기'&&(지금질문.후보||[]).includes(c.이름);
   const 표딱지=쓸수.length?`<span class="할수">${쓸수.length}</span>`:'';
-  return `<div class="칸 카드 ${색}${뒤}${고름}${쓸수.length?' 할수있음':''}${고를수있나?' 고를수있음':''}"
+  return `<div class="칸 카드 ${색}${뒤}${고름}${갓}${쓸수.length?' 할수있음':''}${고를수있나?' 고를수있음':''}"
     ${위치표(ㅇ)} ${끌것.length?'draggable="true"':''} title="${벗기기(c.이름)}">
     ${뱃}${표딱지}<div class="명">${벗기기(c.이름)}</div>
     <div class="밑"><span>${수치}</span><span>${표시}</span></div></div>`;
@@ -664,6 +786,7 @@ async function 뽑기(){
     const 지문=JSON.stringify(d);
     if(지문===마지막그림) return;
     마지막그림=지문;
+    움직임보기(d.보드);
     현재보드=d.보드; 지금질문=d.질문; 수표=수표만들기(d.질문);
     내자리=d.나의자리==='상대'?'상대':'나';
     적자리=내자리==='나'?'상대':'나';
@@ -689,9 +812,8 @@ async function 뽑기(){
     수그리기(d);
     메모그리기(d);
     if(d.리포) 리포주소=d.리포;
-    /* 끝나지 않았으면 비운다 — 전에 보던 판의 띠가 남아 있었다 */
-    $('끝자리').innerHTML = d.끝
-      ? `<div class="끝판">${벗기기(d.끝.승자)} 승 — ${벗기기(d.끝.근거)}</div>` : '';
+    현재덱 = d.덱 || 현재덱;
+    끝그리기(d);
   }catch(e){ $('물음').textContent='서버와 끊겼다.'; }
 }
 
@@ -752,6 +874,187 @@ function 메모그리기(d){
   }).join('');
 }
 
+/* ---------- 화면 전환 ---------- */
+const 화면들={메인:'메인',시작:'시작',열람:'열람',설정:'설정',판:'판'};
+function 화면(어디){
+  Object.values(화면들).forEach(i=>$(i).classList.toggle('숨김', i!==화면들[어디]));
+  if(어디==='열람') 열람열기();
+  if(어디==='메인') 방목록();
+}
+function 메인으로(){
+  방=null; 토큰=null; 지난판=null; 마지막그림=''; 현재진행={};
+  history.replaceState(null,'','/');
+  화면('메인');
+}
+
+/* ---------- 설정(이 브라우저에만 저장) ---------- */
+const 설정기본={별명:'',기본배속:1,애니:true};
+let 설정=Object.assign({},설정기본);
+function 설정읽기(){
+  try{ 설정=Object.assign({},설정기본,JSON.parse(localStorage.getItem('뉴네오설정')||'{}')); }
+  catch(e){ 설정=Object.assign({},설정기본); }
+  $('설정별명').value=설정.별명; $('별명').value=설정.별명;
+  $('설정배속').value=String(설정.기본배속);
+  $('설정애니').checked=!!설정.애니;
+  document.body.classList.toggle('움직임끔', !설정.애니);
+}
+function 설정저장(){
+  설정={별명:$('설정별명').value.trim(), 기본배속:parseFloat($('설정배속').value), 애니:$('설정애니').checked};
+  localStorage.setItem('뉴네오설정', JSON.stringify(설정));
+  $('별명').value=설정.별명;
+  document.body.classList.toggle('움직임끔', !설정.애니);
+  $('설정말').textContent='저장했다.';
+  setTimeout(()=>{ $('설정말').textContent=''; },1600);
+}
+
+/* ---------- 덱 목록 ---------- */
+let 덱들=[], 카드들=[], 열람보임=[], 고른덱=null, 고른카드이름=null;
+async function 덱받기(){
+  if(덱들.length) return 덱들;
+  덱들=(await 받기('/api/decks')).덱들||[];
+  return 덱들;
+}
+function 덱설명(d){
+  if(!d) return '';
+  const 쪽=[`메인 ${d.메인}장 · 상급 ${d.상급}장`, `스킬 「${d.스킬||'없음'}」`];
+  if(!d.효과있음) 쪽.push('⚠ 효과 미구현 — 카드를 내고 전투까지는 되지만 효과는 안 걸린다');
+  if(!d.필터가능) 쪽.push('1층 필터 AI 없음 → AI 는 무작위로 둔다');
+  return 쪽.join(' · ');
+}
+async function 덱고르개채우기(){
+  const 목=await 덱받기();
+  ['내덱','상대덱'].forEach((아이디,자리)=>{
+    const sel=$(아이디);
+    sel.innerHTML=목.map(d=>`<option value="${벗기기(d.이름)}">${벗기기(d.이름)}`
+      +`${d.효과있음?'':' (효과 미구현)'}</option>`).join('');
+    sel.value = 자리===0 ? '호박옥' : '던전마스터';
+    sel.onchange=()=>덱말갱신();
+  });
+  덱말갱신();
+}
+function 덱말갱신(){
+  const 찾기=이름=>덱들.find(d=>d.이름===이름);
+  $('내덱말').textContent=덱설명(찾기($('내덱').value));
+  $('상대덱말').textContent=덱설명(찾기($('상대덱').value));
+}
+
+/* ---------- 카드 열람 ---------- */
+async function 열람열기(){
+  await 덱받기();
+  if(!카드들.length) 카드들=(await 받기('/api/cards')).카드들||[];
+  덱목록그리기(); 열람그리기();
+}
+function 덱목록그리기(){
+  $('덱목록').innerHTML=`<div class="덱줄${고른덱===null?' 켬':''}" onclick="덱고르기(null)">
+      <span>전체</span><span class="잔수">${카드들.length}</span></div>`
+    + 덱들.map(d=>`<div class="덱줄${고른덱===d.이름?' 켬':''}" onclick="덱고르기('${벗기기(d.이름)}')">
+        <span>${벗기기(d.이름)}${d.효과있음?'':'<span class="덱표">효과 미구현</span>'}</span>
+        <span class="잔수">${d.메인+d.상급+1}</span></div>`).join('');
+}
+function 덱고르기(이름){ 고른덱=이름; 덱목록그리기(); 열람그리기(); }
+function 열람그리기(){
+  const 글=($('찾기').value||'').trim().toLowerCase();
+  const 걸린것=카드들.filter(c=>
+    (고른덱===null || c.덱===고른덱 || c.덱==='공용') &&
+    (!글 || c.이름.toLowerCase().includes(글) || (c.텍스트||'').toLowerCase().includes(글)));
+  $('열람셈').textContent=`${걸린것.length}장`
+    + (고른덱?` · ${고른덱}(공용 포함)`:'')+(글?` · "${글}"`:'');
+  열람보임=걸린것;      /* 눌렀을 때 찾을 수 있게 — JSON 을 onclick 에 끼우면 따옴표가 깨진다 */
+  $('카드목록').innerHTML=걸린것.map((c,i)=>{
+    const 수치=c.공!=null?`${c.공}/${c.수}`:(c.종류||'');
+    return `<div class="목록줄${고른카드이름===c.이름?' 켬':''}" onclick="열람상세(${i})">
+      <span>${벗기기(c.이름)}</span>
+      <span class="작게">${벗기기(c.덱)} · ${벗기기(수치)}${c.레벨!=null?' · Lv'+c.레벨:''}</span></div>`;
+  }).join('') || '<div class="귀띔">없다.</div>';
+}
+function 열람상세(자리){
+  const c=열람보임[자리]; if(!c) return;
+  고른카드이름=c.이름;
+  const 메타=[c.덱,c.종류,c.레벨!=null?`레벨 ${c.레벨}`:null,
+    c.공!=null?`${c.공} / ${c.수}`:null,c.색].filter(Boolean).join(' · ');
+  $('열람상세').innerHTML=`<h3 style="margin:0 0 2px;font-size:14px">${벗기기(c.이름)}</h3>
+    <div class="메타">${벗기기(메타)}</div><pre>${벗기기(c.텍스트||'(텍스트 없음)')}</pre>`;
+  열람그리기();
+}
+
+/* ---------- 판이 끝났을 때 ---------- */
+function 끝그리기(d){
+  const 자리=$('끝자리');
+  if(!d.끝){ 자리.innerHTML=''; return; }
+  const 덱=d.덱, 설정글=`${덱['나']} vs ${덱['상대']}`;
+  자리.innerHTML=`<div class="끝판">
+      <div class="끝말"><b>${벗기기(d.끝.승자)} 승</b> — ${벗기기(d.끝.근거)}
+        <span class="사람들">(${벗기기(설정글)})</span></div>
+      <div class="끝단추">`
+    + (d.방장인가
+        ? `<button class="주" onclick="다시하기()">같은 설정으로 다시</button>
+           <button onclick="덱바꿔다시()">덱 바꿔서 다시</button>`
+        : `<span class="사람들">방장이 다시 시작하기를 기다리는 중…</span>`)
+    + `<button onclick="메인으로()">메인으로</button></div></div>`;
+}
+async function 다시하기(){
+  const d=await 보내기('/api/rematch',{방,토큰});
+  if(d.오류){ $('물음').textContent=d.오류; return; }
+  지난판=null; 마지막그림=''; $('끝자리').innerHTML=''; 뽑기();
+}
+async function 덱바꿔다시(){
+  await 덱받기();
+  const 목=덱들.map(d=>d.이름);
+  const 내=prompt(`내 덱 (${목.join(' / ')})`, 현재덱.나);
+  if(!내) return;
+  const 상대=prompt(`상대 덱 (${목.join(' / ')})`, 현재덱.상대);
+  if(!상대) return;
+  if(!목.includes(내) || !목.includes(상대)){ $('물음').textContent='그런 덱이 없다.'; return; }
+  const d=await 보내기('/api/rematch',{방,토큰,내덱:내,상대덱:상대});
+  if(d.오류){ $('물음').textContent=d.오류; return; }
+  지난판=null; 마지막그림=''; $('끝자리').innerHTML=''; 뽑기();
+}
+
+/* ---------- 움직임 (판이 바뀐 자리만 짚는다) ---------- */
+function 자리쇠(쪽,존,i,c){ return c?`${쪽}/${존}/${i}/${c.이름}`:null; }
+function 놓인자리들(b){
+  const 모음=new Set();
+  if(!b) return 모음;
+  for(const 쪽 of ['나','상대']){
+    const p=b.쪽[쪽]; if(!p) continue;
+    ['유닛','이펙트'].forEach(존=>(p[존]||[]).forEach((c,i)=>{
+      const 쇠=자리쇠(쪽,존,i,c); if(쇠) 모음.add(쇠);
+    }));
+  }
+  return 모음;
+}
+function 움직임보기(b){
+  if(!지난판){ 지난판=b; return; }
+  /* 새로 생긴 카드 자리 — 소환·로드·특수소환이 전부 여기로 들어온다 */
+  const 전=놓인자리들(지난판), 후=놓인자리들(b);
+  const 새것=[...후].filter(x=>!전.has(x));
+  if(새것.length){
+    갓놓인것=new Set(새것);
+    setTimeout(()=>{ 갓놓인것=new Set(); }, 500);
+  }
+  /* HP 가 깎인 쪽을 흔든다 */
+  for(const 쪽 of ['나','상대']){
+    const 전HP=지난판.쪽[쪽]?.hp, 후HP=b.쪽[쪽]?.hp;
+    if(전HP!=null && 후HP!=null && 후HP<전HP) 맞는모습(쪽, 전HP-후HP);
+  }
+  지난판=b;
+}
+function 맞는모습(쪽, 깎인양){
+  const 매트=document.getElementById(쪽===내자리?'나매트':'적매트');
+  if(!매트) return;
+  매트.classList.remove('맞음'); void 매트.offsetWidth; 매트.classList.add('맞음');
+  setTimeout(()=>매트.classList.remove('맞음'), 500);
+  /* 매트는 0.9초마다 통째로 다시 그려진다 — 몸통에 붙여야 숫자가 안 지워진다 */
+  const 네모=매트.getBoundingClientRect();
+  const 글=document.createElement('div');
+  글.className='깎임';
+  글.textContent=`-${깎인양}`;
+  글.style.left=(네모.left+네모.width/2)+'px';
+  글.style.top=(네모.top+10)+'px';
+  document.body.appendChild(글);
+  setTimeout(()=>글.remove(), 1200);
+}
+
 /* ---------- 진행 조절 (AI끼리 두는 판을 보면서) ---------- */
 const 배속들=[0.5,1,2,4,0];
 async function 진행(몸){ await 보내기('/api/진행',Object.assign({방,토큰},몸)); 마지막그림=''; 뽑기(); }
@@ -786,9 +1089,12 @@ function 탭열기(이름){
 
 손길걸기();
 
+설정읽기();
+덱고르개채우기();
 const 들어온방 = new URLSearchParams(location.search).get('방');
-if(들어온방){ $('별명').value='손님'; 참가(들어온방); }
-방목록(); setInterval(()=>{ 방 ? 뽑기() : 방목록(); }, 900);
+if(들어온방){ if(!$('별명').value) $('별명').value='손님'; 참가(들어온방); }
+setInterval(()=>{ 방 ? 뽑기() : (!$('메인').classList.contains('숨김') && 방목록()); }, 900);
+방목록();
 </script></body></html>
 """
 
@@ -837,8 +1143,13 @@ def _깃(*인수: str, 시간: int = 60) -> tuple[int, str]:
 _리포주소캐시: list = []
 
 
+# 배포본은 이 공개 리포의 DuelModel 가지에서 받는다. git 없이 zip 으로 받은 사람은
+# `git remote` 가 없으므로, 화면의 「깃허브 이슈」 가 갈 곳을 여기서 알려 준다.
+배포리포 = "https://github.com/somlon/card_simulation_model"
+
+
 def 리포웹주소() -> str | None:
-    """`git remote` 에서 깃허브 웹 주소를 뽑는다. 깃 리포가 아니면 `None`."""
+    """`git remote` 에서 깃허브 웹 주소를 뽑는다. 없으면 배포 리포로 떨어진다."""
     if _리포주소캐시:
         return _리포주소캐시[0]
     주소 = None
@@ -851,8 +1162,8 @@ def 리포웹주소() -> str | None:
             주소 = 값[:-4] if 값.endswith(".git") else 값
     except (OSError, subprocess.SubprocessError):
         주소 = None
-    _리포주소캐시.append(주소)
-    return 주소
+    _리포주소캐시.append(주소 or os.environ.get("뉴네오_리포") or 배포리포)
+    return _리포주소캐시[0]
 
 
 def 피드백올리기(방하나) -> str:
@@ -953,6 +1264,12 @@ def 손잡이_만들기(장부: 방장부):
                 except KeyError as 오류:
                     self._json({"오류": str(오류)})
                 return
+            if 쪼갬.path == "/api/decks":
+                self._json({"덱들": 덱목록()})
+                return
+            if 쪼갬.path == "/api/cards":
+                self._json({"카드들": 카드목록()})
+                return
             if 쪼갬.path == "/api/memo.md":
                 묻기 = parse_qs(쪼갬.query)
                 하나 = 장부.방들.get((묻기.get("room") or [""])[0])
@@ -991,6 +1308,14 @@ def 손잡이_만들기(장부: 방장부):
                     하나 = 장부.방들.get(몸통.get("방", ""))
                     됐나 = bool(하나 and 하나.답하기(몸통.get("토큰", ""), 몸통.get("값")))
                     self._json({"됐나": 됐나})
+                elif 길 == "/api/rematch":
+                    하나 = 장부.방들.get(몸통.get("방", ""))
+                    됐나 = bool(하나 and 하나.다시하기(
+                        몸통.get("토큰", ""), 몸통.get("내덱"), 몸통.get("상대덱"),
+                        {"나": 몸통.get("내역할"), "상대": 몸통.get("상대역할")},
+                    ))
+                    self._json({"됐나": 됐나} if 됐나
+                               else {"오류": "방장만 다시 시작할 수 있다"})
                 elif 길 == "/api/진행":
                     하나 = 장부.방들.get(몸통.get("방", ""))
                     if 하나 is None:
@@ -1043,7 +1368,18 @@ def 주문() -> int:
     자동올리기 = 인수.피드백올리기
     장부 = 방장부(인수.최대인원)
     주인 = "0.0.0.0" if 인수.공개 else "127.0.0.1"
-    서버 = 듀얼서버((주인, 인수.포트), 손잡이_만들기(장부))
+    # 배포본은 남의 PC 에서 돈다 — 그 포트를 다른 것이 쓰고 있으면 옆 포트로 비킨다.
+    서버 = None
+    for 더하기 in range(12):
+        try:
+            서버 = 듀얼서버((주인, 인수.포트 + 더하기), 손잡이_만들기(장부))
+            인수.포트 += 더하기
+            break
+        except OSError:
+            continue
+    if 서버 is None:
+        print(f"포트 {인수.포트}~{인수.포트 + 11} 가 전부 쓰이고 있다 — --포트 로 다른 번호를 주거라.")
+        return 1
     내주소 = f"http://127.0.0.1:{인수.포트}/"
     print(f"듀얼 서버 — 정원 {인수.최대인원}명")
     print(f"  나:        {내주소}")
