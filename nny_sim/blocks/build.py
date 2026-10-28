@@ -144,6 +144,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     for a in ('owner_only', 'procedure', 'opt_per_card', 'summon_negate', 'exclusive'):
         if kw.get(a): setattr(e, a, kw[a])
     if kw.get('grant_of'): e.grant_of = kw['grant_of']
+    e.counter_keep = next(((b.k['name'], b.k['n']) for b in conds if b.name == 'cond_counters' and b.k['scope'].get('pred') == 'is_self'), None)   # lib.counter_keep
     e.counter_need = next(((w.k['name'], w.k['n']) for w in whens if w.name == 'when_counter'), None)   # lib.counter_effects
     e.kinds_costs = tuple(b.k for b in costs if b.name == 'kinds')   # 「각각 n장씩」 모으는 코스트(lib.v_kinds — 다른 효과가 쓰면 손해)
     pay = [b for b in costs if b.name not in ('pick', 'keep_link', 'oath')]
@@ -212,7 +213,10 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         tests.append(f'g.phase == {notes["phase_only"]!r}')
     if notes.get('cooldown'):   # 「이 효과의 사용 후, 다음 턴까지 자신은 이 효과를 사용할 수 없다」(F05 — 발동하면 사용한 것)
         tests.append(f'L.cool_ok(g, c, p, {num})')
+    made = False   # 앞 처리가 자신 필드에 카드를 낸다(특수소환 · 놓기) — 뒤 처리의 「자신 필드의 …」는 그 카드로 할 수 있다
     for b in [x for x in costs if not x.k.get('may')] + [x for x in dos if not x.k.get('may') and not x.k.get('soft')]:
+        if made and b in dos and (b.k.get('scope') or {}).get('side') == 'own' and (b.k.get('scope') or {}).get('zone') in ('field', 'mzone'): continue
+        if b in dos and b.name in ('special', 'place'): made = True
         if b.name == 'choice':
             tests.append(f'{G.fn(L.TESTS["cond_any_option"])}(g, c, p, ev, {G.const(b.k)})'); continue
         if b.name in ('branch',) or b.name not in L.BLOCKS: continue

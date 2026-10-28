@@ -31,6 +31,13 @@ def note_num(c, hook, num):
     n = dict(getattr(c, 'cont_nums', None) or {}); n[hook] = num; c.cont_nums = n
 
 
+def while_fn(k):
+    """[지속]의 적용 조건: while_counter — 「이 카드에 X 카운터가 놓여 있는 한」(앞면 · 1개 이상), while_zone — 「이 카드가 Z 존에 존재할 경우」"""
+    wc, wz = k.get('while_counter'), k.get('while_zone')
+    if wc is None and wz is None: return lambda g, x: True
+    return lambda g, x: x.faceup and (wc is None or x.counters.get(wc, 0) > 0) and (wz is None or x.zone == wz)
+
+
 def add_rule(c, key, fn, num):
     r = dict(c.rules or {}); r[key] = fn; c.rules = r
     note_num(c, 'rule:' + key, num)
@@ -88,8 +95,10 @@ def place_effect(c):
 def k_self_rule(c, num, k, notes, kw):
     """이 카드 자신에게만 걸리는 엔진 규칙 — 'direct_attack'(「이 카드는 상대 몬스터가 존재해도 직접공격할 수 있다」) · 'double_attack' ·
     battle=True: 'indestructible'의 전투 파괴만(「이 카드는 전투로는 파괴되지 않는다」 — 규칙 인자 battle)"""
-    if k.get('battle'): add_rule(c, k['key'], lambda g, src, x, battle=False, *a: battle and x is src, num)
-    else: add_rule(c, k['key'], lambda g, src, x, *a: x is src, num)
+    w = while_fn(k)
+    b = k.get('battle')   # True · 'battle': 전투로만 / 'effect': 효과로만(「효과로 파괴되지 않는다」)
+    if b: add_rule(c, k['key'], lambda g, src, x, battle=False, *a: (battle if b in (True, 'battle') else not battle) and x is src and w(g, src), num)
+    else: add_rule(c, k['key'], lambda g, src, x, *a: x is src and w(g, src), num)
 
 
 @kind('stat_mod')
@@ -116,6 +125,19 @@ def k_end_process(c, num, k, notes, kw):
         L.steps_run(g, c, p, steps)
     chain_hook(c, 'end_process', end_process)
     note_num(c, 'end_process', num)
+    c.end_order = end_order
+
+
+def end_order(g, c):
+    """종료 시 처리와 「턴 종료 시」 트리거의 순서는 그 카드의 플레이어가 정한다(사용자 답변 2026-10-21) — AI: 지금 발동할 수 있는 자신의 「턴 종료 시」 트리거가
+    있으면 그 뒤에(종료 시 처리가 그 트리거의 조건 — 카운터 등 — 을 바꾸기 전에)"""
+    p = c.controller; ev = {'kind': 'end_phase', 'player': g.turn_player}
+    for x in g.field_cards(p):
+        for e in x.effects:
+            sp = getattr(e, 'spec', None)
+            if sp is None or e.kind != 'trigger': continue
+            if any(w.name == 'when_phase' and w.k.get('phase') == 'end' for w in sp.kw.get('when', ())) and e.cond(g, x, p, ev): return 'after'
+    return 'before'
 
 
 @kind('host_leave')
@@ -131,8 +153,8 @@ def k_host_leave(c, num, k, notes, kw):
 @kind('player_rule')
 def k_player_rule(c, num, k, notes, kw):
     """플레이어가 받는 [지속] 규칙 — 규칙 함수의 첫 인자가 플레이어: 'cost_transfer'(델레가토르) · 'cost_double'(두플리카토르) · 'seri_lw_one'(아이라리움 2번) …"""
-    who = k.get('who', 'own')
-    add_rule(c, k['key'], lambda g, src, q, *a: q in L.sides(src.controller, who), num)
+    who, w = k.get('who', 'own'), k.get('while')
+    add_rule(c, k['key'], lambda g, src, q, *a: q in L.sides(src.controller, who) and (w is None or L.TESTS[w.name](g, src, src.controller, None, w.k)), num)
 
 
 @kind('rule_immune')
@@ -180,7 +202,13 @@ def k_grave_redirect(c, num, k, notes, kw):
 @kind('card_flag')
 def k_card_flag(c, num, k, notes, kw):
     """[지속] 카드 자신의 상태 플래그(엔진이 읽는 것) — 'attack_all'(상대 몬스터 전부에 공격 선언) 등. lasting: 한 번 적용하면 그 턴 동안 계속(c.cont_lasting)"""
-    c.flags[k['key']] = k.get('value', True)
+    v = k.get('value', True)
+    if k.get('while_counter') or k.get('while_zone'):   # 조건부 [지속] — 그때그때 계산(Game.flag), 무효면 꺼짐
+        w = while_fn(k)
+        c.flags[k['key']] = (lambda g, x, v=v, w=w: (v if w(g, x) and not g.is_neg(x) else None))
+        if k.get('while_counter'): c.counter_guard = set(getattr(c, 'counter_guard', None) or ()) | {k['while_counter']}
+    else:
+        c.flags[k['key']] = v
     note_num(c, 'flag:' + k['key'], num)
     if k.get('lasting'): c.cont_lasting = set(getattr(c, 'cont_lasting', None) or ()) | {num}
 
@@ -212,8 +240,10 @@ def k_swap(c, num, k, notes, kw):
 def k_rule_to(c, num, k, notes, kw):
     """[지속] 카드에 걸리는 엔진 규칙(CARD_RULES — 'double_attack' 등)을 집합 조건(to, 이 카드 컨트롤러 기준)에 맞는 필드의 카드에
     (「자신 필드의 「용기」 몬스터는 2회 공격할 수 있다」). 받는 카드의 내성은 엔진 공통(Game.rule_reaches)"""
-    to = k['to']
+    to, w, b = k['to'], k.get('while'), k.get('battle')
     def fn(g, src, x, *a):
+        if b and not (a and a[0]): return False   # battle: 전투로 파괴되지 않는다(규칙 인자 battle)
+        if w is not None and not L.TESTS[w.name](g, src, src.controller, None, w.k): return False
         return g.on_field(x) and x.controller in L.sides(src.controller, to.get('side', 'own')) and L.match_card(g, src, src.controller, x, to)
     add_rule(c, k['key'], fn, num)
 

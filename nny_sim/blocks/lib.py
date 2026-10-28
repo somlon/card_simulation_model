@@ -89,8 +89,10 @@ def match_card(g, c, p, x, sc):
             if not x.is_monster(): return False
             v = x.level if key == 'level' else g.atk(x) if key == 'atk' else g.df(x)
             if not _OPS[cmp_[0]](v, cmp_[1]): return False
-    cn = sc.get('counter')
-    if cn is not None and x.counters.get(cn, 0) <= 0: return False
+    cn = sc.get('counter')   # 카운터 이름 또는 (이름, 최소 개수)
+    if cn is not None and (x.counters.get(cn[0], 0) < cn[1] if isinstance(cn, tuple) else x.counters.get(cn, 0) <= 0): return False
+    nh = sc.get('name_not_has')   # 「「X」 이외의 몬스터」 — 이름에 X가 든 카드 제외(카드명 줄임 표기)
+    if nh is not None and nh in x.name: return False
     at = sc.get('attr')
     if at is not None and not x.has_attr(at): return False
     pr = sc.get('pred')
@@ -113,6 +115,7 @@ PRED = {     # 이름 붙은 판정 — 필터 문법으로 쓰기 어려운 것
     'same_name': lambda g, c, p, x: x.name == c.name and x is not c,     # 「동명의 카드」(이 카드 자신 제외)
     'not_negated': lambda g, c, p, x: not g.is_neg(x),
     'own_owned': lambda g, c, p, x: x.owner == p,                         # 원래 주인이 자신(상대 필드로 옮긴 자신의 카드)
+    'is_self': lambda g, c, p, x: x is c,                                 # 이 카드(「이 카드에 카운터가 n개 이상」)
 }
 
 
@@ -186,7 +189,10 @@ def pick_cards(g, c, p, pool, n, k):
                 x = max(mine, key=lambda y: value(g, y))
         else:
             mine = [y for y in cand if g.side_of(y) == who]
-            if harm and mine:
+            if harm and mine and k.get('dest') == 'grave' and all(y.zone in ('main', 'upper') for y in mine):
+                # 덱에서 묘지로 보내는 자신 카드: 묘지로 가서 쓰이는 카드([유언] 기대 가치)부터, 같으면 덱 지침에서 덜 아끼는 카드
+                x = max(mine, key=lambda y: (round(lw_bonus(g, who, y, y.zone), 1), -ai.card_pri(g, who, y)))
+            elif harm and mine:
                 x = min(mine, key=lambda y: (ai.card_pri(g, who, y), value(g, y)))
             elif harm:
                 x = max(cand, key=lambda y: value(g, y))
@@ -275,6 +281,9 @@ def subjects(g, c, p, l, k):
     if k.get('all'): return pool
     if k.get('want'): return want_pick(g, c, p, pool, k)
     n = cost_n(g, c, p, k, num(l, k.get('n', 1)))
+    if k.get('spare') is not None:   # 「…를 되돌리고 발동. …를 특수소환한다」 — 뒤 처리에 쓸 가장 좋은 카드는 되도록 남긴다(AI)
+        sp = [x for x in cards_in(g, c, p, k['spare']) if x in pool]
+        if sp and len(pool) - 1 >= n: pool.remove(max(sp, key=lambda x: value(g, x) * UNIT + mon_extra(g, x, p)))
     if n <= 0 or not pool: return []
     xs = pick_cards(g, c, p, pool, min(n, len(pool)), k)   # 발동 때는 정한 수가 있어야 하지만(can_subjects), 처리 때 줄었으면 있는 만큼
     if k.get('as'): refs(l)[k['as']] = xs[0] if len(xs) == 1 else xs
@@ -690,14 +699,54 @@ def _counter_k(k):
     return kk
 
 
-def can_counter(g, c, p, ev, k):
-    if k.get('op', 'add') == 'add': return can_subjects(g, c, p, ev, _counter_k(k))
-    xs = preview(g, c, p, ev, _counter_k(k)) if 'ref' not in k else ref_cards(g, c, p, None, k['ref'])
-    if k.get('total'): return sum(x.counters.get(k['name'], 0) for x in xs) >= num(None, k.get('n', 1))
-    return any(x.counters.get(k['name'], 0) >= (1 if k.get('op') == 'remove_all' else num(None, k.get('n', 1))) for x in xs)
-
-
 COUNTER_UNIT = 5.0   # 카운터 1개의 기본 가치 — 그 카드를 가진 쪽의 자원(자신 카드 +, 상대 카드 −)
+GUARD_ON = 0.5       # 「이 카드에 X 카운터가 놓여 있는 한」 보호가 켜지고 꺼지는 가치(그 카드 가치의 비율)
+
+
+def counter_keep(x, name):
+    """x에 남겨 두고 싶은 name 카운터 수 — 「놓여 있는 한」 [지속]이 있으면 1, 「n개 이상일 때」 조건이 있으면 n"""
+    k = 1 if name in (getattr(x, 'counter_guard', None) or ()) else 0
+    for e in x.effects:
+        ck = getattr(e, 'counter_keep', None)
+        if ck and ck[0] == name: k = max(k, ck[1])
+    return k
+
+
+def counter_gain(g, c, p, x, name, n):
+    """x에 name 카운터 n개를 놓는 가치(B안)"""
+    mine = g.side_of(x) == p
+    if not mine: return -COUNTER_UNIT * n
+    cur = x.counters.get(name, 0); keep = counter_keep(x, name)
+    v = COUNTER_UNIT * n + counter_effects(g, x, p, name, n)
+    if keep and cur == 0: v += GUARD_ON * value(g, x) * UNIT
+    if keep > 1 and cur < keep: v += COUNTER_UNIT * min(n, keep - cur)
+    return v
+
+
+def counter_loss(g, p, x, name, n):
+    """x의 name 카운터 n개를 떼는 손해(B안, 음수)"""
+    if g.side_of(x) != p: return COUNTER_UNIT * n
+    cur = x.counters.get(name, 0); keep = counter_keep(x, name)
+    v = -COUNTER_UNIT * n
+    if keep and cur - n < keep <= cur: v -= GUARD_ON * value(g, x) * UNIT
+    return v
+
+
+def can_counter(g, c, p, ev, k):
+    op = k.get('op', 'add'); name = k['name']
+    if op == 'add': return can_subjects(g, c, p, ev, _counter_k(k))
+    xs = _counter_all(g, c, p, None, k)
+    if k.get('partial'): return True
+    if k.get('total'): return sum(x.counters.get(name, 0) for x in xs) >= num(None, k.get('n', 1))
+    need = 1 if op in ('remove_all', 'remove_any') else num(None, k.get('n', 1))
+    if op == 'remove_any' and k.get('fit') is not None and not pick_pool(g, c, p, k['fit']): return False
+    return any(x.counters.get(name, 0) >= need for x in xs)
+
+
+def _counter_all(g, c, p, l, k):
+    """떼는 카운터를 셀 카드(내성과 상관없이 — 받지 않는 카드의 카운터는 떼지 못할 뿐 있는 것은 있다, 재정 PDF Q2)"""
+    if 'ref' in k: return ref_cards(g, c, p, l, k['ref']) if l is not None or k['ref'] == 'SELF' else ([c] if k['ref'] == 'SELF' else [])
+    return [x for x in cards_in(g, c, p, k['scope']) if x.counters.get(k['name'], 0) > 0]
 
 
 def counter_effects(g, x, p, name, n):
@@ -731,41 +780,81 @@ def _flat_steps(g, c, p, steps):
             yield b
 
 
+def _any_n(g, c, p, x, k):
+    """「임의의 개수만큼 제거하고 … 제거한 개수까지」 — AI: 쓸 곳(fit 집합의 카드 수)만큼, 남겨 둘 개수는 남기고(모자라면 있는 만큼)"""
+    cur = x.counters.get(k['name'], 0)
+    fit = len(pick_pool(g, c, p, k['fit'])) if k.get('fit') is not None else cur
+    keep = counter_keep(x, k['name'])
+    avail = cur - keep if cur - keep >= 1 else cur
+    return max(0, min(fit, avail))
+
+
+def _remove_pick(g, c, p, xs, k):
+    """한 카드에서 떼기: 남겨 둘 개수를 지키고도 뗄 수 있는 카드 · 많이 가진 카드 · 가치 낮은 카드(remove_all은 fit 집합 수에 맞는 카드)"""
+    name = k['name']; op = k.get('op')
+    if op == 'remove_all':
+        f = len(pick_pool(g, c, p, k['fit'])) if k.get('fit') is not None else 99
+        return max(xs, key=lambda x: (min(x.counters.get(name, 0), f) - max(0, x.counters.get(name, 0) - f) - 0.5 * (counter_keep(x, name) > 0), -value(g, x)))
+    n = num(None, k.get('n', 1))
+    return max(xs, key=lambda x: (x.counters.get(name, 0) - n - counter_keep(x, name) >= 0, x.counters.get(name, 0), -value(g, x)))
+
+
 def v_counter(g, c, p, ev, k):
     op = k.get('op', 'add'); name = k['name']
-    xs = [c] if k.get('ref') == 'SELF' else preview(g, c, p, ev, _counter_k(k))
-    if k.get('total'): xs = xs[:1]
-    out = 0.0
-    for x in xs:
-        mine = g.side_of(x) == p
-        n = x.counters.get(name, 0) if op == 'remove_all' else n_of(k)
-        out += (1.0 if op == 'add' else -1.0) * (1.0 if mine else -1.0) * COUNTER_UNIT * n
-        if mine and op == 'add': out += counter_effects(g, x, p, name, n)
-    return out
+    if op == 'add':
+        xs = [c] if k.get('ref') == 'SELF' else pick_pool(g, c, p, _counter_k(k)['scope']) if k.get('scope') is not None else []
+        if not xs: return 0.0
+        n = n_of(k)
+        if k.get('all'): return sum(counter_gain(g, c, p, x, name, n) for x in xs)
+        return max(counter_gain(g, c, p, x, name, n) for x in xs)
+    xs = [x for x in _counter_all(g, c, p, None, k) if x.counters.get(name, 0) > 0]
+    if not xs: return 0.0
+    if k.get('total'):
+        return -COUNTER_UNIT * n_of(k)
+    x = _remove_pick(g, c, p, xs, k)
+    n = x.counters.get(name, 0) if op == 'remove_all' else _any_n(g, c, p, x, k) if op == 'remove_any' else n_of(k)
+    return counter_loss(g, p, x, name, n)
 
 
 @block('counter', can=can_counter, val=v_counter, threat=200)
 def do_counter(g, c, p, l, k):
-    """A19 카운터 — op 'add' · 'remove' · 'remove_all'. 뗀 · 놓은 개수는 k['count_as']로 남긴다.
-    total: 「(자신 필드의) 카운터를 n개 제거한다」 — 여러 카드에서 합계 n개. 재정 G6: 정한 개수를 뗄 수 없으면 처리하지 못한 것 — 아무것도 하지 않는다"""
+    """A19 카운터 — op 'add' · 'remove' · 'remove_all' · 'remove_any'(임의의 개수 — AI가 정함). 뗀 · 놓은 개수는 k['count_as']로 남긴다.
+    total: 「(자신 필드의 …에서) 카운터를 합계 n개 제거한다」 — 여러 카드에서. 재정 G6: 정한 개수가 없으면 처리하지 못한 것(아무것도 하지 않음).
+    효과를 받지 않는 카드의 카운터는 떼지 못하지만 있는 것으로 센다(처리는 이어 감 — 재정 PDF Q2).
+    partial: 「제거하지 못하면 대신 …」 — 있는 만큼 떼고 모자란 수를 k['short_as']로 남긴다"""
     op = k.get('op', 'add'); name = k['name']; total = 0
-    xs = subjects(g, c, p, l, _counter_k(k))
-    if k.get('total') and op == 'remove':
-        need = num(l, k.get('n', 1))
-        if sum(x.counters.get(name, 0) for x in xs) < need: return False
-        for x in sorted(xs, key=lambda x: -x.counters.get(name, 0)):
-            if total >= need: break
-            total += g.remove_counter(x, name, need - total, src=c)
-        if k.get('count_as'): refs(l)[k['count_as']] = total
-        return total >= need
-    for x in xs:
-        if op == 'add':
-            n = num(l, k.get('n', 1))
+    if op == 'add':
+        xs = [c] if k.get('ref') == 'SELF' else ref_cards(g, c, p, l, k['ref']) if 'ref' in k else None
+        if xs is None:
+            pool = pick_pool(g, c, p, _counter_k(k)['scope'], l)
+            if not pool: return False
+            xs = pool if k.get('all') else [max(pool, key=lambda x: counter_gain(g, c, p, x, name, num(l, k.get('n', 1))))]
+        n = num(l, k.get('n', 1))
+        for x in xs:
             if g.add_counter(x, name, n, src=c): total += n
-        else:
-            n = x.counters.get(name, 0) if op == 'remove_all' else num(l, k.get('n', 1))
-            if n <= 0 or (op == 'remove' and x.counters.get(name, 0) < n): continue
-            total += g.remove_counter(x, name, n, src=c)
+        if k.get('count_as'): refs(l)[k['count_as']] = total
+        return total > 0
+    allx = [x for x in _counter_all(g, c, p, l, k) if x.counters.get(name, 0) > 0]
+    if k.get('total'):
+        need = num(l, k.get('n', 1)); have = sum(x.counters.get(name, 0) for x in allx)
+        if have < need and not k.get('partial'): return False
+        left = {x.uid: x.counters.get(name, 0) for x in allx}; plan = {}
+        for _ in range(need):   # 하나씩: 남겨 둘 개수를 넘는 여유가 큰 카드부터
+            cs = [x for x in allx if left[x.uid] > 0]
+            if not cs: break
+            x = max(cs, key=lambda x: (left[x.uid] - counter_keep(x, name), -value(g, x)))
+            left[x.uid] -= 1; plan[x.uid] = plan.get(x.uid, 0) + 1
+        for x in allx:
+            if plan.get(x.uid): total += g.remove_counter(x, name, plan[x.uid], src=c)
+        if k.get('count_as'): refs(l)[k['count_as']] = total
+        if k.get('short_as'): refs(l)[k['short_as']] = need - total
+        return True if k.get('partial') else total >= need or have >= need
+    if not allx: return False
+    xs = allx if 'ref' in k else [_remove_pick(g, c, p, [x for x in allx if op != 'remove' or x.counters.get(name, 0) >= num(l, k.get('n', 1))] or allx, k)]
+    for x in xs:
+        n = x.counters.get(name, 0) if op == 'remove_all' else _any_n(g, c, p, x, k) if op == 'remove_any' else num(l, k.get('n', 1))
+        if n <= 0 or (op == 'remove' and x.counters.get(name, 0) < n): continue
+        total += g.remove_counter(x, name, n, src=c)
     if k.get('count_as'): refs(l)[k['count_as']] = total
     return total > 0
 
@@ -1639,3 +1728,111 @@ def do_win(g, c, p, l, k):
     """A23 승리 「자신은 게임에서 승리한다」"""
     from engine import GameOver
     raise GameOver(p, f'{g.pname(p)} 특수 승리 ({c.name})')
+
+
+# ═══════════════════════ 호박옥에서 더한 것 ═══════════════════════
+def _alt_use(g, c, p, ev, k):
+    """「A하고 발동. A할 수 없는 경우 대신 B하고 …할 수 있다」 — A를 할 수 있으면 A, 아니면 B"""
+    a = k['first']; return a if BLOCKS[a.name].can(g, c, p, ev, dict(a.k, cost=k.get('cost', False))) else k['alt']
+
+
+@block('alt', can=lambda g, c, p, ev, k: any(BLOCKS[b.name].can(g, c, p, ev, dict(b.k, cost=k.get('cost', False))) for b in (k['first'], k['alt'])),
+       val=lambda g, c, p, ev, k: BLOCKS[_alt_use(g, c, p, ev, k).name].val(g, c, p, ev, _alt_use(g, c, p, ev, k).k))
+def do_alt(g, c, p, l, k):
+    b = _alt_use(g, c, p, l.ctx.get('ev'), k)
+    return BLOCKS[b.name].run(g, c, p, l, dict(b.k, cost=k.get('cost', False)))
+
+
+def face_down_one(g, c, t, pos):
+    """A18 표시 형식 「뒷면(수비) 표시로 한다」 — 앞면이면 뒷면으로(엔진 set_face_down), 이미 뒷면이면 표시 형식만"""
+    if not g.on_field(t) or not t.is_monster(): return False
+    if t.faceup:
+        if not g.set_face_down(t): return False
+        if pos: t.pos = pos
+        g.L(f'{t} 뒷면{" 수비" if pos == "def" else ""} 표시'); return True
+    if pos and t.pos != pos and not g.blocked(t, ('effect', c)):
+        t.pos = pos; g.L(f'{t} 뒷면 수비 표시로'); return True
+    return False
+
+
+@block('face_down', can=can_subjects, val=lambda g, c, p, ev, k: 0.6 * v_remove(g, c, p, ev, k), threat=700)
+def do_face_down(g, c, p, l, k):
+    return _each(g, c, p, l, k, lambda x: face_down_one(g, c, x, k.get('pos')))
+
+
+def can_show_set(g, c, p, ev, k):
+    return len(pick_pool(g, c, p, k['scope'])) >= k['show'] and bool(g.free_s(p))
+
+
+@block('show_set', can=can_show_set, val=lambda g, c, p, ev, k: 3.0 * UNIT, threat=400)
+def do_show_set(g, c, p, l, k):
+    """「덱에서 X n장을 골라 상대에게 보여주고, 상대는 그중 m장을 무작위로 고른다. 그 카드를 자신의 마법 존에 세트한다. 나머지는 덱으로」 —
+    고를 매수는 이 카드의 [지속](flags['pick_n'] — 「공유 존에 존재할 경우 상대는 2장을 고른다」)이 바꿀 수 있다. 서로 다른 이름을 먼저 보여 준다(ASSUME)"""
+    cs = pick_pool(g, c, p, k['scope'], l)
+    if len(cs) < k['show'] or not g.free_s(p): g.L('보여 줄 카드 · 빈 마법 존 없음', 'sys'); return False
+    ai = g.p[p].ai; shown = []
+    for x in sorted(cs, key=lambda x: -ai.card_pri(g, p, x)):
+        if len(shown) < k['show'] and x.name not in [y.name for y in shown]: shown.append(x)
+    for x in cs:
+        if len(shown) < k['show'] and x not in shown: shown.append(x)
+    m = g.flag(c, 'pick_n') or k.get('pick', 1)
+    picks = g.rng.sample(shown, min(m, len(shown)))
+    g.L(f'{g.pname(p)} 덱에서 {", ".join(map(str, shown))} 공개 → {g.pname(1 - p)} 무작위로 {", ".join(map(str, picks))}', 'decision')
+    done = 0
+    for x in picks:
+        if not g.free_s(p): break
+        g._remove(x); g.place_spell(x, p, False); g.L(f'{x} 마법 존에 세트'); done += 1
+    g.shuffle(p)
+    return done > 0
+
+
+@test('when_counter_sum')
+def w_counter_sum(g, c, p, ev, k):
+    """E5 「자신 필드의 X에 놓인 Y 카운터의 합계가 n개 이상이 되었을 때」 — 사건 당시 상태(엔진 counter_snap)로 그 사건 전 · 뒤 합계"""
+    if not (ev_kind(ev, 'counter') and ev['name'] == k['name'] and 'snap' in ev): return False
+    sc = k['scope']; ok = lambda x, fu, q: q in sides(p, sc.get('side', 'own')) and (fu or sc.get('faceup') is None) and match_card(g, c, p, x, dict(sc, faceup=None))
+    after = sum(n for x, n, fu, q in ev['snap'] if ok(x, fu, q))
+    hit = any(x is ev['card'] and ok(x, fu, q) for x, n, fu, q in ev['snap'])
+    before = after - ev['delta'] if hit else after
+    return before < k['n'] <= after
+
+
+@test('when_hp_below')
+def w_hp_below(g, c, p, ev, k):
+    """E5 「자신의 HP가 n 이하가 되었을 때」 — 대미지 사건 당시 HP(엔진 hp_after)가 n 초과에서 n 이하로"""
+    if not (ev_kind(ev, 'damage') and ev['player'] == p): return False
+    after = ev.get('hp_after', g.p[p].hp)
+    return after <= k['n'] < after + ev['amount']
+
+
+@test('when_game_start')
+def w_game_start(g, c, p, ev, k):
+    return ev_kind(ev, 'game_start')
+
+
+_w_act3 = TESTS['when_activated']
+
+
+@test('when_activated')
+def w_activated4(g, c, p, ev, k):
+    """hit_own: 「자신 필드의 몬스터가 상대의 효과의 대상이 되었을 때 또는 상대가 자신 필드의 카드를 필드에서 벗어나게 하는 효과를 발동했을 때」"""
+    if k.get('hit_own'):
+        lk = last_link(g, p, k)
+        if lk is None: return False
+        from cards import moves_off_field
+        return any(x.controller == p and g.on_field(x) and x.is_monster() for x in link_targets(lk)) or moves_off_field(g, lk, p)
+    return _w_act3(g, c, p, ev, k)
+
+
+_w_sg = TESTS['when_sent_grave']
+
+
+@test('when_sent_grave')
+def w_sent_grave2(g, c, p, ev, k):
+    """battle: 「전투로 파괴했을 때」(묘지로 간 사건이 전투 파괴) · by_opp_battle: 파괴한 몬스터가 상대 필드의 앞면 몬스터"""
+    if k.get('battle'):
+        if not (ev_kind(ev, 'to_grave') and ev.get('battle') and ev.get('destroyed')): return False
+        ca = ev.get('cause') or ('', None)
+        a = ca[1] if ca[0] == 'battle' else None
+        if not (isinstance(a, Card) and a.controller != p and g.on_field(a) and a.faceup): return False
+    return _w_sg(g, c, p, ev, k)

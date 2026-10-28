@@ -93,7 +93,7 @@ def branch(cond, then, other=(), prob=None):
 
 # ── 시점 (E) · 조건 (C1) ──
 def when(_kind, **k): return B('when_' + _kind, **k)
-def cnt(scope, op='>=', n=1): return B('cnt', scope=scope, op=op, n=n)
+def cnt(scope, op='>=', n=1, plus=0): return B('cnt', scope=scope, op=op, n=n, plus=plus)
 def cond(_kind, **k): return B('cond_' + _kind, **k)
 
 
@@ -144,7 +144,7 @@ def mill(n, who='self', **k): return B('mill', n=n, who=who, **k)
 def control(**k): return B('control', **k)
 def effect_only(by=None): return B('effect_only', by=by)
 def grave_redirect(cont=False): return B('grave_redirect', cont=cont)
-def card_flag(key, lasting=False, value=True): return B('card_flag', key=key, lasting=lasting, value=value)
+def card_flag(key, lasting=False, value=True, **k): return B('card_flag', key=key, lasting=lasting, value=value, **k)
 def field_limit(*groups, n=1): return B('field_limit', groups=groups, n=n)
 def ev_card(**f): return B('cond_ev_card', filter=S(**f))
 def swap(to, steps, label=''): return B('swap', to=to, steps=tuple(steps), label=label)
@@ -166,3 +166,7 @@ def win(): return B('win')
 def counters_ge(scope, name, n, plus=0): return B('cond_counters', scope=scope, name=name, n=n, plus=plus)
 def can(blk): return B('cond_can', blk=blk)
 def any_of(*tests): return B('cond_any', of=tuple(tests))
+def alt(first, other): return B('alt', first=first, alt=other)
+def face_down(pos=None, **k): return B('face_down', pos=pos, **k)
+def show_set(scope, show, pick=1): return B('show_set', scope=scope, show=show, pick=pick)
+def self_counters_ge(name, n): return B('cond_counters', scope=S('own', ('field', 'skill'), pred='is_self'), name=name, n=n)

@@ -790,8 +790,11 @@ class Game:
         if src is not None and src is not c and not self.counter_text_ok(c) and self.blocked(c, ('effect', src)):
             self.L(f'{c}에 카운터를 놓을 수 없음 ({src}의 효과를 받지 않음)', 'sys'); return False
         c.counters[name] = c.counters.get(name, 0) + n
-        self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n, total=c.counters[name])
+        self.L(f'{c}에 {name} 카운터 {n}개 → {c.counters[name]}개'); self.emit('counter', card=c, name=name, delta=n, total=c.counters[name], snap=self.counter_snap(name))
         self.state_check(); return True
+    def counter_snap(self, name):
+        """카운터 사건 당시 필드의 그 카운터 상태 [(카드, 개수, 앞면, 컨트롤러)] — 「합계가 n개 이상이 되었을 때」 판정용(트리거를 모을 때는 이미 바뀌었을 수 있다)"""
+        return [(x, x.counters.get(name, 0), x.faceup, x.controller) for x in self.all_field()]
     def counter_text_ok(self, c):
         """내성이 있어도 카운터는 놓이는 카드인가 — 텍스트의 「카운터를 쌓는(놓는) 효과는 적용」 (퇴마의 부적 1번 괄호)"""
         import re as _re
@@ -820,7 +823,7 @@ class Game:
             self.L(f'{c}의 {name} 카운터를 뗄 수 없음 ({src}의 효과를 받지 않음)', 'sys'); return 0
         c.counters[name] -= k
         if c.counters[name] == 0: del c.counters[name]
-        self.L(f'{c}의 {name} 카운터 {k}개 제거'); self.emit('counter', card=c, name=name, delta=-k, total=c.counters.get(name, 0))
+        self.L(f'{c}의 {name} 카운터 {k}개 제거'); self.emit('counter', card=c, name=name, delta=-k, total=c.counters.get(name, 0), snap=self.counter_snap(name))
         self.state_check(); return k
 
     # ── HP ──
@@ -834,7 +837,7 @@ class Game:
             self.L(f'{self.pname(p)}은(는) 상대의 효과를 받지 않음 — 대미지 {amt} 무효 ({src})', 'sys'); return
         self.p[p].hp -= amt
         self.L(f'{self.pname(p)} {amt} 대미지 ({src}) → HP {self.p[p].hp}')
-        self.emit('damage', player=p, amount=amt)
+        self.emit('damage', player=p, amount=amt, hp_after=self.p[p].hp)
         if not getattr(self, '_hp_defer', 0): self.hp_check()
 
     def hp_check(self):
