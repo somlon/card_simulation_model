@@ -257,6 +257,9 @@
     - 2026-10-28 ⑦ 저주인형 완료 — `model/block-system` 2e35490: t_crsd 18종, 카운터(합계 제거 · 가치 · 정확히 n개) · 턴 시작 처리 · 다음 발동 변경(퇴마의 부적) · 특수 승리 블록,
       특수소환 고르기를 블록 가치로(덱 지침은 동점일 때). 테스트 353개 통과(부적 고르기 · 카운터 내성 3건 수정), 스모크 시드 11 · 23 오류 0 · 중단 0,
       희생제 88매치 12 → 16승 · 솔루나 21 → 19승(차이 범위 안). 다음 ⑧ 호박옥.
+    - 2026-10-28 ⑧ 호박옥 완료 — `model/block-system` 5a1969b: t_ambr 23종, 조건부 [지속](카운터가 놓여 있는 한) · 카운터 블록 재작성(놓을 카드 가치 · 남겨 둘 개수 · 합계 · 모자란 수) ·
+      대체 코스트 · 뒷면 표시 · 보여 주고 세트, 엔진 counter_snap · hp_after. 테스트 353개 통과, 스모크 시드 11 · 23 오류 0 · 중단 0,
+      봉인의 계약 88매치 59 → 58승 · 몽식의 계약 32 → 32승. 다음 ⑨ 포커짐승들.
   - **새 세션 할 일 (2026-10-28 인계):**
     - 컨테이너 준비: `cd /home/user/card_simulation_model && git fetch origin model/block-system model/main data/main && git checkout model/block-system`
       → 카드 풀 · 덱(제외 목록 .git/info/exclude 에 이미 있음): `git archive origin/data/main nny_sim | tar -x`
