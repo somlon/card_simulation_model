@@ -35,6 +35,7 @@ def attach(c):
     effects = []
     for key, spec in specs.items():
         if spec.kw.get('granted'): continue   # 부여 효과는 받는 카드에 붙는다(A22 — do_grant · 부여 [지속])
+        if spec.kw.get('follow'): continue    # 「n번 효과 처리 시에 …」 — n번 효과의 처리에 딸린다(make_effect)
         sent = sents.get(key)
         ck = (code, key, sent)
         proto = _CACHE.get(ck)
@@ -82,6 +83,8 @@ def compile_spec(spec, sent, d):
     kw = _sub(dict(spec.kw), holes)
     notes = T.notes(sent)
     kind = kw.get('kind') or KIND.get(T.keyword(sent), 'ignition')
+    if not kw.get('kind') and not T.keyword(sent) and d.get('type') == '마법' and spec.key == '1':   # 키워드 없는 카드의 발동은 마법 종류대로
+        kind = {'신속': 'quick', '트리거': 'trigger'}.get(d.get('subtype'), kind)
     num = kw.get('num') or int(spec.key.split('-')[0])
     installs = []
     if kw.get('cont'):
@@ -132,7 +135,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
         costs.insert(0, D.B('keep_link', **wa.k))
     dos = scoped(costs, list(kw.get('do', ())))
     conds = list(kw.get('cond', ()))
-    fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw)
+    fns = codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows_of(spec, d))
     e = Effect(num, kind, f['zones'], cond=fns['cond'], cost=fns['cost'] if costs else None, res=fns['res'], score=fns['score'],
                opt=f['opt'], mandatory=f['mandatory'], threat=kw.get('threat', threat_of(dos + [b for b in costs if b.name != 'pick'])),
                label=kw.get('label', ''), spell_act=f['spell_act'])
@@ -151,6 +154,20 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     cards.text_attrs(e, line, d['name'] if '-' not in spec.key else kw.get('grant_name', d['name']))
     e.spec = spec
     return e
+
+
+def follows_of(spec, d):
+    """「n번 효과 처리 시에 … 경우, …한다 (별도의 발동 처리를 필요로 하지 않는다)」 — n번 처리에 딸린 효과들: [(번호, 1턴 횟수, 조건, 처리)]"""
+    out = []
+    sents = None
+    for k2, s2 in D.TABLE.get(spec.code, {}).items():
+        if s2.kw.get('follow') != spec.key: continue
+        sents = sents or T.sentences(d)
+        holes = T.match(s2.tmpl, sents.get(k2, ''))
+        if holes is None: raise TemplateMismatch(f'{s2.code} {k2}: 문장 틀이 텍스트와 맞지 않는다\n  틀:   {T.norm(s2.tmpl)}\n  문장: {sents.get(k2)}')
+        kw2 = _sub(dict(s2.kw), holes); n2 = T.notes(sents[k2])
+        out.append((int(k2.split('-')[0]), kw2['opt'] if 'opt' in kw2 else n2.get('opt', 1), list(kw2.get('cond', ())), list(kw2.get('do', ()))))
+    return out
 
 
 def threat_of(dos):
@@ -183,7 +200,7 @@ class _Gen:
         name = f'F{self.n}'; self.n += 1; self.ns[name] = f; return name
 
 
-def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw):
+def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=()):
     G = _Gen()
     # cond: 시점 · 조건 · 단계 제한 · 재정 G2(코스트 · 처리 가능)
     tests = []
@@ -207,10 +224,25 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw):
         k = dict(b.k); k['cost'] = b.name != 'pick'
         src.append(f'    if not {G.fn(L.BLOCKS[b.name].run)}(g, c, p, l, {G.const(k)}): return False')
     src.append('    return True')
-    # res
-    src += ['def res(g, c, p, l):'] + (_steps(G, dos, 1) or ['    pass'])
+    # res — 딸린 효과(follows)는 조건을 처리 시작 때 보고(「n번 효과 처리 시에 … 경우」), 본 처리 뒤에 처리한다(1턴 횟수는 그 번호로)
+    if follows:
+        src += ['def _main(g, c, p, l):'] + (_steps(G, dos, 1) or ['    pass'])
+        src += ['def res(g, c, p, l):']
+        for i, (n2, opt2, c2, d2) in enumerate(follows):
+            ok = [f'L.follow_ok(g, c, p, {n2}, {opt2!r})'] + [f'{G.fn(L.TESTS[b.name])}(g, c, p, l, {G.const(b.k)})' for b in c2]
+            src.append(f'    _f{i} = ' + ' and '.join(ok))
+        src.append('    _main(g, c, p, l)')
+        for i, (n2, opt2, c2, d2) in enumerate(follows):
+            src.append(f'    if _f{i}:')
+            src.append(f'        L.follow_use(g, c, p, {n2}); g.L(f"  {n2}번 처리 (1번 처리 시 조건 충족 — 별도 발동 없음)")')
+            src += _steps(G, d2, 2) or ['        pass']
+    else:
+        src += ['def res(g, c, p, l):'] + (_steps(G, dos, 1) or ['    pass'])
     # score (B안)
     vals = [_val_expr(G, dos)]
+    for n2, opt2, c2, d2 in follows:   # 딸린 효과: 지금 조건이 맞고 이 턴 아직 쓰지 않았으면 그 가치도
+        ok = ' and '.join([f'L.follow_ok(g, c, p, {n2}, {opt2!r})'] + [f'{G.fn(L.TESTS[b.name])}(g, c, p, ev, {G.const(b.k)})' for b in c2])
+        vals.append(f'(({_val_expr(G, d2)}) if ({ok}) else 0.0)')
     cvals = [f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})' for b in costs if b.name not in ('pick', 'keep_link')]
     info = dict(kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
                                          for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
@@ -229,8 +261,10 @@ def _val_expr(G, steps):
     for b in steps:
         if b.name == 'branch':
             a, o = _val_expr(G, b.k['then']), _val_expr(G, b.k['other'])
-            pr = b.k.get('prob')
-            parts.append(f'({pr} * ({a}) + {1 - pr} * ({o}))' if pr is not None else f'max({a}, {o})')
+            pr = b.k.get('prob'); cb = b.k['cond']
+            if pr is not None: parts.append(f'({pr} * ({a}) + {1 - pr} * ({o}))')
+            elif cb.name == 'cond_ref_in': parts.append(f'max({a}, {o})')   # 처리 때 정해지는 값(주사위 등)
+            else: parts.append(f'(({a}) if {G.fn(L.TESTS[cb.name])}(g, c, p, ev, {G.const(cb.k)}) else ({o}))')
         elif b.name == 'choice':
             parts.append('max(' + ', '.join(_val_expr(G, o) for o in b.k['options']) + ')')
         elif b.name in L.BLOCKS:

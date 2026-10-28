@@ -155,3 +155,36 @@ def k_alt_normal(c, num, k, notes, kw):
 def k_exclusive(c, num, k, notes, kw):
     """「이 카드의 a · b번 효과는 동시에 발동할 수 없다」 — 엔진 Game.triggers가 같은 선언 차례에 하나만"""
     c.flags['exclusive_nums'] = tuple(k['nums'])
+
+
+
+# ═══════════════════════ 솔루나에서 더한 것 ═══════════════════════
+@kind('effect_only')
+def k_effect_only(c, num, k, notes, kw):
+    """[제약] 「이 카드는 카드의 효과로만 소환할 수 있다」 — 소환 조건이라 패 · 덱 · 묘지에서도 판정(flags['effect_only'] — 일반소환 불가)"""
+    c.flags['effect_only'] = True
+
+
+@kind('grave_redirect')
+def k_grave_redirect(c, num, k, notes, kw):
+    """「이 카드는 묘지로 보내질 경우 덱으로 되돌아간다」 — 키워드가 없으면 어디서 묘지로 가도, [지속]이면 필드에 있을 때만(Game.cont_active)"""
+    c.grave_redirect = (lambda g, x: g.cont_active(x)) if k.get('cont') else (lambda g, x: True)
+
+
+@kind('card_flag')
+def k_card_flag(c, num, k, notes, kw):
+    """[지속] 카드 자신의 상태 플래그(엔진이 읽는 것) — 'attack_all'(상대 몬스터 전부에 공격 선언) 등. lasting: 한 번 적용하면 그 턴 동안 계속(c.cont_lasting)"""
+    c.flags[k['key']] = k.get('value', True)
+    note_num(c, 'flag:' + k['key'], num)
+    if k.get('lasting'): c.cont_lasting = set(getattr(c, 'cont_lasting', None) or ()) | {num}
+
+
+@kind('field_limit')
+def k_field_limit(c, num, k, notes, kw):
+    """[지속] 「자신 필드에 「A」 · 「B」 몬스터는 각각 1장밖에 존재할 수 없다」 — 소환(no_special) · 제외 존 복귀 · 컨트롤 획득(field_limit) 모두 (재정 10-20 Q8)"""
+    groups = tuple(k['groups']); cap = k.get('n', 1)
+    def lim(g, src, x, p):
+        if p != src.controller or not x.is_monster(): return False
+        from cards import grp
+        return any(grp(x, a) and sum(1 for m in g.monsters(p) if m is not x and grp(m, a) and m.is_monster()) >= cap for a in groups)
+    add_rule(c, 'no_special', lim, num); add_rule(c, 'field_limit', lim, num)
