@@ -93,7 +93,7 @@ ASSUME:
   덱→패 금지는 엔진 규칙 'no_deck_to_hand', 「다른 카드의 효과로 소환할 수 없다」는 이 모듈의 ss_ok.
 """
 from engine import Effect, link_targets
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, cost_opp
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, cost_opp, hand_add
 from cards2 import targets
 
 DB = '데이터버그'
@@ -386,11 +386,9 @@ def _(c):
 def _(c):
     def added(g, c, p, ev):
         if not isinstance(ev, dict) or ev.get('card') is not c: return False
-        k = ev.get('kind')
-        if k == 'added_to_hand': return ev['player'] == p
-        if k == 'draw': return ev['player'] == p and ev.get('turn', 0) >= 1   # 라운드 시작 패 · 멀리건은 제외
-        if k == 'leave_field': return ev.get('dest') == 'hand'
-        return False
+        h = hand_add(ev)   # 덱 · 묘지에서 패에 넣기 · 드로우 (라운드 시작 패 · 멀리건 제외)
+        if h: return h[1] == p
+        return ev.get('kind') == 'leave_field' and ev.get('dest') == 'hand'
     def cond1(g, c, p, ev):
         return c.zone == 'hand' and c in g.p[p].hand and added(g, c, p, ev) and (ss_ok(g, c, p) or g.can_search(p, DBS))
     def res1(g, c, p, l):

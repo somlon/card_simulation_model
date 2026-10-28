@@ -15,7 +15,7 @@
 ASSUME: 기적의 영웅 3 · 4번은 공격력/수비력을 함께 깎으므로 둘을 합쳐 3번까지 (재정: 0에 도달하면 더는 발동할 수 없다).
 """
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, opp_card_activation
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, cause_card, ev_is, VETO, field_pick, opp_card_activation, hand_add
 from cards2 import targets
 
 WISH4 = ('행운', '용기', '지혜', '희생')
@@ -223,7 +223,7 @@ def _(c):
         t = l.ctx.get('t')
         if t and g.on_field(t): g.destroy(t)
         if g.on_field(c): c.mods.append(('atk', 1000, 'turn')); g.L(f'{c} 공격력 +1000 (턴 종료 시까지)')
-    c.rules = {'double_attack': lambda g, src, m: m.controller == src.controller and grp(m, '용기') and (m is src or not g.immune(m, src.controller, src))}
+    c.rules = {'double_attack': lambda g, src, m: m.controller == src.controller and grp(m, '용기')}   # 받는 몬스터의 내성은 엔진 공통(Game.rule_reaches)
     c.cont_nums = {'rule:double_attack': 2}   # 2번 [지속] — 1턴 1번: 「용기」 몬스터 1장의 2번째 공격 1회 (사용자 답변 2026-10-22)
     c.effects = [Effect(1, 'quick', ('field',), cond=lambda g, c, p, ev: bool(targets(g, p, opp_cards(g, p))), cost=cost1, res=res1,
                         score=lambda g, c, p, ev: 65 if main_ok(g, p) or threat(g, p) >= 800 else 0, threat=1000, label='파괴 · 공격력 +1000'),
@@ -354,7 +354,8 @@ def _(c):
 @card('염원')
 def _(c):
     def cond(g, c, p, ev):
-        return ev_is(ev, 'added_to_hand') and ev['player'] == 1 - p and ev['card'].zone == 'hand'
+        h = hand_add(ev)   # 드로우 포함 (사용자 답변 2026-10-28)
+        return h is not None and h[1] == 1 - p and h[0].zone == 'hand'
     def res(g, c, p, l):
         x = l.ctx['ev']['card']; q = 1 - p
         # 상대가 고른다: 넣은 카드를 지키는 쪽(우선순위가 0보다 큰 카드)이면 「내 덱 위 2장 묘지로」, 아니면 「넣은 카드 제외」

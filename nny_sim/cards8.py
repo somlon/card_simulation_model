@@ -33,7 +33,7 @@ ASSUME:
   「N장까지」는 1 ~ N장 — 최소 1장은 골라야 한다(사용자 답변 2026-10-22, 시골쥐 2번). 자신 묘지에 카드가 없으면 시골쥐 2번은 발동하지 않는다.
   체인 처리 중 묘지가 비어 1장도 되돌리지 못해도 「되돌리고 1장 드로우」의 드로우는 한다(예전 처리 그대로).
 - 메이드에 실패한 강아지 1번 「「포커짐승들」 마법 카드」에 필드 카드(도박장)는 포함하지 않는다 (cards.opp_magic과 같은 구분).
-- 쇠망치: 「덱 또는 묘지에서 카드를 패에 넣었을 경우」는 효과로 넣은 경우(드로우 제외 — 사기 감지와 같음), 처리 시 그 카드가 아직
+- 쇠망치: 「덱 또는 묘지에서 카드를 패에 넣었을 경우」는 효과로 넣은 경우와 드로우(사용자 답변 2026-10-28 — cards.hand_add), 처리 시 그 카드가 아직
   상대의 패 · 필드에 있어야 제외한다.
 - 도박장: 패에서의 [신속] 허가는 원래 패에서 쓸 수 없는 [신속](부르는 토끼 2번 · 노리는 늑대 2번)에만 쓰이고, 그 발동이 1턴 2번을 소모한다
   (무효화되면 돌려받음, §6-5). 올인이 준 효과는 필드의 몬스터에만 있으므로 해당 없다.
@@ -61,7 +61,7 @@ ASSUME:
 import re
 from collections import namedtuple
 from engine import Effect
-from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, per_card_self
+from cards import card, grp, best, value, own_turn, main_ok, opp_cards, last_opp_link, threat, ev_is, VETO, eff_text, per_card_self, hand_add
 from cards2 import targets
 
 PK = '포커짐승들'
@@ -490,7 +490,8 @@ def allin_effects():
     def holder_ok(g, c, p):   # 올인 2번 [지속] 1턴 1번 — 이 턴에 부여 효과를 이미 발동했으면 더 얻지 않는다 (사용자 답변 2026-10-22)
         sk = g.p[p].skill
         return (allin(g, p) and g.cont_ready(sk, g.cont_num(sk, 'grant')) and c.is_monster() and grp(c, PK) and g.on_field(c)
-                and c.controller == p and c.faceup)
+                and c.controller == p and c.faceup
+                and g.receives(c, sk))   # 「다른 카드의 효과를 받지 않는」 몬스터는 자기편 스킬의 부여도 받지 않는다 (사용자 답변 2026-10-27)
     def use_grant(g, p):
         sk = g.p[p].skill
         return g.cont_use(sk, g.cont_num(sk, 'grant'), '부여 효과 발동', choose=False)
@@ -908,8 +909,9 @@ def _(c):
     def cond(g, c, p, ev):
         if not isinstance(ev, dict): return False
         k = ev.get('kind'); x = ev.get('card')
-        if k == 'added_to_hand':
-            return ev['prev'] in ('main', 'upper', 'grave') and ev['player'] == 1 - p and x in g.p[1 - p].hand
+        h = hand_add(ev)   # 덱 · 묘지에서 패에 넣기 — 드로우 포함 (사용자 답변 2026-10-28)
+        if h:
+            return h[2] in ('main', 'upper', 'grave') and h[1] == 1 - p and x in g.p[1 - p].hand
         if k == 'summon':
             return (ev.get('how') == 'special' and ev.get('prev') in ('main', 'upper', 'grave') and ev['player'] == 1 - p
                     and g.on_field(x) and x.controller == 1 - p)

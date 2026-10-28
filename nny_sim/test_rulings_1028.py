@@ -1,4 +1,4 @@
-"""행동 세금 재정(사용자 답변 2026-10-27 · 10-28) 테스트 (nny_sim 폴더에서):  python -m unittest test_rulings_1028 -v
+"""행동 세금 · 「패에 넣었을 때」 드로우 포함 · 자기편 효과 내성 재정(사용자 답변 2026-10-27 · 10-28) 테스트 (nny_sim 폴더에서):  python -m unittest test_rulings_1028 -v
 세 - 아이라리움 1번 · 세제 1번 · 취득세 1번 「서로가 …할 때마다, 그 플레이어는 자신의 덱의 위에서부터 카드를 n장 제외한다」 = 그 행동을 하는 플레이어가 내는 코스트:
 - 자신이 발동한 효과의 처리에서 반드시 하는 행동은 발동할 때, 조건 · 선택이 붙은 행동 · 상대 효과로 하는 행동 · 턴 시작 드로우는 행동 직전에
 - 1번에 n장 (한 발동의 처리 안에서는 플레이어 · 행동마다 1번) · 두플리카토르 2배 · 델레가토르 상대가 대신
@@ -233,6 +233,48 @@ class TaxRuinTest(unittest.TestCase):
         self.assertTrue(e.mandatory)
         self.assertTrue(g.tax_ruin(0, x, e))
         self.assertNotEqual(C.act_score(g, x, e, 0, None, 1), VETO)
+
+
+# ═══════════════════════ 「패에 넣었을 때」에 드로우 포함 (사용자 답변 2026-10-28) ═══════════════════════
+class DrawIsAddToHandTest(unittest.TestCase):
+    def last(self, g, kind):
+        return next(e for e in reversed(g.events) if e.get('kind') == kind)
+
+    def test_hand_add_of_draw(self):
+        g = make('투기장의 규칙', '데이터버그 패키지 프로그램')
+        x = g.p[1].main[-1]
+        g.draw(1, 1, 'main')
+        self.assertEqual(C.hand_add(self.last(g, 'draw')), (x, 1, 'main'))
+        self.assertIsNone(C.hand_add({'kind': 'draw', 'turn': 0, 'card': x, 'player': 1, 'prev': 'main'}))   # 라운드 시작 패 · 멀리건
+
+    def test_triggers_on_opponent_draw(self):
+        g = make('투기장의 규칙', '데이터버그 패키지 프로그램')
+        g.draw(1, 1, 'main'); ev = self.last(g, 'draw')
+        for name in ('사기 감지', '염원', '트랩: 거짓 샘물'):
+            c = card(g, name, 0, 'hand')
+            self.assertTrue(eff(c, 1).cond(g, c, 0, ev), name)        # 상대(1)가 드로우했다
+            self.assertFalse(eff(c, 1).cond(g, c, 1, ev), name)       # 자신의 드로우에는 아니다
+
+
+# ═══════════════════════ 「다른 카드의 효과를 받지 않는다」 — 자기편 [지속]도 받지 않는다 (사용자 답변 2026-10-27) ═══════════════════════
+class OwnSideImmunityTest(unittest.TestCase):
+    def test_own_indestructible_not_received(self):
+        g = make('호박옥 - 봉인의 계약', '투기장의 규칙')
+        field_card(g, '호박옥 - 태고의 수해', 0)                        # 2번: 봉인 카운터가 놓인 자신의 몬스터는 전투로는 파괴되지 않는다
+        s = on_field(g, '세리 - 엑삭토르', 0); s.counters['봉인'] = 1
+        self.assertTrue(g.rule('indestructible', s, True))
+        s.flags['immune_all_until'] = g.turn                           # 고대의 봉인: 턴 종료 시까지 다른 카드의 효과를 받지 않는다
+        self.assertFalse(g.rule('indestructible', s, True))
+        s.faceup = False                                                # 뒷면이면 내성이 꺼져 다시 받는다 (Q45)
+        self.assertTrue(g.rule('indestructible', s, True))
+
+    def test_own_immunity_grant_not_received(self):
+        g = make('세제', '소원의 분수')
+        on_field(g, '세리 - 릭토르', 0)                                 # 자신 필드의 다른 카드들은 상대의 효과를 받지 않는다
+        other = on_field(g, '세리 - 엑삭토르', 0)
+        hero = on_field(g, '기적의 영웅', 0)                            # 다른 카드의 효과를 받지 않는다 [지속]
+        self.assertTrue(g.rule('immune', other, 1))
+        self.assertFalse(g.rule('immune', hero, 1))
 
 
 if __name__ == '__main__':
