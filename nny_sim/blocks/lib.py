@@ -379,6 +379,26 @@ def v_among(g, c, p, k):
     return min(1.0, f * n)
 
 
+def lw_bonus(g, p, x, prev):
+    """묘지로 가면 발동할 [유언]이 있는 자신 카드의 기대 가치(그 [유언]의 단서 — 덱 · 필드에서 보내졌을 때 등은 블록 시점 조건으로 본다)"""
+    for e in x.effects:
+        if e.kind != 'lastwill': continue
+        sp = getattr(e, 'spec', None)
+        if sp is not None:
+            from blocks import text as T
+            nt = T.notes(T.sentences(x.d).get(sp.key, ''))
+            if nt.get('not_from_deck') and prev in ('main', 'upper'): continue
+            if nt.get('not_from_field') and prev in FIELD_Z: continue
+        return 0.7 * HAND_CARD * UNIT
+    return 0.0
+
+
+def deck_need(g, q):
+    """덱이 얇을 때 묘지 · 제외 존의 카드를 덱으로 되돌리는 1장의 가치(덱아웃 방지) — 15장 미만부터 커진다"""
+    left = len(g.p[q].main) + len(g.p[q].upper)
+    return (15 - left) * 2.0 if left < 15 else -1.5
+
+
 def v_move(g, c, p, ev, k):
     if k.get('scope', {}).get('among'):
         hit = v_among(g, c, p, k)
@@ -396,8 +416,11 @@ def v_move(g, c, p, ev, k):
             out += (-1.0 if mine else 1.0) * HAND_CARD * UNIT * 0.8
         elif dest == 'hand':
             out += (1.0 if mine else -1.0) * HAND_CARD * UNIT
+        elif dest == 'deck' and x.zone in ('grave', 'banish'):
+            out += deck_need(g, g.side_of(x)) * (1.0 if mine else -1.0)
         else:
             out += (-0.1 if mine else 0.1) * UNIT
+        if mine and dest == 'grave': out += lw_bonus(g, p, x, x.zone)
     return out
 
 
@@ -475,8 +498,13 @@ def do_draw(g, c, p, l, k):
 
 
 def v_mill(g, c, p, ev, k):
-    """덱 위 n장 제외: 상대 덱은 덱아웃에 가까울수록 크게(남은 매수 이하면 결착), 자신 덱은 상대보다 먼저 바닥나게 되면 크게 손해"""
+    """덱 위 n장 제외: 상대 덱은 덱아웃에 가까울수록 크게(남은 매수 이하면 결착), 자신 덱은 상대보다 먼저 바닥나게 되면 크게 손해.
+    자신 메인 덱 위에서 묘지로(dest='grave')는 [유언]이 있는 카드가 섞여 있는 만큼 기대 가치를 더한다"""
     n = n_of(k); who = k.get('who', 'self'); out = 0.0
+    if k.get('dest') == 'grave' and who == 'self':
+        main = g.p[p].main
+        if main:
+            out += n * sum(lw_bonus(g, p, x, 'main') for x in main) / len(main)
     for q, sign in (((1 - p, 1.0),) if who == 'opp' else ((p, -1.0),) if who == 'self' else ((1 - p, 1.0), (p, -1.0))):
         left = len(g.p[q].main) + len(g.p[q].upper)
         if sign > 0:
@@ -495,7 +523,10 @@ def do_mill(g, c, p, l, k):
     코스트(「…제외하고 발동」)는 Game.pay_deck_cost — 두플리카토르 2배 · 델레가토르면 상대 덱에서(모자라면 상대 패배)"""
     n = cost_n(g, c, p, k, num(l, k.get('n', 1)))
     if k.get('cost'): return g.pay_deck_cost(p, n, k.get('deck'), f'{c.name} 코스트') >= 0
-    if k.get('dest', 'banish') == 'grave': return bool(g.dump(p if k.get('who', 'self') == 'self' else 1 - p, n, c.name))
+    if k.get('dest', 'banish') == 'grave':
+        out = g.dump(p if k.get('who', 'self') == 'self' else 1 - p, n, c.name)
+        if k.get('as') and l is not None: refs(l)[k['as']] = list(out)
+        return bool(out)
     whos = {'self': (p,), 'opp': (1 - p,), 'both': (p, 1 - p)}[k.get('who', 'self')]
     got = 0
     for q in whos:
@@ -656,10 +687,11 @@ def v_stat(g, c, p, ev, k):
 @block('stat', can=can_subjects, val=v_stat, threat=300)
 def do_stat(g, c, p, l, k):
     """A17 상태 · 보정 — 공격력 · 수비력 증감(until 'turn' = 턴 종료 시까지, None = 필드에 있는 동안)"""
-    stat = k.get('stat', 'atk'); amt = num(l, k['amt']); until = k.get('until', 'turn')
+    stats = ('atk', 'def') if k.get('stat') == 'both' else (k.get('stat', 'atk'),); amt = num(l, k['amt']); until = k.get('until', 'turn')
     def f(x):
         if not g.on_field(x) or g.blocked(x, ('effect', c)): return False
-        x.mods.append((stat, amt, until)); g.L(f'{x} {"공격력" if stat == "atk" else "수비력"} {amt:+d}'); return True
+        for st in stats: x.mods.append((st, amt, until))
+        g.L(f'{x} {"공격력/수비력" if len(stats) == 2 else "공격력" if stats[0] == "atk" else "수비력"} {amt:+d}'); return True
     return _each(g, c, p, l, k, f)
 
 
@@ -1056,6 +1088,9 @@ def can_place(g, c, p, ev, k):
 
 
 def can_place(g, c, p, ev, k):
+    if 'ref' in k:
+        xs = [c] if k['ref'] == 'SELF' else [ev['card']] if k['ref'] == 'EV' and isinstance(ev, dict) else []
+        return any(x.type == '필드' or g.free_s(p) for x in xs) if xs else True
     pool = pick_pool(g, c, p, k['scope'])
     if not pool: return False
     return any(x.type == '필드' for x in pool) or bool(g.free_s(p))
@@ -1066,7 +1101,10 @@ def do_place(g, c, p, l, k):
     """A7 마법 놓기 — 덱 등에서 필드 카드를 골라 발동(필드 존에 앞면) · 마법 카드를 앞면으로 놓기 · 세트(set=True). n장(upto: 있는 만큼)"""
     n = num(l, k.get('n', 1)); done = 0
     for _ in range(n):
-        pool = [x for x in pick_pool(g, c, p, k['scope'], l) if x.type == '필드' or g.free_s(p)]
+        if 'ref' in k:   # 앞에서 정한 그 카드(희생의 성녀 · 기적의 전조)
+            pool = [x for x in ref_cards(g, c, p, l, k['ref']) if x.zone not in FIELD_Z and (x.type == '필드' or g.free_s(p))]
+        else:
+            pool = [x for x in pick_pool(g, c, p, k['scope'], l) if x.type == '필드' or g.free_s(p)]
         if not pool: break
         fresh = [x for x in pool if not any(y.name == x.name for y in g.spells(p))] or pool   # 같은 카드가 이미 있으면 다른 카드를 먼저
         x = g.p[p].ai.pick_search(g, p, fresh, k.get('why') or c.name)
@@ -1078,7 +1116,7 @@ def do_place(g, c, p, l, k):
             if k.get('set') and k.get('act_this_turn'): x.flags['act_this_turn'] = g.turn
             g.L(f'{src}{x} {"세트" if k.get("set") else "앞면으로 놓음"}')
         done += 1
-    if done and any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])): g.shuffle(p)
+    if done and 'scope' in k and any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])): g.shuffle(p)
     return done == n or (k.get('upto') and done > 0)
 
 
@@ -1236,3 +1274,124 @@ def follow_use(g, c, p, n):
 def t_all(g, c, p, ev, k):
     """여러 조건이 모두 (「「시아」 · 「시엘」 몬스터가 각각 1장씩 존재할 경우」)"""
     return all(TESTS[b.name](g, c, p, ev, b.k) for b in k['of'])
+
+
+
+# ═══════════════════════ 소원의 분수에서 더한 것 ═══════════════════════
+@test('cond_ref_true')
+def t_ref_true(g, c, p, l, k):
+    """J2 분기: 앞에서 남긴 값이 참(「카드를 묘지로 보내고 발동했을 경우」 — 고를 수 있는 코스트를 냈는가)"""
+    return bool(refs(l).get(k['ref'])) if hasattr(l, 'ctx') else False
+
+
+@test('cond_ref_has')
+def t_ref_has(g, c, p, l, k):
+    """J2 분기: 앞에서 남긴 카드 중 필터에 맞는 것이 있는가(「「행운」 카드가 묘지로 보내졌을 경우」)"""
+    if not hasattr(l, 'ctx'): return False
+    return any(match_card(g, c, p, x, k['filter']) for x in ref_cards(g, c, p, l, k['ref']))
+
+
+@test('cond_self_stat_pos')
+def t_self_stat_pos(g, c, p, ev, k):
+    """「이 카드의 공격력/수비력을 1000 내린다」를 할 수 있는가 — 0에 도달하면 더는 발동할 수 없다(재정)"""
+    return g.atk(c) > 0 and g.df(c) > 0
+
+
+@test('when_activated_ev')
+def w_activated_ev(g, c, p, ev, k):
+    """E2 발동 사건(체인 응답이 아닌 트리거 — 「…가 마법 카드를 발동했을 때, …」): who · card_only · type"""
+    if not ev_kind(ev, 'activate'): return False
+    lk = ev['link']
+    if not _who_ok(k, ev['player'], p): return False
+    if k.get('card_only') and not getattr(lk.eff, 'spell_act', False): return False
+    if k.get('type') and lk.card.type != k['type']: return False
+    return True
+
+
+def _destroys(lk):
+    """그 발동이 카드를 파괴하는 효과인가 — 조립된 효과는 블록(파괴), 옛 함수는 효과 문장(「파괴한다 · 파괴하고」)"""
+    sp = getattr(lk.eff, 'spec', None)
+    if sp is not None:
+        from blocks import build
+        return any(b.name == 'destroy' and b.k.get('ref') != 'SELF' for b in build._flat(list(sp.kw.get('do', ()))))
+    import re
+    lines, on = [], False
+    for x in (lk.card.d.get('text') or '').split('\n'):
+        if re.match(r'^\d+\.', x): on = x.startswith(f'{lk.eff.num}.')
+        if on: lines.append(x)
+    return bool(re.search(r'파괴한다|파괴하고', ' '.join(lines)))
+
+
+_w_act2 = TESTS['when_activated']
+
+
+@test('when_activated')
+def w_activated3(g, c, p, ev, k):
+    if k.get('destroys'):
+        lk = last_link(g, p, k)
+        if lk is None or not _destroys(lk): return False
+    return _w_act2(g, c, p, ev, k)
+
+
+def kinds_pick(g, c, p, k):
+    """「「A」 · 「B」 … 카드를 각각 n장씩」(per) · 「합계 n장 (같은 종류는 1장까지)」(total) — 고를 카드 목록, 못 고르면 None.
+    두플리카토르(코스트 매수 2배)면 각각 2n장 · 합계 2n장(같은 종류 2장까지 — ASSUME). 카드 1장은 한 종류에만 쓴다"""
+    m = 2 if k.get('cost') and g.rule('cost_double', p) else 1
+    pool = cards_in(g, c, p, k['scope'])
+    ai = g.p[p].ai; out = []
+    if 'per' in k:
+        for a in k['groups']:
+            xs = sorted([x for x in pool if grp(x, a) and x not in out], key=lambda x: (ai.card_pri(g, p, x), value(g, x)))
+            if len(xs) < k['per'] * m: return None
+            out += xs[:k['per'] * m]
+        return out
+    total, cap = k['total'] * m, k.get('cap', 1) * m
+    left = {a: sum(1 for x in pool if grp(x, a) and x.zone == 'grave') for a in k['groups']}
+    for a in sorted(k['groups'], key=lambda a: -left[a]):   # 묘지에 많이 남는 종류부터 · 묘지 카드부터(다른 효과에 쓸 것을 남김)
+        xs = sorted([x for x in pool if grp(x, a) and x not in out], key=lambda x: (x.zone != 'grave', ai.card_pri(g, p, x), value(g, x)))
+        out += xs[:min(cap, total - len(out))]
+        if len(out) >= total: break
+    return out if len(out) >= total else None
+
+
+@block('kinds', can=lambda g, c, p, ev, k: kinds_pick(g, c, p, k) is not None, val=lambda g, c, p, ev, k: 0.0, threat=0)
+def do_kinds(g, c, p, l, k):
+    """S1 고르기(종류별 매수) + 이동 — 코스트 「… 카드를 각각 2장씩 제외하고」 · 「합계 3장 제외하고 (같은 종류는 1장까지)」"""
+    xs = kinds_pick(g, c, p, k)
+    if xs is None: return False
+    for x in xs: _move_one(g, c, p, x, k['dest'], _cause(c, k), k)
+    g.L(f'{"코스트: " if k.get("cost") else ""}{len(xs)}장 {"제외" if k["dest"] == "banish" else k["dest"]} ({", ".join(x.name for x in xs)})')
+    return True
+
+
+# 사용 후 쉼(효과 틀 F05 — 「이 효과의 사용 후, 다음 턴까지 자신은 이 효과를 사용할 수 없다」): 플레이어 × 카드명 × 번호
+def cool_ok(g, c, p, num):
+    return getattr(g, '_cool', {}).get((p, c.name, num), -1) < g.turn
+
+
+def cool_set(g, c, p, num):
+    if '_cool' not in g.__dict__: g._cool = {}
+    g._cool[(p, c.name, num)] = g.turn + 1
+    return True
+
+
+# 코인 효과 변경(행운의 도적 2번 등 — 「자신의 「X」 카드의 효과를 「…」로 변경할 수 있다」 [지속]): 처리 때 바꿀지
+SWAP_DECK_THIN = 12    # AI: 메인 덱이 이만큼 이하로 얇으면 바꾼다(덱아웃 방지 — 예전 coin_replace_pick과 같은 기준)
+
+
+def swap_ok(g, c, p, k):
+    if not g.p[p].main or len(g.p[p].main) > SWAP_DECK_THIN: return False
+    if not g.rule(k['rule'], p): return False
+    if not g.rule(k['rule'], p, use=True, choose=False, why=f'{c.name} 효과 변경'): return False
+    g.L(f'판단[{g.pname(p)}] {c}의 효과를 「{k.get("label", "…")}」로 변경 (남은 메인 덱 {len(g.p[p].main)}장)', 'decision')
+    return True
+
+
+def deck_pick_grave(g, c, p, l, k):
+    """「메인 덱에서 카드 1장을 묘지로 보낸다」(위에서부터가 아님) — AI: [유언]이 있는 카드 · 우선순위 높은 카드"""
+    if not g.p[p].main: return False
+    x = max(g.p[p].main, key=lambda x: (any(e.kind == 'lastwill' for e in x.effects), g.p[p].ai.card_pri(g, p, x)))
+    g.deck_to_grave(p, x, c.name); return True
+
+
+BLOCKS['deck_pick_grave'] = BlockDef('deck_pick_grave', deck_pick_grave, _always, lambda g, c, p, ev, k: 5.0, lambda k: 100)
