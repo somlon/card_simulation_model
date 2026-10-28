@@ -76,7 +76,10 @@ def place_effect(c):
             return 0.0 if g.fieldz.name == c.name else L.UNIT
         if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
         return 3.0 * L.UNIT
-    return Effect(0, 'ignition', ('hand', 'field'), spell_act=True, score=sc, threat=400, label='카드 발동(놓기)')
+    import cards
+    e = Effect(0, 'ignition', ('hand', 'field'), spell_act=True, score=sc, threat=400, label='카드 발동(놓기)')
+    cards.text_attrs(e, '', c.name)   # 0번 = 놓기만 하는 발동 — 처리 문장 없음(행동 세금의 확정 행동도 없음)
+    return e
 
 
 # ═══════════════════════ 카드 자신의 규칙 · 공격력 증감 · 종료 처리 · 장착 해제 ═══════════════════════
@@ -118,3 +121,37 @@ def k_host_leave(c, num, k, notes, kw):
     def host_leave(g, e, host):
         g.L(f'{e} 장착 몬스터 {host} 이탈 → 처리', 'sys'); L.steps_run(g, e, e.controller, steps)
     c.on_host_leave = host_leave
+
+
+
+@kind('player_rule')
+def k_player_rule(c, num, k, notes, kw):
+    """플레이어가 받는 [지속] 규칙 — 규칙 함수의 첫 인자가 플레이어: 'cost_transfer'(델레가토르) · 'cost_double'(두플리카토르) · 'seri_lw_one'(아이라리움 2번) …"""
+    who = k.get('who', 'own')
+    add_rule(c, k['key'], lambda g, src, q, *a: q in L.sides(src.controller, who), num)
+
+
+@kind('rule_immune')
+def k_rule_immune(c, num, k, notes, kw):
+    """[지속] 「(자신 필드의 다른 카드들)은 상대의 효과를 받지 않는다」 — 엔진 규칙 'immune'(x, by): 받는 카드 x · 효과를 쓴 플레이어 by"""
+    to, frm = k['to'], k.get('from', 'opp')
+    def fn(g, src, x, by):
+        if not (g.on_field(x) and L.match_card(g, src, src.controller, x, to) and x.controller in L.sides(src.controller, to.get('side', 'own'))): return False
+        return frm == 'any' or (by is not None and (by != src.controller) == (frm == 'opp'))
+    add_rule(c, 'immune', fn, num)
+
+
+@kind('alt_normal')
+def k_alt_normal(c, num, k, notes, kw):
+    """[제약] 「이 카드는 (집합의 카드 n장을) 제외하는 것으로 일반소환할 수 있다」 — 그 몬스터만의 일반소환 방법(c.alt_normal = (할 수 있는가, 지불))"""
+    sc, n = k['scope'], k['n']
+    def can(g, p): return len(L.cards_in(g, c, p, sc)) >= n
+    def pay(g, p):
+        for x in L.cards_in(g, c, p, sc)[:n]: g.banish(x, ('cost', c))
+    c.alt_normal = (can, pay)
+
+
+@kind('exclusive')
+def k_exclusive(c, num, k, notes, kw):
+    """「이 카드의 a · b번 효과는 동시에 발동할 수 없다」 — 엔진 Game.triggers가 같은 선언 차례에 하나만"""
+    c.flags['exclusive_nums'] = tuple(k['nums'])

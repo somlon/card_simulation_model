@@ -208,6 +208,7 @@ def need(k):
 def cost_n(g, c, p, k, n):
     """코스트로 내는 카드 매수 — 두플리카토르 1번(「서로가 카드의 발동을 위해 코스트로 지불해야 하는 카드의 매수는 2배」, Game.rule 'cost_double')면 2배.
     「이 카드」만의 코스트는 2배가 되지 않는다(룰지 f 개정 2026-10-25), 「이 카드를 포함한 n장」은 이 카드를 뺀 나머지만(k['incl_self'])"""
+    if k.get('cost') and k.get('n_rule') and g.rule(k['n_rule'][0], p): n = k['n_rule'][1]   # 코스트 매수를 바꾸는 [지속](세 - 아이라리움 2번)
     if not k.get('cost') or k.get('ref') == 'SELF' or not isinstance(n, int) or not g.rule('cost_double', p): return n
     return 2 * n - 1 if k.get('incl_self') else 2 * n
 
@@ -241,8 +242,14 @@ def pick(g, c, p, l, k):
 
 
 # ═══════════════════════ 처리 대상 해석 ═══════════════════════
+def payer(g, p, k):
+    """코스트를 실제로 내는 플레이어 — 델레가토르 1번(상대가 대신 지불, Game.cost_payer)은 대신 낼 수 있는 코스트(k['transfer'])에만"""
+    return g.cost_payer(p) if k.get('cost') and k.get('transfer') else p
+
+
 def subjects(g, c, p, l, k):
     """처리 블록이 다룰 카드: ref(앞에서 고른 카드 — ref_scope가 있으면 처리 때 조건 재확인) 또는 scope + n(처리 때 고름, 대상 지정 아님)"""
+    if k.get('cost') and k.get('transfer'): p = payer(g, p, k)
     if 'ref' in k:
         xs = ref_cards(g, c, p, l, k['ref'])
         rs = k.get('ref_scope')
@@ -262,6 +269,7 @@ def subjects(g, c, p, l, k):
 
 def can_subjects(g, c, p, ev, k):
     """발동 판정: 처리 때 고를 후보가 정한 수만큼 있는가 (앞에서 고른 카드를 쓰는 블록은 True)"""
+    if k.get('cost') and k.get('transfer'): p = payer(g, p, k)
     if 'ref' in k or k.get('scope') is None or k['scope'].get('among'): return True
     if k.get('all') or k.get('want'): return bool(pick_pool(g, c, p, k['scope'])) or k.get('zero_ok', False)   # 「전부」 · 「원하는 수까지」: 1장 이상
     n = k.get('n', 1)
@@ -454,16 +462,32 @@ def do_draw(g, c, p, l, k):
 
 
 def v_mill(g, c, p, ev, k):
-    return (-1.0 if k.get('who', 'self') == 'self' else 1.0) * n_of(k) * 2.0
+    """덱 위 n장 제외: 상대 덱은 덱아웃에 가까울수록 크게(남은 매수 이하면 결착), 자신 덱은 상대보다 먼저 바닥나게 되면 크게 손해"""
+    n = n_of(k); who = k.get('who', 'self'); out = 0.0
+    for q, sign in (((1 - p, 1.0),) if who == 'opp' else ((p, -1.0),) if who == 'self' else ((1 - p, 1.0), (p, -1.0))):
+        left = len(g.p[q].main) + len(g.p[q].upper)
+        if sign > 0:
+            out += LETHAL if left <= n and not k.get('cost') else n * (2.0 + 30.0 / max(1, left))
+        else:
+            other = len(g.p[1 - q].main) + len(g.p[1 - q].upper)
+            out -= n * (2.0 + (4.0 if left - n < other else 0.0))
+    return out
 
 
-@block('mill', val=v_mill, threat=200)
+@block('mill', val=v_mill, threat=lambda k: 600 if k.get('who') in ('opp', 'both') else 100)
 def do_mill(g, c, p, l, k):
-    """A2 이동 「덱 위 보내기」 — dest 'banish'(제외, Game.mill) · 'grave'(메인 덱 위에서 묘지로, Game.dump)"""
-    who = p if k.get('who', 'self') == 'self' else 1 - p
-    n = num(l, k.get('n', 1))
-    if k.get('dest', 'banish') == 'grave': return bool(g.dump(who, n, c.name))
-    return g.mill(who, n, k.get('deck'), c.name, fallback=k.get('fallback', False)) > 0
+    """A2 이동 「덱 위 보내기」 — dest 'banish'(제외, Game.mill) · 'grave'(메인 덱 위에서 묘지로, Game.dump).
+    who 'self' · 'opp' · 'both'(「서로 자신의 덱의 …」 — 각자 고름), deck 'main' · 'upper' · None(덱 미지정 — 고르는 쪽: 주어, §6-7),
+    fallback: 「제외할 카드가 부족할 경우 … 대신 제외한다」, chooser 'self': 「상대의 덱의 위에서부터 … 제외한다」는 효과를 쓴 플레이어가 고른다.
+    코스트(「…제외하고 발동」)는 Game.pay_deck_cost — 두플리카토르 2배 · 델레가토르면 상대 덱에서(모자라면 상대 패배)"""
+    n = cost_n(g, c, p, k, num(l, k.get('n', 1)))
+    if k.get('cost'): return g.pay_deck_cost(p, n, k.get('deck'), f'{c.name} 코스트') >= 0
+    if k.get('dest', 'banish') == 'grave': return bool(g.dump(p if k.get('who', 'self') == 'self' else 1 - p, n, c.name))
+    whos = {'self': (p,), 'opp': (1 - p,), 'both': (p, 1 - p)}[k.get('who', 'self')]
+    got = 0
+    for q in whos:
+        got += g.mill(q, n, k.get('deck'), c.name, fallback=k.get('fallback', False), chooser=p if k.get('chooser') == 'self' else None)
+    return got > 0
 
 
 @block('release', can=can_subjects, val=v_remove, threat=lambda k: th_target(k, 900))
@@ -674,6 +698,9 @@ def w_to_grave(g, c, p, ev, k):
     ca = ev.get('cause') or ('', None)
     if k.get('not_cost') and ca[0] == 'cost' and ca[1] is c: return False
     if k.get('released') and not ev.get('released'): return False
+    if k.get('by_opp'):   # 「이 카드가 상대에 의해 자신의 묘지로 보내진 경우」 — 원인 카드(효과 · 코스트 · 전투)의 컨트롤러가 상대
+        src = ca[1] if len(ca) > 1 else None
+        if not (isinstance(src, Card) and src.controller != p): return False
     return True
 
 
@@ -722,8 +749,13 @@ def last_link(g, p, k):
 
 @test('when_activated')
 def w_activated(g, c, p, ev, k):
-    """E2 발동했을 때(체인 응답, Effect.kind 'resp')"""
-    return last_link(g, p, k) is not None
+    """E2 발동했을 때(체인 응답, Effect.kind 'resp'). moves_off: 「자신 필드의 카드를 필드에서 벗어나게 하는 효과」(cards.moves_off_field — 재정 10-20 Q4)"""
+    lk = last_link(g, p, k)
+    if lk is None: return False
+    if k.get('moves_off'):
+        from cards import moves_off_field
+        return moves_off_field(g, lk, p)
+    return True
 
 
 @block('keep_link')
@@ -922,11 +954,13 @@ def t_any_option(g, c, p, ev, k):
 def best_option(g, c, p, l, k):
     """「A하거나 B한다」 — 할 수 있는 선택지 중 가치가 가장 큰 것(효과를 쓰는 플레이어가 고름). 없으면 -1"""
     ev = l.ctx.get('ev'); best, bv = -1, None
+    sign = -1.0 if k.get('chooser') == 'opp' else 1.0   # 「상대는 …하거나 …한다」 — 상대가 자신에게 나은(효과를 쓴 쪽에 나쁜) 쪽을 고른다
     for i, o in enumerate(k['options']):
         if not opt_ok(g, c, p, ev, o): continue
-        v = opt_val(g, c, p, ev, o)
+        v = sign * opt_val(g, c, p, ev, o)
         if bv is None or v > bv: best, bv = i, v
-    if best >= 0 and len(k['options']) > 1: g.L(f'판단[{g.pname(p)}] {c.name}: 선택지 {best + 1}', 'decision')
+    if best >= 0 and len(k['options']) > 1:
+        g.L(f'판단[{g.pname(p if sign > 0 else 1 - p)}] {c.name}: 선택지 {best + 1}', 'decision')
     return best
 
 
@@ -1068,3 +1102,15 @@ def do_to_bottom(g, c, p, l, k):
     for x in ref_cards(g, c, p, l, k['ref']):
         if x in lst: lst.remove(x); lst.insert(0, x)
     return True
+
+
+
+# ═══════════════════════ 세리에서 더한 것 ═══════════════════════
+@test('cond_tax_draw')
+def t_tax_draw(g, c, p, ev, k):
+    """「자신의 X 덱에서 카드를 n장 제외하고 발동. 자신의 X 덱에서 m장 드로우한다」 — 코스트를 낸 뒤 드로우할 수 있는가(정본 3-6 e, G2).
+    델레가토르면 코스트는 상대 덱에서 나가므로(모자라도 발동 — Game.pay_deck_cost) 드로우할 매수만 본다"""
+    deck = getattr(g.p[p], k['deck'])
+    if g.cost_payer(p) != p: return len(deck) >= k['draws']
+    n = 2 * k['n'] if g.rule('cost_double', p) else k['n']
+    return len(deck) >= n + k['draws']

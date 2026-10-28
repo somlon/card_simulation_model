@@ -141,6 +141,12 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     for a in ('owner_only', 'procedure', 'opt_per_card', 'summon_negate', 'exclusive'):
         if kw.get(a): setattr(e, a, kw[a])
     if kw.get('grant_of'): e.grant_of = kw['grant_of']
+    pay = [b for b in costs if b.name not in ('pick', 'keep_link', 'oath')]
+    if pay and all(b.k.get('transfer') or b.name == 'mill' for b in pay):
+        # 델레가토르 1번: 상대가 대신 낼 수 있는 코스트만으로 된 효과 — 상대(q)가 낼 수 있는가(engine.Game.transfer_ok)
+        def cost_payable(g, c, p, q, _bs=tuple(pay)):
+            return all(L.BLOCKS[b.name].can(g, c, p, None, dict(b.k, cost=True)) for b in _bs)
+        e.cost_payable = cost_payable
     line = sent if '-' in spec.key else f'{num}. {sent}'
     cards.text_attrs(e, line, d['name'] if '-' not in spec.key else kw.get('grant_name', d['name']))
     e.spec = spec

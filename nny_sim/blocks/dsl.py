@@ -105,9 +105,9 @@ SKILL = ('skill',)
 HAND_FIELD = ('hand', 'field')
 
 
-def choice(*options):
-    """J2 선택지 「A하거나 B한다」 — 할 수 있는 선택지 중 효과를 쓰는 플레이어가 고른다(가치가 큰 것). options: 처리 블록 목록들"""
-    return B('choice', options=tuple(tuple(o) for o in options))
+def choice(*options, chooser='self'):
+    """J2 선택지 「A하거나 B한다」 — 할 수 있는 선택지 중 고르는 사람이 자신에게 나은 것(가치 기준). chooser='opp': 「상대는 …하거나 …한다」"""
+    return B('choice', options=tuple(tuple(o) for o in options), chooser=chooser)
 
 
 def roll(as_='D', sides=6): return B('roll', sides=sides, **{'as': as_})
@@ -136,3 +136,8 @@ def self_rule(key): return B('self_rule', key=key)
 def stat_mod(to, amt, per=None, stat='atk'): return B('stat_mod', to=to, amt=amt, per=per, stat=stat)
 def end_process(steps, whose='both'): return B('end_process', steps=tuple(steps), whose=whose)
 def host_leave(steps): return B('host_leave', steps=tuple(steps))
+def player_rule(key, who='own'): return B('player_rule', key=key, who=who)
+def rule_immune(to, frm='opp'): return B('rule_immune', to=to, **{'from': frm})
+def alt_normal(scope, n): return B('alt_normal', scope=scope, n=n)
+def exclusive(*nums): return B('exclusive', nums=nums)
+def mill(n, who='self', **k): return B('mill', n=n, who=who, **k)
