@@ -177,6 +177,8 @@ def pick_cards(g, c, p, pool, n, k):
             theirs = [x for x in on_f if g.side_of(x) != who]
             if harm and theirs:
                 x = ai.pick_target(g, who, theirs, k.get('purpose', 'remove'))
+            elif harm and who != p:   # 상대가 자신 필드의 카드를 골라 잃는다(「상대는 자신 필드의 … 1장 골라 파괴한다」) — 덱 지침에서 덜 아끼는 카드
+                x = min(on_f, key=lambda y: (ai.card_pri(g, who, y), value(g, y)))
             elif harm:
                 x = min(on_f, key=lambda y: value(g, y))
             else:
@@ -203,7 +205,10 @@ def pick_pool(g, c, p, sc, l=None):
         base = [x for x in ref_cards(g, c, p, l, sc['among']) if match_card(g, c, p, x, sc)] if l is not None else []
     else:
         base = cards_in(g, c, p, sc)
-    out = [x for x in base if not (g.on_field(x) and g.immune(x, p, c))]
+    if sc.get('counter_add'):   # 카운터를 놓는 효과: 「카운터를 쌓는 효과는 적용」 카드는 내성이 있어도 놓을 수 있다(Game.counter_blocked)
+        out = [x for x in base if not g.counter_blocked(x, c)]
+    else:
+        out = [x for x in base if not (g.on_field(x) and g.immune(x, p, c))]
     if sc.get('pickable'): out = [x for x in out if g.pickable(x, c)]   # 같은 이름 규칙(덱 · 묘지 · 제외 존에서 패에 넣기 — Game.pickable)
     return out
 
@@ -589,9 +594,36 @@ def v_special(g, c, p, ev, k):
         xs = [c] if k['ref'] == 'SELF' else [ev['card']] if k['ref'] == 'EV' and isinstance(ev, dict) and ev.get('card') is not None else []
     else:
         prev = g.src; g.src = c   # 미리 보기도 이 효과가 소환하는 것으로 판정(「스킬 카드의 효과로만」 · 같은 이름 규칙 — Game.can_special)
-        try: xs = sorted(summon_cands(g, c, p, k), key=lambda x: -value(g, x))[:n_of(k)]
+        try: xs = sorted(summon_cands(g, c, p, k), key=lambda x: -value(g, x) - mon_extra(g, x, p) / UNIT)[:n_of(k)]
         finally: g.src = prev
-    return sum(value(g, x) for x in xs) * UNIT
+    return sum(value(g, x) * UNIT + mon_extra(g, x, p) for x in xs)
+
+
+FIELD_FX = 0.3   # 소환한 몬스터가 필드에서 쓸 수 있는 효과 1개의 기대 가치(카드 가치 단위)
+
+
+def mon_extra(g, x, p):
+    """소환하는 몬스터가 가져오는 효과의 가치(B안): [소환] 효과는 그 블록 가치(한 단계), 필드에서 쓰는 다른 효과는 1개당 FIELD_FX"""
+    if _LW_DEPTH[0]: return 0.0
+    out = 0.0
+    for e in x.effects:
+        if e.kind == 'summon' and getattr(e, 'spec', None) is not None:
+            _LW_DEPTH[0] += 1
+            try: out += max(0.0, e.score(g, x, p, {'kind': 'summon', 'card': x, 'player': p, 'how': 'special'}))
+            finally: _LW_DEPTH[0] -= 1
+        elif e.kind == 'ignition' and 'field' in e.zones and getattr(e, 'spec', None) is not None:
+            _LW_DEPTH[0] += 1   # 필드에서 쓸 기동 효과: 그 블록 가치의 절반(쓸 때가 오면) — 적어도 FIELD_FX
+            try: out += max(FIELD_FX * UNIT, 0.5 * e.score(g, x, p, None))
+            finally: _LW_DEPTH[0] -= 1
+        elif 'field' in e.zones and e.kind not in ('cont', 'restrict', 'lastwill', 'summon'):
+            out += FIELD_FX * UNIT
+    return out
+
+
+def summon_pick(g, c, p, pool, why):
+    """특수소환할 몬스터 고르기(B안): 카드 가치 + 가져오는 효과의 가치(mon_extra)가 큰 것, 같으면 덱 지침 우선순위"""
+    ai = g.p[p].ai
+    return max(pool, key=lambda x: (round(value(g, x) * UNIT + mon_extra(g, x, p), 1), ai.card_pri(g, p, x)))
 
 
 @block('special', can=can_special, val=v_special, threat=500)
@@ -610,7 +642,7 @@ def do_special(g, c, p, l, k):
         while len(done) < n:
             pool = [x for x in summon_cands(g, c, p, k) if x not in done]
             if not pool: break
-            x = g.p[p].ai.pick_search(g, p, pool, k.get('why') or f'{c.name} 특수소환')
+            x = summon_pick(g, c, p, pool, k.get('why') or f'{c.name} 특수소환')
             if not g.special_summon(x, p, pos): break
             done.append(x)
         if any(z in ('main', 'upper', 'deck') for z in _zones(k['scope'])) and done: g.shuffle(p)
@@ -651,18 +683,81 @@ def do_heal(g, c, p, l, k):
     g.heal(who, num(l, k['amt'])); return True
 
 
+def _counter_k(k):
+    """카운터 블록의 카드 고르기용 명세 — n은 카운터 수이므로 카드 수는 k['cards'](기본 1), 놓을 때는 내성 대신 Game.counter_blocked"""
+    kk = dict(k, n=k.get('cards', 1))
+    if k.get('op', 'add') == 'add' and k.get('scope') is not None: kk['scope'] = dict(k['scope'], counter_add=True)
+    return kk
+
+
 def can_counter(g, c, p, ev, k):
-    if k.get('op', 'add') == 'add': return can_subjects(g, c, p, ev, k)
-    xs = preview(g, c, p, ev, k) if 'ref' not in k else ref_cards(g, c, p, None, k['ref'])
+    if k.get('op', 'add') == 'add': return can_subjects(g, c, p, ev, _counter_k(k))
+    xs = preview(g, c, p, ev, _counter_k(k)) if 'ref' not in k else ref_cards(g, c, p, None, k['ref'])
+    if k.get('total'): return sum(x.counters.get(k['name'], 0) for x in xs) >= num(None, k.get('n', 1))
     return any(x.counters.get(k['name'], 0) >= (1 if k.get('op') == 'remove_all' else num(None, k.get('n', 1))) for x in xs)
 
 
-@block('counter', can=can_counter, val=lambda g, c, p, ev, k: 5.0, threat=200)
+COUNTER_UNIT = 5.0   # 카운터 1개의 기본 가치 — 그 카드를 가진 쪽의 자원(자신 카드 +, 상대 카드 −)
+
+
+def counter_effects(g, x, p, name, n):
+    """자신 카드 x에 name 카운터 n개를 더 놓을 때 그 카드의 효과 · [지속] 처리로 생기는 가치(B안):
+    「이 카드에 카운터가 m개 놓였을 때」 트리거(정확히 m개가 될 때 그 효과 점수) ·
+    종료 시 처리가 이 카운터를 전부 떼고 그 수만큼 HP를 증감하면(이 턴에 처리될 때) 그 증감"""
+    out = 0.0; cur = x.counters.get(name, 0)
+    for e in x.effects:
+        need = getattr(e, 'counter_need', None)
+        if need is not None and need[0] == name and cur + n == need[1]:
+            out += max(0.0, e.score(g, x, p, {'kind': 'counter', 'card': x, 'name': name, 'delta': n, 'total': cur + n}))
+    es = getattr(x, 'end_steps', None)
+    if es is not None:
+        steps, whose = es
+        if whose == 'both' or (g.turn_player == x.controller) == (whose == 'own'):
+            ref = next((b.k.get('count_as') for b in steps if b.name == 'counter' and b.k.get('name') == name and b.k.get('op') == 'remove_all'), None)
+            if ref is not None:
+                for b in _flat_steps(g, x, p, steps):
+                    if b.name == 'damage' and b.k.get('times') == ('ref', ref):
+                        out += (-1.0 if b.k.get('who') == 'self' else 1.0) * n * b.k['amt'] / HP_UNIT
+    return out
+
+
+def _flat_steps(g, c, p, steps):
+    """처리 블록 목록을 지금 상태로 펼친다 — 분기(J2)는 조건을 지금 판정"""
+    for b in steps:
+        if b.name == 'branch':
+            cb = b.k['cond']
+            yield from _flat_steps(g, c, p, b.k['then'] if TESTS[cb.name](g, c, p, None, cb.k) else b.k['other'])
+        else:
+            yield b
+
+
+def v_counter(g, c, p, ev, k):
+    op = k.get('op', 'add'); name = k['name']
+    xs = [c] if k.get('ref') == 'SELF' else preview(g, c, p, ev, _counter_k(k))
+    if k.get('total'): xs = xs[:1]
+    out = 0.0
+    for x in xs:
+        mine = g.side_of(x) == p
+        n = x.counters.get(name, 0) if op == 'remove_all' else n_of(k)
+        out += (1.0 if op == 'add' else -1.0) * (1.0 if mine else -1.0) * COUNTER_UNIT * n
+        if mine and op == 'add': out += counter_effects(g, x, p, name, n)
+    return out
+
+
+@block('counter', can=can_counter, val=v_counter, threat=200)
 def do_counter(g, c, p, l, k):
     """A19 카운터 — op 'add' · 'remove' · 'remove_all'. 뗀 · 놓은 개수는 k['count_as']로 남긴다.
-    재정 G6: 정한 개수를 뗄 수 없으면 처리하지 못한 것 — 아무것도 하지 않는다"""
+    total: 「(자신 필드의) 카운터를 n개 제거한다」 — 여러 카드에서 합계 n개. 재정 G6: 정한 개수를 뗄 수 없으면 처리하지 못한 것 — 아무것도 하지 않는다"""
     op = k.get('op', 'add'); name = k['name']; total = 0
-    xs = subjects(g, c, p, l, k)
+    xs = subjects(g, c, p, l, _counter_k(k))
+    if k.get('total') and op == 'remove':
+        need = num(l, k.get('n', 1))
+        if sum(x.counters.get(name, 0) for x in xs) < need: return False
+        for x in sorted(xs, key=lambda x: -x.counters.get(name, 0)):
+            if total >= need: break
+            total += g.remove_counter(x, name, need - total, src=c)
+        if k.get('count_as'): refs(l)[k['count_as']] = total
+        return total >= need
     for x in xs:
         if op == 'add':
             n = num(l, k.get('n', 1))
@@ -731,7 +826,7 @@ def do_stat(g, c, p, l, k):
 @test('cnt')
 def t_cnt(g, c, p, ev, k):
     """C1 조건 — 집합의 카드 수 비교"""
-    return _OPS[k.get('op', '>=')](len(cards_in(g, c, p, k['scope'])), k.get('n', 1))
+    return _OPS[k.get('op', '>=')](len(cards_in(g, c, p, k['scope'])) + k.get('plus', 0), k.get('n', 1))
 
 
 @test('cond_own_turn')
@@ -787,6 +882,9 @@ def w_phase(g, c, p, ev, k):
     if k['phase'] == 'end':
         if not ev_kind(ev, 'end_phase'): return False
         tp = ev['player']
+    elif k['phase'] == 'end_step':   # 「종료 단계(페이즈)가 되었을 때」 — 종료 단계에 들어설 때([지속] 종료 처리 · 「턴 종료 시」보다 먼저)
+        if not (ev_kind(ev, 'phase') and ev['phase'] == '종료'): return False
+        tp = g.turn_player
     else:
         if not (ev_kind(ev, 'phase') and ev['phase'] == '준비'): return False
         tp = g.turn_player
@@ -849,7 +947,7 @@ def timing(g, c, p, ev, info, v):
     """효과 점수 = 시점 보정 × 블록 가치 합. 시점이 정해진 효과(트리거 · [소환] · [유언] · [전투] · 응답)는 그대로.
     [신속]은 언제 쓰는가가 판단이다: 자신 턴 진행 · 정비 단계(체인 없음)에는 그대로, 상대 발동에 응답할 때는 상대 카드를 없애거나 무효로 하는
     효과(disrupt)만, 자신 전투 단계에는 방해 효과만(상대 몬스터를 치우고 공격), 상대 턴에는 방해 효과를 줄여서 · 상대 종료 단계에는 자원 효과를 줄여서"""
-    if v <= 0 or info['kind'] != 'quick' or info.get('aware'): return v
+    if v <= 0 or info['kind'] != 'quick' or info.get('aware') or info.get('phase_only'): return v   # 쓸 수 있는 단계가 정해진 효과는 그때 쓴다
     if any(lk.card is c and lk.eff.num == info.get('num') for lk in g.chain): return 0.0   # 같은 효과를 체인에 거듭 쌓지 않는다(앞 발동이 처리되면 형세가 바뀐다)
     own = g.turn_player == p
     if g.chain and g.chain[-1].player != p: return v if info['disrupt'] else 0.0
@@ -910,19 +1008,31 @@ def do_roll(g, c, p, l, k):
     return True
 
 
-@block('negate_chain', val=lambda g, c, p, ev, k: sum(lk.eff.threat for lk in g.chain if lk.player != p and _link_ok(lk, k)) / 10.0, threat=900)
+def can_negate_chain(g, c, p, ev, k):
+    """「「X」의 효과를 무효로 한다」: 처리를 기다리는 X의 효과가 있어야(그 카드가 이 효과를 받을 때) — from_zone만이면 늘"""
+    if not k.get('name'): return True
+    return any(not lk.negated and _link_ok(lk, k, g, c, p) and not g.link_unaffected(lk, c) for lk in g.chain)
+
+
+@block('negate_chain', can=can_negate_chain, val=lambda g, c, p, ev, k: sum(lk.eff.threat for lk in g.chain if lk.player != p and _link_ok(lk, k, g)) / 10.0, threat=900)
 def do_negate_chain(g, c, p, l, k):
     """A12 발동 무효 — 이 발동보다 먼저 체인에 오른 발동 중 조건(from_zone 등)에 맞는 것 전부"""
     idx = g.chain.index(l) if l in g.chain else len(g.chain)
     done = 0
     for lk in g.chain[:idx]:
-        if not lk.negated and _link_ok(lk, k):
+        if not lk.negated and _link_ok(lk, k, g, c, p):
             g.negate(lk, by=c); done += lk.negated
     return done > 0
 
 
-def _link_ok(lk, k):
-    return not k.get('from_zone') or lk.ctx.get('from_zone') in k['from_zone']
+def _link_ok(lk, k, g=None, c=None, p=None):
+    """체인의 발동 lk가 조건에 맞는가 — from_zone(그 효과를 발동한 위치) · name(「「X」의 효과」: X 카드의 발동, 또는 X의 효과 변경으로 바뀐 발동 — flags['replace_pending'])"""
+    if k.get('from_zone') and lk.ctx.get('from_zone') not in k['from_zone']: return False
+    if k.get('name'):
+        if lk.card.name == k['name']: return True
+        return g is not None and any(x.name == k['name'] and x.flags.get('replace_pending') is lk and not (c is not None and g.immune(x, p, c))
+                                     for x in g.all_field())
+    return True
 
 
 def want_pick(g, c, p, pool, k):
@@ -1132,7 +1242,7 @@ def can_place(g, c, p, ev, k):
         return any(x.type == '필드' or g.free_s(p) for x in xs) if xs else True
     pool = pick_pool(g, c, p, k['scope'])
     if not pool: return False
-    return any(x.type == '필드' for x in pool) or bool(g.free_s(p))
+    return any(x.type == '필드' for x in pool) or bool(g.free_s(1 - p if k.get('to') == 'opp' else p))
 
 
 @block('place', can=can_place, val=lambda g, c, p, ev, k: (3.0 * UNIT * n_of(k)) if can_place(g, c, p, ev, k) else 0.0, threat=900)
@@ -1144,7 +1254,7 @@ def do_place(g, c, p, l, k):
             pool = [x for x in ref_cards(g, c, p, l, k['ref']) if x.zone not in FIELD_Z and (x.type == '필드' or g.free_s(p))]
             if k.get('ref_scope') is not None: pool = [x for x in pool if x in cards_in(g, c, p, k['ref_scope'])]
         else:
-            pool = [x for x in pick_pool(g, c, p, k['scope'], l) if x.type == '필드' or g.free_s(p)]
+            pool = [x for x in pick_pool(g, c, p, k['scope'], l) if x.type == '필드' or g.free_s(1 - p if k.get('to') == 'opp' else p)]
         if not pool: break
         fresh = [x for x in pool if not any(y.name == x.name for y in g.spells(p))] or pool   # 같은 카드가 이미 있으면 다른 카드를 먼저
         x = g.p[p].ai.pick_search(g, p, fresh, k.get('why') or c.name)
@@ -1152,7 +1262,7 @@ def do_place(g, c, p, l, k):
         g._remove(x)
         if x.type == '필드': g.place_field(x, p); g.L(f'{src}{x} 발동')
         else:
-            if not g.place_spell(x, p, not k.get('set')): break
+            if not g.place_spell(x, 1 - p if k.get('to') == 'opp' else p, not k.get('set')): break
             if k.get('set') and k.get('act_this_turn'): x.flags['act_this_turn'] = g.turn
             g.L(f'{src}{x} {"세트" if k.get("set") else "앞면으로 놓음"}')
         done += 1
@@ -1479,3 +1589,53 @@ def t_ev_back(g, c, p, ev, k):
     if x is None: return False
     if x.is_monster(): return g.can_special(x, p)
     return x.type == '필드' or bool(g.free_s(p))
+
+
+# ═══════════════════════ 저주인형에서 더한 것 ═══════════════════════
+@test('cond_counters')
+def t_counters(g, c, p, ev, k):
+    """C1 조건 — 집합의 카드에 놓인 name 카운터 수의 합 비교(「자신 필드에 저주 카운터가 3개 이상일 경우」)"""
+    return _OPS[k.get('op', '>=')](sum(x.counters.get(k['name'], 0) for x in cards_in(g, c, p, k['scope'])) + k.get('plus', 0), k.get('n', 1))
+
+
+@test('cond_can')
+def t_can(g, c, p, ev, k):
+    """블록을 지금 처리할 수 있는가(발동 판정 — 분기 안의 처리를 미리 볼 때)"""
+    b = k['blk']; return BLOCKS[b.name].can(g, c, p, ev, b.k)
+
+
+@test('cond_any')
+def t_any(g, c, p, ev, k):
+    return any(TESTS[b.name](g, c, p, ev, b.k) for b in k['of'])
+
+
+@test('when_counter')
+def w_counter(g, c, p, ev, k):
+    """E5 값 변화 「이 카드에 X 카운터가 n개 놓였을 때」 — 놓아서 정확히 n개가 된 순간만(넘어서 n개를 지나치면 발동하지 않음 — 사용자 답변 2026-10-20)"""
+    if not (ev_kind(ev, 'counter') and ev['card'] is c and ev['name'] == k['name'] and ev['delta'] > 0): return False
+    return ev.get('total', c.counters.get(k['name'], 0)) == k['n']
+
+
+@test('when_negated')
+def w_negated(g, c, p, ev, k):
+    """E6 무효화되었을 때 — who: 그 효과(카드)의 플레이어"""
+    return ev_kind(ev, 'negated') and _who_ok(k, ev['player'], p)
+
+
+@block('act_limit', val=lambda g, c, p, ev, k: ACT_LIMIT_VAL if g.turn_player == p else 0.2 * ACT_LIMIT_VAL, threat=700)
+def do_act_limit(g, c, p, l, k):
+    """플레이어 규칙 「다음 턴, 상대가 발동할 수 있는 효과는 n회로 제한된다」(Game.act_limit)"""
+    g.act_limit[1 - p] = (g.turn + 1, num(l, k['n'])); g.L(f'다음 턴 {g.pname(1 - p)}가 발동할 수 있는 효과 {num(l, k["n"])}회로 제한'); return True
+
+
+ACT_LIMIT_VAL = 3.0 * UNIT   # 다음 턴(상대 턴) 상대의 발동 횟수 제한의 가치 — 자신 턴 종료 단계에 쓸 때(다음 턴이 상대 턴)
+
+
+WIN_PROGRESS = 15.0 * UNIT   # 「…이 n장 모였을 경우 승리」 — 모은 비율만큼의 가치(결착 전)
+
+
+@block('win', val=lambda g, c, p, ev, k: LETHAL, threat=1500)
+def do_win(g, c, p, l, k):
+    """A23 승리 「자신은 게임에서 승리한다」"""
+    from engine import GameOver
+    raise GameOver(p, f'{g.pname(p)} 특수 승리 ({c.name})')

@@ -42,8 +42,8 @@ def S(side='both', zone='field', kind=None, **f):
     return d
 
 
-def B(name, **k):
-    return Blk(name, k)
+def B(_blk_name, **k):
+    return Blk(_blk_name, k)
 
 
 # ── 고르기 (S1) ──
@@ -92,9 +92,9 @@ def branch(cond, then, other=(), prob=None):
 
 
 # ── 시점 (E) · 조건 (C1) ──
-def when(name, **k): return B('when_' + name, **k)
+def when(_kind, **k): return B('when_' + _kind, **k)
 def cnt(scope, op='>=', n=1): return B('cnt', scope=scope, op=op, n=n)
-def cond(name, **k): return B('cond_' + name, **k)
+def cond(_kind, **k): return B('cond_' + _kind, **k)
 
 
 # 자주 쓰는 발동 위치
@@ -132,7 +132,7 @@ def place(scope, **k): return B('place', scope=scope, **k)
 def no_attack(): return B('no_attack')
 def look(as_, n, zone='upper'): return B('look', n=n, zone=zone, **{'as': as_})
 def to_bottom(ref, zone='upper'): return B('to_bottom', ref=ref, zone=zone)
-def self_rule(key): return B('self_rule', key=key)
+def self_rule(key, battle=False): return B('self_rule', key=key, battle=battle)
 def stat_mod(to, amt, per=None, stat='atk'): return B('stat_mod', to=to, amt=amt, per=per, stat=stat)
 def end_process(steps, whose='both'): return B('end_process', steps=tuple(steps), whose=whose)
 def host_leave(steps): return B('host_leave', steps=tuple(steps))
@@ -158,3 +158,11 @@ def recycle(group=None, n=1):
     f = dict(group=group) if group else {}
     return [to_deck(ref='SELF', ref_scope=S('own', 'grave'), harm=False),
             to_deck(scope=S('own', 'grave', not_self=True, **f), n=n, harm=False, shuffle=True)]
+def turn_start(steps, whose='both', actor='own'): return B('turn_start', steps=tuple(steps), whose=whose, actor=actor)
+def round_start(steps): return B('round_start', steps=tuple(steps))
+def next_act_replace(counter, n, steps, label=''): return B('next_act_replace', counter=counter, n=n, steps=tuple(steps), label=label)
+def act_limit(n): return B('act_limit', n=n)
+def win(): return B('win')
+def counters_ge(scope, name, n, plus=0): return B('cond_counters', scope=scope, name=name, n=n, plus=plus)
+def can(blk): return B('cond_can', blk=blk)
+def any_of(*tests): return B('cond_any', of=tuple(tests))

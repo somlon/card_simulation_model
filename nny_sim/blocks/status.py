@@ -72,6 +72,7 @@ def place_effect(c):
     """효과 번호 0 — 지속 · 필드 마법 카드를 앞면으로 놓기만 하는 발동. 점수(B안): 그 카드의 [지속] · 효과를 쓸 수 있게 되는 가치,
     자신 필드 존에 이미 같은 카드가 있으면 0, 다른 자신 필드 마법을 덮어쓰면 줄임"""
     def sc(g, c, p, ev):
+        if getattr(c, 'cont_forced', None): return 0.0   # 주인에게 불리한 [지속]이 있는 카드(퇴마의 부적) — 자신 필드에 놓지 않는다
         if c.type == '필드' and g.fieldz is not None and g.fieldz.controller == p:
             return 0.0 if g.fieldz.name == c.name else L.UNIT
         if any(x.name == c.name and x.faceup for x in g.spells(p)): return 0.0
@@ -85,8 +86,10 @@ def place_effect(c):
 # ═══════════════════════ 카드 자신의 규칙 · 공격력 증감 · 종료 처리 · 장착 해제 ═══════════════════════
 @kind('self_rule')
 def k_self_rule(c, num, k, notes, kw):
-    """이 카드 자신에게만 걸리는 엔진 규칙 — 'direct_attack'(「이 카드는 상대 몬스터가 존재해도 직접공격할 수 있다」) · 'double_attack' …"""
-    add_rule(c, k['key'], lambda g, src, x, *a: x is src, num)
+    """이 카드 자신에게만 걸리는 엔진 규칙 — 'direct_attack'(「이 카드는 상대 몬스터가 존재해도 직접공격할 수 있다」) · 'double_attack' ·
+    battle=True: 'indestructible'의 전투 파괴만(「이 카드는 전투로는 파괴되지 않는다」 — 규칙 인자 battle)"""
+    if k.get('battle'): add_rule(c, k['key'], lambda g, src, x, battle=False, *a: battle and x is src, num)
+    else: add_rule(c, k['key'], lambda g, src, x, *a: x is src, num)
 
 
 @kind('stat_mod')
@@ -106,6 +109,7 @@ def k_stat_mod(c, num, k, notes, kw):
 def k_end_process(c, num, k, notes, kw):
     """[지속] 「(각 턴 · 자신 턴)의 종료 시에, …한다」 — 발동이 아닌 종료 단계 처리(Game.play_turn의 end_process, 체인 · 1턴 1회 발동 없음)"""
     steps, whose = tuple(k['steps']), k.get('whose', 'both')
+    c.end_steps = (steps, whose)   # AI 가치(lib.counter_effects)가 읽는다
     def end_process(g, c):
         p = c.controller
         if whose != 'both' and (g.turn_player == p) != (whose == 'own'): return
@@ -212,3 +216,52 @@ def k_rule_to(c, num, k, notes, kw):
     def fn(g, src, x, *a):
         return g.on_field(x) and x.controller in L.sides(src.controller, to.get('side', 'own')) and L.match_card(g, src, src.controller, x, to)
     add_rule(c, k['key'], fn, num)
+
+
+# ═══════════════════════ 저주인형에서 더한 것 ═══════════════════════
+@kind('turn_start')
+def k_turn_start(c, num, k, notes, kw):
+    """[지속] 「(서로의 · 상대의 · 자신의) 턴 시작 시에 …한다 · 이하의 효과 중 하나를 선택하여 적용한다」 — 발동이 아닌 처리(1턴 횟수는 이 번호, 주인이 고른다).
+    actor: 처리하는 플레이어('own' 이 카드의 컨트롤러 · 'opp' 상대 — 「상대는 …」)"""
+    steps, whose, actor = tuple(k['steps']), k.get('whose', 'both'), k.get('actor', 'own')
+    def on_ev(g, src, ev):
+        if ev['kind'] != 'phase' or ev['phase'] != '준비': return
+        p = src.controller
+        if whose != 'both' and (g.turn_player == p) != (whose == 'own'): return
+        if not g.cont_use(src, num, '턴 시작 시 처리'): return
+        L.steps_run(g, src, p if actor == 'own' else 1 - p, steps)
+    chain_hook(c, 'on_event', on_ev)
+
+
+@kind('round_start')
+def k_round_start(c, num, k, notes, kw):
+    """「라운드 시작 시에 …한다」 — 라운드(게임) 시작 사건에 처리(발동 아님)"""
+    steps = tuple(k['steps'])
+    def on_ev(g, src, ev):
+        if ev['kind'] == 'game_start': L.steps_run(g, src, src.controller, steps)
+    chain_hook(c, 'on_event', on_ev)
+
+
+@kind('next_act_replace')
+def k_next_act_replace(c, num, k, notes, kw):
+    """[지속] 「이 카드의 X 카운터가 n개 이상일 때, 이 카드의 주인이 다음에 발동하는 효과는 무효가 되고 「…」로 변경된다」 — 주인 = 이 카드의 컨트롤러(재정).
+    바뀐 처리 = k['steps'](이 카드의 효과 — 이 카드가 주체, 그 플레이어가 처리). 발동한 카드가 이 카드의 효과를 받지 않으면 바뀌지 않는다(Game.replace —
+    재정 Q59 · Q60). 바꿔 둔 발동은 flags['replace_pending'] — 처리 전에 무효화되면 카운터는 그대로, 다음 발동이 다시 변경 대상(이 카드 자신의 발동 포함).
+    턴 제약이 없는 [지속]이라 같은 턴의 다음 발동에 바로 다시 적용된다(사용자 답변 2026-10-23 PDF Q3)"""
+    name, th, steps = k['counter'], k['n'], tuple(k['steps'])
+    def on_ev(g, src, ev):
+        if ev['kind'] == 'negated' and src.flags.get('replace_pending') is ev.get('link'):
+            src.flags.pop('replace_pending', None); return
+        if ev['kind'] != 'activate' or ev['player'] != src.controller or src.counters.get(name, 0) < th: return
+        pend = src.flags.get('replace_pending')
+        if pend is not None:
+            if not pend.negated and pend in g.chain: return
+            src.flags.pop('replace_pending', None)
+        link = ev['link']
+        def rep(g2, tl, src=src):
+            src.flags.pop('replace_pending', None)
+            L.steps_run(g2, src, src.controller, steps)
+        if not g.replace(link, rep, src): return
+        src.flags['replace_pending'] = link
+        g.L(f'{src.name}: {link.card}의 효과는 무효 — 「{k.get("label", "…")}」로 변경됨', 'sys')
+    chain_hook(c, 'on_event', on_ev)

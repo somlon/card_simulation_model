@@ -144,6 +144,7 @@ def make_effect(spec, sent, d, kw, notes, kind, num):
     for a in ('owner_only', 'procedure', 'opt_per_card', 'summon_negate', 'exclusive'):
         if kw.get(a): setattr(e, a, kw[a])
     if kw.get('grant_of'): e.grant_of = kw['grant_of']
+    e.counter_need = next(((w.k['name'], w.k['n']) for w in whens if w.name == 'when_counter'), None)   # lib.counter_effects
     e.kinds_costs = tuple(b.k for b in costs if b.name == 'kinds')   # 「각각 n장씩」 모으는 코스트(lib.v_kinds — 다른 효과가 쓰면 손해)
     pay = [b for b in costs if b.name not in ('pick', 'keep_link', 'oath')]
     if pay and all(b.k.get('transfer') or b.name == 'mill' for b in pay):
@@ -253,7 +254,7 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
         vals.append(f'(({_val_expr(G, d2)}) if ({ok}) else 0.0)')
     cvals = [(f'max(0.0, {G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)}) + {_val_expr(G, list(b.k.get("gain", ())))})' if b.k.get('may') else
               f'{G.fn(L.BLOCKS[b.name].val)}(g, c, p, ev, {G.const(b.k)})') for b in costs if b.name not in ('pick', 'keep_link')]
-    info = dict(num=num, kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
+    info = dict(num=num, phase_only=bool(notes.get('phase_only')), kind=kind, disrupt=any(b.name in DISRUPT and (b.k.get('ref') not in (None, 'SELF') or b.k.get('scope', {}).get('side') == 'opp')
                                          for b in list(_flat(dos)) + costs), spell_act=f['spell_act'], mandatory=f['mandatory'],
                 aware=any(b.name in AWARE for b in _flat(dos)))
     v = ' + '.join(vals) or '0.0'
@@ -265,12 +266,20 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
 
 
 def _val_expr(G, steps):
-    """처리 블록 가치의 합 — 분기(J2)는 확률(prob)이 있으면 기댓값, 없으면 큰 쪽 · 선택지는 가장 큰 것"""
-    parts = []
+    """처리 블록 가치의 합 — 분기(J2)는 확률(prob)이 있으면 기댓값, 없으면 큰 쪽 · 선택지는 가장 큰 것.
+    「이 카드를 X로 옮긴다. 이 효과로 X에 …이 n장 모였을 경우, 승리한다」는 이 카드를 센 수로 판정하고, 모이기 전에는 모은 비율만큼(lib.WIN_PROGRESS)"""
+    parts = []; moved = set()
     for b in steps:
+        if b.name == 'move' and b.k.get('ref') == 'SELF': moved.add(b.k['dest'])
         if b.name == 'branch':
             a, o = _val_expr(G, b.k['then']), _val_expr(G, b.k['other'])
             pr = b.k.get('prob'); cb = b.k['cond']
+            if cb.name == 'cnt' and cb.k['scope'].get('zone') in moved:
+                ck = dict(cb.k, plus=1)
+                if any(x.name == 'win' for x in b.k['then']):
+                    parts.append(f'(({a}) if L.TESTS["cnt"](g, c, p, ev, {G.const(ck)}) else L.WIN_PROGRESS * (len(L.cards_in(g, c, p, {G.const(ck["scope"])})) + 1) / {ck["n"]})')
+                    continue
+                cb = D.Blk(cb.name, ck)
             if pr is not None: parts.append(f'({pr} * ({a}) + {1 - pr} * ({o}))')
             elif cb.name == 'cond_ref_in': parts.append(f'max({a}, {o})')   # 처리 때 정해지는 값(주사위 등)
             else: parts.append(f'(({a}) if {G.fn(L.TESTS[cb.name])}(g, c, p, ev, {G.const(cb.k)}) else ({o}))')
