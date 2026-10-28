@@ -44,6 +44,31 @@ from .view import 기보_효과문, 보드_딕, 수_갈래들, 수_효과문
 
 맵파일 = {"호박옥": "호박옥_봉인의_계약.yaml", "던전마스터": "던전마스터_셔플.yaml"}
 효과뿌리 = Path(__file__).resolve().parent.parent / "cards" / "효과"
+추천덱파일 = Path(__file__).resolve().parent.parent / "cards" / "추천덱.json"
+_추천덱캐시: list = []
+
+
+def 추천덱들() -> dict:
+    """`cards/추천덱.json` — 카드 효과를 전수로 읽고 짠 덱별 추천 구성.
+
+    룰지 0-1·0-2 범위 안에 들어가는 것을 기계로 확인해 둔 것이고(테스트가 지킨다),
+    고르는 쪽이 그대로 쓰거나 덱 편집기에서 손봐 쓸 수 있다.
+    """
+    if not _추천덱캐시:
+        try:
+            _추천덱캐시.append(json.loads(추천덱파일.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            _추천덱캐시.append({})
+    return _추천덱캐시[0]
+
+
+def 추천카드목록(테마: str) -> list[str]:
+    """추천 구성을 `덱_골라만들기` 가 받는 이름 목록(매수만큼 반복)으로 편다."""
+    하나 = 추천덱들().get(테마) or {}
+    목록: list[str] = []
+    for 이름, 수 in (하나.get("카드") or {}).items():
+        목록 += [이름] * int(수)
+    return 목록
 단계순서 = (단계.진행, 단계.전투, 단계.정비)
 최대인원_기본 = 5
 
@@ -77,6 +102,8 @@ def 덱목록() -> list[dict]:
             "필터가능": 테마 in 맵파일,
             "효과있음": (효과뿌리 / f"{테마}.yaml").exists(),
             "상수선언됨": 테마 in 덱상수표,
+            "추천": (추천덱들().get(테마) or {}).get("설명"),
+            "추천카드": 추천카드목록(테마),
         })
     return 나온것
 

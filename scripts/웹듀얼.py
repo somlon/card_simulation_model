@@ -95,6 +95,9 @@ button.큼{padding:10px 18px;font-size:14px}
 .넣줄:hover{background:var(--바탕)}
 .넣줄.담음{background:rgba(176,125,43,.14)}
 .넣줄 .작게{font-size:10.5px;color:var(--흐림);margin-left:auto;white-space:nowrap}
+.매수{display:flex;align-items:center;gap:3px}
+.매수 button{padding:1px 7px;font-size:12px;line-height:1.3;border-radius:6px}
+.매수 b{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
 .셈줄{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0}
 .셈줄 b{font-variant-numeric:tabular-nums}
 .셈줄.벗어남 b{color:var(--상대쪽)}
@@ -232,7 +235,7 @@ button.큼{padding:10px 18px;font-size:14px}
  display:flex;flex-direction:column;gap:4px;min-width:210px;max-width:320px}
 .카드메뉴 .메뉴머리{font-size:11px;color:var(--흐림);padding:2px 4px 4px}
 .카드메뉴 button{width:100%}
-.귀띔{font-size:11px;color:var(--흐림);margin:2px 0 1px}
+.귀띔{font-size:11px;color:var(--흐림);margin:2px 0 1px;white-space:pre-line}
 .메모칸{display:flex;flex-direction:column;gap:7px;min-height:0;flex:1}
 .메모머리{display:flex;justify-content:space-between;align-items:baseline}
 .갈래줄{display:flex;gap:4px;flex-wrap:wrap}
@@ -384,7 +387,8 @@ body.움직임끔 .카드.갓놓임,body.움직임끔 .매트.맞음,body.움직
   <div class="편집틀">
     <div class="상자 목록칸">
       <div class="줄" style="margin-bottom:8px">
-        <button onclick="편집전체(true)">전부 넣기</button>
+        <button class="주" onclick="편집추천()">추천 구성</button>
+        <button onclick="편집전체(true)">전부 한 장씩</button>
         <button onclick="편집전체(false)">전부 빼기</button>
         <input id="편집찾기" placeholder="찾기" oninput="편집그리기()" style="flex:1;min-width:90px">
       </div>
@@ -973,8 +977,11 @@ async function 덱고르개채우기(){
   const 목=await 덱받기();
   저장덱읽기();
   const 저장키=Object.keys(저장덱들);
-  const 보기=목.map(d=>`<option value="테마:${벗기기(d.이름)}">${벗기기(d.이름)}`
+  const 보기=목.map(d=>`<option value="추천:${벗기기(d.이름)}">${벗기기(d.이름)} — 추천 구성`
       +`${d.효과있음?'':' (효과 미구현)'}</option>`).join('')
+    + `<optgroup label="테마 카드를 한 장씩">`
+    + 목.map(d=>`<option value="테마:${벗기기(d.이름)}">${벗기기(d.이름)} (한 장씩)</option>`).join('')
+    + `</optgroup>`
     + (저장키.length?`<optgroup label="저장한 덱">`
         + 저장키.map(k=>`<option value="저장:${벗기기(k)}">${벗기기(k)}</option>`).join('')
         + `</optgroup>`:'');
@@ -982,7 +989,7 @@ async function 덱고르개채우기(){
     const sel=$(아이디), 전=sel.value;
     sel.innerHTML=보기;
     sel.value = [...sel.options].some(o=>o.value===전) ? 전
-              : (자리===0 ? '테마:호박옥' : '테마:던전마스터');
+              : (자리===0 ? '추천:호박옥' : '추천:던전마스터');
     sel.onchange=()=>덱말갱신();
   });
   덱말갱신();
@@ -994,14 +1001,19 @@ function 고른덱풀기(값){
     const 하나=저장덱들[값.slice(3)];
     if(하나) return {덱:하나.덱, 카드:하나.카드};
   }
+  if(값.startsWith('추천:')){
+    const 이름=값.slice(3), d=덱들.find(x=>x.이름===이름);
+    return {덱:이름, 카드:(d&&d.추천카드&&d.추천카드.length)?d.추천카드:null, 추천:true};
+  }
   return {덱:값.replace(/^테마:/,''), 카드:null};
 }
 function 덱말갱신(){
   const 쓰기=(고르개,말자리)=>{
     const 푼것=고른덱풀기($(고르개).value);
     const d=덱들.find(x=>x.이름===푼것.덱);
-    const 덧=푼것.카드?` · 고른 카드 ${푼것.카드.length}장`:'';
-    $(말자리).textContent=덱설명(d)+덧;
+    const 덧=푼것.카드?` · ${푼것.추천?'추천 구성':'고른 카드'} ${푼것.카드.length}장`:'';
+    $(말자리).textContent=덱설명(d)+덧+((푼것.추천&&d&&d.추천)?`
+${d.추천}`:'');
   };
   쓰기('내덱','내덱말'); 쓰기('상대덱','상대덱말');
 }
@@ -1011,7 +1023,9 @@ function 덱말갱신(){
 /* 저장한 덱은 이 브라우저에만 둔다. 룰지 0-1·0-2 범위를 **알려 주되 막지 않는다** —
    테마 카드를 전부 써도 메인 20장에 못 미치는 덱이 여럿이라(같은 카드를 여러 장 넣을
    수 있는지가 룰지에 없다) 지금 막으면 못 쓰는 덱이 생긴다. */
-let 편집중덱=null, 담은것=new Set(), 저장덱들={};
+let 편집중덱=null, 담은것=new Map(), 저장덱들={};   /* 이름 → 매수 */
+function 담은장수(){ let n=0; for(const v of 담은것.values()) n+=v; return n; }
+function 담긴목록(){ const 목=[]; 담은것.forEach((수,이름)=>{ for(let i=0;i<수;i++) 목.push(이름); }); return 목; }
 function 저장덱읽기(){
   try{ 저장덱들=JSON.parse(localStorage.getItem('뉴네오덱')||'{}'); }catch(e){ 저장덱들={}; }
 }
@@ -1032,15 +1046,24 @@ function 편집후보(){
 }
 function 편집덱바꾸기(){
   편집중덱=$('편집덱').value;
-  담은것=new Set(편집후보().map(c=>c.이름));   /* 처음엔 전부 담긴 상태 = 지금 동작 그대로 */
+  담은것=new Map(편집후보().map(c=>[c.이름,1]));   /* 처음엔 한 장씩 = 지금까지의 기본 덱 */
   편집그리기(); 저장목록그리기();
 }
-function 편집담기(이름){
-  담은것.has(이름) ? 담은것.delete(이름) : 담은것.add(이름);
+function 편집더(이름, 만큼){
+  const 지금=담은것.get(이름)||0;
+  const 새것=Math.max(0, Math.min(40, 지금+만큼));
+  새것 ? 담은것.set(이름,새것) : 담은것.delete(이름);
+  편집그리기();
+}
+function 편집추천(){
+  const d=덱들.find(x=>x.이름===편집중덱);
+  const 카드=(d&&d.추천카드)||[];
+  담은것=new Map();
+  카드.forEach(n=>담은것.set(n,(담은것.get(n)||0)+1));
   편집그리기();
 }
 function 편집전체(넣나){
-  담은것 = 넣나 ? new Set(편집후보().map(c=>c.이름)) : new Set();
+  담은것 = 넣나 ? new Map(편집후보().map(c=>[c.이름,1])) : new Map();
   편집그리기();
 }
 function 편집그리기(){
@@ -1048,15 +1071,23 @@ function 편집그리기(){
   const 후보=편집후보();
   const 보임=후보.filter(c=>!글||c.이름.toLowerCase().includes(글)||(c.텍스트||'').toLowerCase().includes(글));
   $('편집목록').innerHTML=보임.map(c=>{
-    const 상급=(c.레벨!=null&&c.레벨>=5);
-    return `<div class="넣줄${담은것.has(c.이름)?' 담음':''}" onclick="편집담기('${벗기기(c.이름).replace(/'/g,"&#39;")}')">
-      <input type="checkbox" ${담은것.has(c.이름)?'checked':''} onclick="event.preventDefault()">
+    const 상급=(c.레벨!=null&&c.레벨>=5), 수=담은것.get(c.이름)||0;
+    const 키=벗기기(c.이름).replace(/'/g,"&#39;");
+    return `<div class="넣줄${수?' 담음':''}">
+      <span class="매수">
+        <button onclick="편집더('${키}',-1)">−</button>
+        <b>${수}</b>
+        <button onclick="편집더('${키}',1)">+</button>
+      </span>
       <span>${벗기기(c.이름)}</span>
       <span class="작게">${상급?'상급':'메인'}${c.레벨!=null?' Lv'+c.레벨:''} · ${벗기기(c.덱)}</span></div>`;
   }).join('') || '<div class="귀띔">없다.</div>';
-  const 담긴=후보.filter(c=>담은것.has(c.이름));
-  const 메인=담긴.filter(c=>!(c.레벨!=null&&c.레벨>=5)).length;
-  const 상급=담긴.length-메인;
+  let 메인=0, 상급=0;
+  후보.forEach(c=>{
+    const 수=담은것.get(c.이름)||0;
+    if(!수) return;
+    if(c.레벨!=null&&c.레벨>=5) 상급+=수; else 메인+=수;
+  });
   const 벗1=(메인<20||메인>40), 벗2=(상급>20);
   $('편집셈').innerHTML=`<div class="셈줄${벗1?' 벗어남':''}"><span>메인 덱</span><b>${메인} / 20~40</b></div>`
     +`<div class="셈줄${벗2?' 벗어남':''}"><span>상급 덱</span><b>${상급} / 0~20</b></div>`
@@ -1066,7 +1097,7 @@ function 편집그리기(){
 }
 function 편집저장(){
   const 이름=($('편집이름').value||'').trim() || `${편집중덱} 사용자덱`;
-  저장덱들[이름]={덱:편집중덱, 카드:[...담은것]};
+  저장덱들[이름]={덱:편집중덱, 카드:담긴목록()};
   localStorage.setItem('뉴네오덱', JSON.stringify(저장덱들));
   $('편집이름').value='';
   저장목록그리기();
@@ -1075,7 +1106,8 @@ function 편집저장(){
 function 저장불러오기(이름){
   const 하나=저장덱들[이름]; if(!하나) return;
   $('편집덱').value=하나.덱; 편집중덱=하나.덱;
-  담은것=new Set(하나.카드);
+  담은것=new Map();
+  (하나.카드||[]).forEach(n=>담은것.set(n,(담은것.get(n)||0)+1));
   편집그리기();
 }
 function 저장지우기(이름){
