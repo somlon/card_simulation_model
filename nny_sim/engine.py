@@ -170,16 +170,16 @@ class Game:
         return not self.immune(c, src.controller, src)
     def atk(self, c):
         v = c.base_atk() + sum(x for s, x, _ in c.mods if s == 'atk')
-        for src in self.continuous_sources():
-            f = getattr(src, 'atk_mod', None)
-            if f and self.mod_applies(c, src) and self.mod_on(src, 'atk_mod'): v += f(self, src, c)
+        for src in self.srcs_with('atk_mod'):
+            f = src.atk_mod
+            if self.mod_applies(c, src) and self.mod_on(src, 'atk_mod'): v += f(self, src, c)
         if c.flags.get('atk_set') is not None: v = c.flags['atk_set']
         return max(0, v)
     def df(self, c):
         v = c.base_def() + sum(x for s, x, _ in c.mods if s == 'def')
-        for src in self.continuous_sources():   # [지속] 수비력 증감 def_mod (포커짐승들 2026-10-12 추가 — def_mod가 없는 카드는 그대로)
-            f = getattr(src, 'def_mod', None)
-            if f and self.mod_applies(c, src) and self.mod_on(src, 'def_mod'): v += f(self, src, c)
+        for src in self.srcs_with('def_mod'):   # [지속] 수비력 증감 def_mod (포커짐승들 2026-10-12 추가 — def_mod가 없는 카드는 그대로)
+            f = src.def_mod
+            if self.mod_applies(c, src) and self.mod_on(src, 'def_mod'): v += f(self, src, c)
         return max(0, v)
     def immune(self, c, by, src=None):
         """c가 플레이어 by의(src: 효과의 주체 카드, 모르면 None) 효과를 받지 않는가.
@@ -272,8 +272,8 @@ class Game:
     def must_attack(self, m):
         """「상대는 반드시 공격해야 한다」([지속] 규칙 'must_attack' — 격투가의 투기장 1번)가 몬스터 m에 적용되는가.
         그 효과를 받지 않는 몬스터(고대의 봉인 등)는 공격하지 않아도 된다 (설계도 확정 2026-10-10)"""
-        for src in self.continuous_sources():
-            f = getattr(src, 'rules', {}).get('must_attack')
+        for src in self.srcs_with('rule:must_attack'):
+            f = src.rules.get('must_attack')
             if f and f(self, src, m.controller) and not self.immune(m, src.controller, src): return True
         return False
 
@@ -394,12 +394,45 @@ class Game:
         srcs += [c for c in self.all_field() if c.flags.get('as_spell') and c.faceup]
         srcs += [self.p[i].skill for i in (0, 1) if self.p[i].skill and not self.p[i].skill.negated]
         return srcs
+    # ── 종류별 색인 (사용자 지시 2026-10-28 — 블록 통합 검토 2026-10-27의 시제품: 같은 시드 440판 기록 동일 · 28 ~ 35% 빠름) ──
+    # [지속] 훅(규칙 키 · atk_mod · def_mod · on_event · state_check · action_tax · extra_normal)을 가진 카드를 그 판에서 처음 조회할 때 한 번 모아 둔다.
+    # 훅은 카드 정의(cards.Impl.attach)에서만 정해지므로 판 중에 바뀌지 않는다. 그 카드가 필드 · 스킬 존에 하나도 없으면 바로 빈 목록,
+    # 있으면 원래의 continuous_sources() 순서 · 거르기를 그대로 쓴다 — 결과가 색인 없이 훑을 때와 같다.
+    # 색인을 만든 뒤 새로 만들어진 카드(테스트)는 필드에 놓일 때 더하고(Game.ix_note — place_monster · place_spell · place_field),
+    # 공유 존 · 필드 존 · 스킬 칸은 조회 때마다 확인한다(직접 넣은 카드).
+    HOOKS = ('atk_mod', 'def_mod', 'on_event', 'state_check', 'action_tax', 'extra_normal')
+    SOURCE_ZONES = ('m', 's', 'shared', 'fieldz', 'skill')
+    def _ix_add(self, c):
+        self._hook_uids.add(c.uid)
+        for k in getattr(c, 'rules', None) or (): self._hook_ix.setdefault('rule:' + k, []).append(c)
+        for a in self.HOOKS:
+            if getattr(c, a, None): self._hook_ix.setdefault(a, []).append(c)
+    def hook_index(self):
+        """훅 종류('rule:키' · 훅 이름) → 그 훅을 가진 이 판의 카드"""
+        if '_hook_ix' not in self.__dict__:
+            self._hook_ix, self._hook_uids = {}, set()
+            for pl in self.p:
+                for c in pl.main + pl.upper + pl.hand + pl.grave + pl.banish + [x for x in pl.m + pl.s if x] + ([pl.skill] if pl.skill else []):
+                    if c.uid not in self._hook_uids: self._ix_add(c)
+        for c in (self.shared, self.fieldz, self.p[0].skill, self.p[1].skill):
+            if c is not None and c.uid not in self._hook_uids: self._ix_add(c)
+        return self._hook_ix
+    def ix_note(self, c):
+        """카드가 필드에 놓일 때: 색인을 만든 뒤 새로 만들어진 카드면 색인에 더한다"""
+        if '_hook_ix' in self.__dict__ and c.uid not in self._hook_uids: self._ix_add(c)
+    def srcs_with(self, key):
+        """continuous_sources() 중 훅 key('rule:키' 또는 훅 이름)를 가진 것 — 같은 순서"""
+        cands = self.hook_index().get(key)
+        if not cands or not any(c.zone in self.SOURCE_ZONES for c in cands): return ()
+        if key.startswith('rule:'):
+            k = key[5:]; return [s for s in self.continuous_sources() if k in getattr(s, 'rules', {})]
+        return [s for s in self.continuous_sources() if getattr(s, key, None)]
     def rule(self, key, *a, use=False, choose=None, why='', unlimited=False):
         """[지속] 규칙 질의: 등록된 hook 중 하나라도 True면 True. 1턴 1번 [지속](c.cont_nums의 'rule:key')은 이 턴에 남아 있을 때만 본다.
         use=True: 규칙이 지금 실제로 적용되는 자리 — 1턴 1번이면 주인이 고르고 횟수를 쓴다(적용하지 않기로 하면 다음 hook을 본다).
         unlimited=True: 횟수 제한이 없는 [지속]만 본다 — 발동 판정용(1턴 1번 금지는 발동을 막지 않고 처리 때 한 번 막는다)"""
-        for src in self.continuous_sources():
-            f = getattr(src, 'rules', {}).get(key)
+        for src in self.srcs_with('rule:' + key):
+            f = src.rules.get(key)
             if not f: continue
             n = self.cont_num(src, 'rule:' + key)
             if unlimited and self.cont_limit(src, n) is not None: continue
@@ -461,6 +494,7 @@ class Game:
     def free_s(self, p): return [i for i in range(SZ) if self.p[p].s[i] is None]
 
     def place_monster(self, c, p, pos='atk', faceup=True, allow_shared=True):
+        self.ix_note(c)
         """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2)"""
         fr = self.free_m(p)
         to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
@@ -488,6 +522,7 @@ class Game:
         self.damage(old, 1500, '공유 존 마커')
 
     def place_spell(self, c, p, faceup=True):
+        self.ix_note(c)
         fr = self.free_s(p)
         if not fr: return False
         self.p[p].s[fr[0]] = c; c.zone = 's'; c.controller = p; c.faceup = faceup
@@ -495,6 +530,7 @@ class Game:
         return True
 
     def place_field(self, c, p):
+        self.ix_note(c)
         if self.fieldz:
             old = self.fieldz; self.L(f'필드 존의 {old} 묘지로', 'sys'); self.send_grave(old, ('rule', None))
         self.fieldz = c; c.zone = 'fieldz'; c.controller = p; c.faceup = True
@@ -719,9 +755,9 @@ class Game:
         """[지속] 「(「X」 몬스터를) 추가로 일반소환할 수 있다」 권리 중 이번 턴 남은 횟수.
         각 [지속] 카드의 extra_normal(g, src, p, c) = 그 카드가 p에게 주는 횟수 (c: 소환하려는 카드 — 카드군 제한 판정, None이면 제한 없이 센다)"""
         per = {}   # 같은 이름 카드가 여러 장이어도 권리는 겹치지 않는다(1턴 N번은 카드명 단위, §6-4) — 이름별 최댓값의 합
-        for src in self.continuous_sources():
-            f = getattr(src, 'extra_normal', None)
-            if f: per[src.name] = max(per.get(src.name, 0), f(self, src, p, c))
+        for src in self.srcs_with('extra_normal'):
+            f = src.extra_normal
+            per[src.name] = max(per.get(src.name, 0), f(self, src, p, c))
         n = sum(per.values())
         return max(0, n - self.extra_ns_used.get((p, self.turn), 0)) if n else 0
 
@@ -927,9 +963,8 @@ class Game:
         self.events.append(ev)
         for fl in list(self.floating):
             fl(self, ev)
-        for src in self.continuous_sources():
-            h = getattr(src, 'on_event', None)
-            if h: h(self, src, ev)
+        for src in self.srcs_with('on_event'):
+            src.on_event(self, src, ev)
 
     # ── 1턴 1회 ──
     @staticmethod
@@ -1068,7 +1103,7 @@ class Game:
     # 세금의 행동 · 매수는 카드 텍스트에서 읽는다(cards.action_taxes → 카드의 action_tax).
     def taxes(self, *acts):
         """지금 적용되는 acts 행동 세금 [(카드, 효과 번호, 매수)] — 「서로가」이므로 두 플레이어 모두에게"""
-        return [(src, num, n) for src in self.continuous_sources() for num, a, n in (getattr(src, 'action_tax', None) or ())
+        return [(src, num, n) for src in self.srcs_with('action_tax') for num, a, n in src.action_tax
                 if a in acts and self.cont_ready(src, num)]
 
     def pay_tax(self, p, act):
@@ -1283,9 +1318,8 @@ class Game:
 
     # ── 트리거 수집 ──
     def state_check(self):
-        for src in self.continuous_sources():
-            h = getattr(src, 'state_check', None)
-            if h: h(self, src)
+        for src in self.srcs_with('state_check'):
+            src.state_check(self, src)
 
     def triggers(self, depth=0):
         self.state_check()
