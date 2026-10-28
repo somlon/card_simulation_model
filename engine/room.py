@@ -309,6 +309,25 @@ class 대국:
         return {"배속": self.배속, "멈춤": not self.계속.is_set()}
 
     def _돌리기(self) -> None:
+        """판을 끝까지 돌린다. **무슨 일이 있어도 조용히 죽지 않는다.**
+
+        2026-10-28 — 전에는 못 보던 예외가 나면 스레드가 그대로 끝나 버려서, 보는
+        쪽에는 「상대가 두는 중…」이 영원히 떠 있었다. 테스터가 그걸 보고할 방법도
+        없다. 이제 잡아서 기보에 적고 판을 끝낸다 — 메모에 그 줄이 같이 실려 온다.
+        """
+        try:
+            self._판돌리기()
+        except Exception as 오류:                      # noqa: BLE001 — 마지막 그물
+            import traceback
+            self.기록.적기(f"  !! 엔진이 멈췄다({type(오류).__name__}): {오류}")
+            for 줄 in traceback.format_exc().strip().split("\n")[-4:]:
+                self.기록.적기("     " + 줄)
+            self.기록.적기("  — 이 판은 여기서 끝난다. 메모를 남겨 주면 그대로 전달된다.")
+            if self.끝 is None:
+                self.끝 = 종료(승자="없음", 조건="오류",
+                               근거=f"엔진 오류 — {type(오류).__name__}: {오류}")
+
+    def _판돌리기(self) -> None:
         상태, 표, 기록 = self.상태, self.표, self.기록
         while self.끝 is None and 상태.턴번호 <= 200:
             누구 = 상태.턴플레이어
@@ -630,15 +649,47 @@ class 방장부:
         self.방들: dict[str, 방] = {}
         self.자물쇠 = threading.Lock()
 
+    버림시간 = 600.0      # 10분 동안 화면이 한 번도 안 물어보면 나간 것으로 본다
+
     def 총인원(self) -> int:
         return sum(len(하나.참가자들) for 하나 in self.방들.values())
+
+    def 청소(self) -> None:
+        """오래 조용한 참가자와 빈 방을 지운다.
+
+        2026-10-28 — 전에는 방을 떠나도 참가자가 남아서, 혼자 노는 사람이 방을 다섯 번
+        만들면 「서버 정원 5명이 꽉 찼다」로 잠겼다. 화면이 0.9초마다 묻고 그때마다
+        `마지막접속` 이 갱신되므로, 한참 조용한 쪽은 떠난 것으로 본다.
+        """
+        지금 = time.time()
+        with self.자물쇠:
+            for 이름, 하나 in list(self.방들.items()):
+                for 토큰, 사람 in list(하나.참가자들.items()):
+                    if 지금 - 사람.마지막접속 > self.버림시간:
+                        하나.참가자들.pop(토큰, None)
+                if not 하나.참가자들 and 지금 - 하나.만든때 > 60:
+                    self.방들.pop(이름, None)
+
+    def 나가기(self, 방이름: str, 토큰: str) -> bool:
+        """화면이 「메인으로」 를 누르면 부른다. 아무도 안 남으면 방을 지운다."""
+        with self.자물쇠:
+            하나 = self.방들.get(방이름)
+            if 하나 is None:
+                return False
+            하나.내보내기(토큰)
+            if not 하나.참가자들:
+                self.방들.pop(방이름, None)
+            return True
 
     def 만들기(self, 별명: str, 내덱: str, 상대덱: str, 역할: dict[str, str],
                시드: int | None = None,
                고른카드: dict[str, list[str]] | None = None) -> tuple[방, 참가자]:
+        self.청소()
         with self.자물쇠:
             if self.총인원() >= self.최대인원:
-                raise ValueError(f"서버 정원 {self.최대인원}명이 꽉 찼다")
+                raise ValueError(
+                    f"서버 정원 {self.최대인원}명이 꽉 찼다 — 쓰지 않는 방은 잠시 뒤 저절로 치워진다"
+                )
             이름 = secrets.token_hex(3)
             하나 = 방(이름, 내덱, 상대덱, 역할,
                      시드 if 시드 is not None else random.randrange(10 ** 6),
