@@ -72,7 +72,10 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
 /* ---------- 바깥 화면(메인 · 시작 · 열람 · 설정) ---------- */
 .바깥{max-width:660px;margin:6vh auto;padding:0 18px}
 .바깥.넓게{max-width:1200px;margin:3vh auto}
-.바깥 h1{font-size:24px;margin:0 0 4px} .바깥 p{color:var(--흐림);margin:0 0 20px}
+.바깥 h1{font-size:28px;margin:0 0 4px;letter-spacing:.01em}
+.바깥 h1::after{content:"";display:block;width:44px;height:3px;border-radius:2px;
+ background:var(--강조);margin-top:8px}
+.바깥 p{color:var(--흐림);margin:10px 0 22px}
 .바깥 h2{font-size:17px;margin:0}
 .머리줄{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .큰메뉴{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;
