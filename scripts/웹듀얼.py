@@ -79,20 +79,28 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
  padding:8px 0;border-top:1px solid var(--선)}
 
 /* ---------- 대국 화면 ---------- */
-.틀{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;
- max-width:1400px;margin:0 auto;padding:12px}
-@media (max-width:980px){.틀{grid-template-columns:minmax(0,1fr)}}
-.윗띠{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
- padding-bottom:8px;border-bottom:1px solid var(--선)}
+/* 한 화면에 다 들어오게 — 세로 스크롤 없이 판·패·옆패널이 같이 보여야 한다.
+   칸 크기는 화면 높이를 따라간다(--칸폭). 좁아지면 옆패널이 아래로 내려간다. */
+.틀{display:grid;grid-template-columns:minmax(0,1fr) 330px;
+ grid-template-rows:auto minmax(0,1fr);gap:10px 14px;
+ height:100dvh;max-width:1500px;margin:0 auto;padding:10px 12px 12px}
+@media (max-width:1040px),(max-height:620px){
+  .틀{grid-template-columns:minmax(0,1fr);height:auto}
+}
+.윗띠{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+ padding-bottom:7px;border-bottom:1px solid var(--선)}
 .윗띠 b{font-size:15px}
+.판판{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;
+ align-items:center;justify-content:center;overflow:auto}
 .단계띠{display:flex;gap:4px;margin-left:auto}
 .단계알{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--선);
  color:var(--흐림)}
 .단계알.켬{background:var(--강조);color:#1a1510;border-color:transparent;font-weight:700}
 
 .매트{background:var(--매트);border:1px solid var(--매트선);border-radius:12px;
- padding:12px;box-shadow:var(--그림자)}
-.쪽머리{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;color:#eee}
+ padding:9px 10px;box-shadow:var(--그림자);display:flex;flex-direction:column;gap:6px;
+ width:fit-content;max-width:100%}
+.쪽머리{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#eee}
 .딱지{font-weight:700;font-size:12px;padding:2px 9px;border-radius:999px;color:#fff}
 .나쪽 .딱지{background:var(--내쪽)} .적쪽 .딱지{background:var(--상대쪽)}
 .hp{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;color:#fff}
@@ -102,14 +110,20 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
 .나쪽 .hp바 i{background:var(--내쪽)} .적쪽 .hp바 i{background:var(--상대쪽)}
 .잔{color:rgba(255,255,255,.65);font-size:12px;font-variant-numeric:tabular-nums}
 
-/* 룰지 0장 배치: 8칸 × 2줄 */
-.필드{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
-.가운데줄{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin:10px 0}
-.가운데줄 .라벨{grid-column:1/2;align-self:center;font-size:11px;color:var(--흐림)}
+/* 룰지 0장 배치: 8칸 × 2줄. 칸 크기는 화면 높이에 맞춰 줄었다 늘었다 한다. */
+:root{--칸폭:clamp(46px,min(6.4vw,10.2vh),88px)}
+.필드{display:grid;grid-template-columns:repeat(8,var(--칸폭));gap:5px;justify-content:center}
+.가운데자리{display:flex;justify-content:center}
+.가운데줄{display:flex;align-items:center;gap:6px;
+ background:var(--판);border:1px solid var(--선);border-radius:10px;padding:5px 10px;
+ box-shadow:var(--그림자)}
+.가운데줄 .라벨{font-size:10.5px;color:var(--흐림);letter-spacing:.03em}
+.가운데줄 .칸{width:calc(var(--칸폭) * .8)}
 .칸{aspect-ratio:59/86;border:1px dashed var(--매트선);border-radius:7px;position:relative;
  display:flex;flex-direction:column;justify-content:center;align-items:center;
- font-size:10px;color:rgba(255,255,255,.4);text-align:center;padding:4px;overflow:hidden}
-.칸.빈{}
+ font-size:9.5px;color:rgba(255,255,255,.38);text-align:center;padding:3px;overflow:hidden}
+.칸.빈{opacity:.5}
+.칸.빈:empty{opacity:.3}
 .칸.더미{border-style:solid;background:rgba(0,0,0,.18);color:rgba(255,255,255,.72);
  cursor:pointer;justify-content:center;gap:2px}
 .칸.더미 .수{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -141,15 +155,14 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
 .카드메뉴 .메뉴머리{font-size:11px;color:var(--흐림);padding:2px 4px 4px}
 .카드메뉴 button{width:100%}
 .귀띔{font-size:11px;color:var(--흐림);margin:2px 0 1px}
-.메모칸{background:var(--판);border:1px solid var(--선);border-radius:10px;padding:12px;
- box-shadow:var(--그림자);display:flex;flex-direction:column;gap:7px}
+.메모칸{display:flex;flex-direction:column;gap:7px;min-height:0;flex:1}
 .메모머리{display:flex;justify-content:space-between;align-items:baseline}
 .갈래줄{display:flex;gap:4px;flex-wrap:wrap}
 .갈래줄 .갈래{padding:3px 9px;font-size:11.5px;border-radius:999px}
 .갈래줄 .갈래.켬{background:var(--강조);color:#1a1510;border-color:transparent;font-weight:700}
 .메모칸 textarea{font:inherit;font-size:12.5px;color:inherit;background:var(--바탕);
  border:1px solid var(--선);border-radius:8px;padding:7px 9px;resize:vertical;width:100%}
-.메모들{display:flex;flex-direction:column;gap:5px;max-height:22vh;overflow:auto}
+.메모들{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0;overflow:auto}
 .메모한줄{font-size:11.5px;border-left:3px solid var(--강조);padding:3px 0 3px 8px;
  color:var(--흐림)}
 .메모한줄 b{color:var(--글);font-weight:600}
@@ -171,21 +184,35 @@ input,select{font:inherit;color:inherit;background:var(--판);border:1px solid v
 .흑{border-left-color:var(--흑)} .무색{border-left-color:var(--선)}
 .존표{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;
  font-size:9.5px;color:rgba(255,255,255,.4);margin:3px 0 1px;letter-spacing:.03em}
-.패줄{display:flex;gap:6px;overflow-x:auto;padding:8px 2px 2px}
-.패줄 .칸{min-width:76px;width:76px}
+/* 내 패 — 마트 아래에 붙여 늘 보이게. 올리면 살짝 떠오른다. */
+.패줄{display:flex;gap:5px;overflow-x:auto;overflow-y:hidden;padding:7px 2px 2px;
+ border-top:1px solid var(--매트선);justify-content:center}
+.패줄 .칸{min-width:var(--칸폭);width:var(--칸폭);flex:0 0 auto;transition:transform .1s}
+.패줄 .칸.카드:hover{transform:translateY(-5px)}
+.패줄:empty{display:none}
 
-.옆{display:flex;flex-direction:column;gap:12px;min-width:0}
-.상세{background:var(--판);border:1px solid var(--선);border-radius:10px;padding:12px;
- box-shadow:var(--그림자);min-height:120px}
-.상세 h3{margin:0 0 2px;font-size:14px} .상세 .메타{color:var(--흐림);font-size:12px;margin-bottom:8px}
-.상세 pre{white-space:pre-wrap;word-break:break-word;font:inherit;margin:0;font-size:12.5px}
-.수칸{background:var(--판);border:1px solid var(--선);border-radius:10px;padding:12px;
- box-shadow:var(--그림자)}
-.물음{font-size:12px;color:var(--흐림);margin-bottom:7px}
-.수들{display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto}
-.기보{background:var(--판);border:1px solid var(--선);border-radius:10px;padding:12px;
- box-shadow:var(--그림자);font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
- line-height:1.6;max-height:30vh;overflow:auto;white-space:pre-wrap;color:var(--흐림)}
+/* 옆 패널 — 카드 미리보기는 늘 보이고, 나머지는 탭 하나만 띄운다.
+   상자 넷을 세로로 쌓으니 화면 밖으로 밀렸다(2026-10-28 정리). */
+.옆{display:flex;flex-direction:column;gap:9px;min-width:0;min-height:0}
+.상세{background:var(--판);border:1px solid var(--선);border-radius:10px;padding:10px 12px;
+ box-shadow:var(--그림자);flex:0 0 auto;max-height:28vh;overflow:auto}
+.상세 h3{margin:0 0 2px;font-size:13.5px} .상세 .메타{color:var(--흐림);font-size:11.5px;margin-bottom:6px}
+.상세 pre{white-space:pre-wrap;word-break:break-word;font:inherit;margin:0;font-size:12px;
+ line-height:1.5}
+.탭줄{display:flex;gap:4px}
+.탭줄 .탭{flex:1;padding:6px 4px;font-size:12px;text-align:center;border-radius:8px 8px 0 0;
+ border-bottom-color:transparent;color:var(--흐림)}
+.탭줄 .탭.켬{background:var(--판);color:var(--글);font-weight:700;border-color:var(--선);
+ border-bottom-color:var(--판)}
+.탭줄 .탭 .알{display:inline-block;min-width:15px;padding:0 4px;margin-left:3px;
+ background:var(--강조);color:#1a1510;border-radius:999px;font-size:10px;font-weight:800}
+.탭칸{display:none;background:var(--판);border:1px solid var(--선);border-radius:0 10px 10px 10px;
+ padding:11px;box-shadow:var(--그림자);min-height:0;flex:1;overflow:auto;margin-top:-5px}
+.탭칸.켬{display:flex;flex-direction:column;gap:8px}
+.물음{font-size:12.5px;color:var(--흐림)}
+.수들{display:flex;flex-direction:column;gap:5px}
+.기보{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+ line-height:1.6;flex:1;min-height:0;overflow:auto;white-space:pre-wrap;color:var(--흐림)}
 .기보 b{color:var(--글)}
 .기보 .효과문{color:var(--강조);opacity:.8}
 button .효과문{display:block;margin-top:3px;font-size:11.5px;color:var(--흐림);
@@ -232,34 +259,50 @@ button:hover .효과문{color:var(--글)}
     <span class="사람들" id="사람말"></span>
     <div class="단계띠" id="단계띠"></div>
   </div>
-  <div>
+
+  <div class="판판">
     <div class="매트 적쪽" id="적매트"></div>
-    <div style="height:10px"></div>
+    <div class="가운데자리" id="가운데"></div>
     <div class="매트 나쪽" id="나매트"></div>
   </div>
+
   <div class="옆">
     <div class="상세" id="상세"><h3>카드</h3><div class="메타">카드를 누르면 원문이 여기 뜬다.</div></div>
-    <div class="수칸"><div class="물음" id="물음">…</div><div class="수들" id="수들"></div></div>
-    <div class="메모칸">
-      <div class="메모머리"><b>단계별 메모</b><span id="메모셈" class="사람들"></span></div>
-      <div class="사람들" id="메모자리">지금 어느 턴·단계인지는 서버가 자동으로 붙인다.</div>
-      <div class="갈래줄" id="갈래줄">
-        <button class="갈래 켬" data-갈래="버그">버그</button>
-        <button class="갈래" data-갈래="헷갈림">헷갈림</button>
-        <button class="갈래" data-갈래="제안">제안</button>
-        <button class="갈래" data-갈래="그냥">그냥</button>
-      </div>
-      <textarea id="메모글" rows="3" placeholder="이 장면에서 느낀 것 — 예: 공격 대상을 어디로 끌어야 하는지 모르겠다"></textarea>
-      <div class="줄" style="margin:0">
-        <button class="주" onclick="메모보내기()">메모 남기기</button>
-        <button onclick="메모내려받기()">파일로</button>
-        <button onclick="메모이슈()">깃허브 이슈</button>
-      </div>
-      <div class="사람들" id="메모말"></div>
-      <div class="메모들" id="메모들"></div>
+    <div class="탭줄" id="탭줄">
+      <button class="탭 켬" data-탭="수">할 것</button>
+      <button class="탭" data-탭="메모">메모<span class="알" id="메모알">0</span></button>
+      <button class="탭" data-탭="기보">기보</button>
     </div>
-    <div class="기보" id="기보"></div>
+
+    <div class="탭칸 켬" data-칸="수">
+      <div class="물음" id="물음">…</div>
+      <div class="수들" id="수들"></div>
+    </div>
+
+    <div class="탭칸" data-칸="메모">
+      <div class="메모칸">
+        <div class="사람들" id="메모자리">지금 어느 턴·단계인지는 서버가 자동으로 붙인다.</div>
+        <div class="갈래줄" id="갈래줄">
+          <button class="갈래 켬" data-갈래="버그">버그</button>
+          <button class="갈래" data-갈래="헷갈림">헷갈림</button>
+          <button class="갈래" data-갈래="제안">제안</button>
+          <button class="갈래" data-갈래="그냥">그냥</button>
+        </div>
+        <textarea id="메모글" rows="3" placeholder="이 장면에서 느낀 것 — 예: 공격 대상을 어디로 끌어야 하는지 모르겠다"></textarea>
+        <div class="줄" style="margin:0">
+          <button class="주" onclick="메모보내기()">메모 남기기</button>
+          <button onclick="메모내려받기()">파일로</button>
+          <button onclick="메모이슈()">깃허브 이슈</button>
+        </div>
+        <div class="사람들" id="메모말"></div>
+        <div class="메모머리"><b style="font-size:12px">남긴 메모</b><span id="메모셈" class="사람들"></span></div>
+        <div class="메모들" id="메모들"></div>
+      </div>
+    </div>
+
+    <div class="탭칸" data-칸="기보"><div class="기보" id="기보"></div></div>
   </div>
+
   <div id="끝자리"></div>
 </div>
 
@@ -337,14 +380,18 @@ function 카드수들(이름, ㅇ){
   return 목;
 }
 
-/* 끌어서 놓을 수 있는 수와, 그 수가 받는 자리 */
-function 끌기갈래(이름, ㅇ){
+/* 끌어서 놓을 수 있는 수와, 그 수가 받는 자리.
+   패에서 이펙트 존으로 끄는 것은 **마법 카드만**이다 — 몬스터의 패 발동([신속] 특수소환
+   등)은 이펙트 존에 놓는 일이 아니므로 끌기로 받지 않고 카드를 눌러 고른다. */
+function 끌기갈래(c, ㅇ){
+  const 이름 = c && c.이름;
   if(!수표 || !이름 || !ㅇ || ㅇ.쪽!==내자리) return [];
   const 목=[];
   if(ㅇ.존==='패'){
     if(수표.소환[이름]!==undefined) 목.push({i:수표.소환[이름],곳:'유닛',라벨:'소환'});
     if(수표.로드[이름]!==undefined) 목.push({i:수표.로드[이름],곳:'이펙트',라벨:'로드 (뒷면으로 놓기)'});
-    (수표.발동[이름]||[]).forEach(e=>목.push({i:e.i,곳:'이펙트',라벨:`${e.번호}번 효과 발동`,설명:e.효과문}));
+    if(c.종류==='마법')
+      (수표.발동[이름]||[]).forEach(e=>목.push({i:e.i,곳:'이펙트',라벨:`${e.번호}번 효과 발동`,설명:e.효과문}));
   }else if(ㅇ.존==='유닛'){
     if(수표.직접[이름]!==undefined) 목.push({i:수표.직접[이름],곳:'직접',라벨:'직접 공격'});
     Object.entries(수표.공격[이름]||{}).forEach(([대상,i])=>목.push({i,곳:'적유닛',대상,라벨:`${대상} 공격`}));
@@ -381,7 +428,7 @@ function 카드칸(c, 자리글, ㅇ){
   const 고름=(고른카드===c.이름)?' 고름':'';
   const 표시=c.표시==='수비'?'수':(c.표시==='공격'?'공':'');
   const 쓸수=ㅇ&&ㅇ.쪽===내자리?카드수들(c.이름,ㅇ):[];
-  const 끌것=끌기갈래(c.이름,ㅇ);
+  const 끌것=끌기갈래(c,ㅇ);
   const 고를수있나=지금질문&&지금질문.종류==='고르기'&&(지금질문.후보||[]).includes(c.이름);
   const 표딱지=쓸수.length?`<span class="할수">${쓸수.length}</span>`:'';
   return `<div class="칸 카드 ${색}${뒤}${고름}${쓸수.length?' 할수있음':''}${고를수있나?' 고를수있음':''}"
@@ -445,13 +492,12 @@ function 매트그리기(자리, 이름, p, 턴인가, 뒤집을까){
 }
 
 function 가운데(b){
+  /* 룰지 0-5·0-7 — 두 플레이어가 함께 쓰는 칸이라 매트 사이에 둔다. */
   return `<div class="가운데줄">
-    <div class="라벨">공유 줄</div>
+    <span class="라벨">공유 줄</span>
     ${카드칸(b.필드존,'필드 존',{쪽:'공용',존:'필드',i:0})}
     ${카드칸(b.공유존,'공유 존'+(b.공유존주인?` (${b.공유존주인})`:''),{쪽:'공용',존:'공유',i:0})}
-    <div class="칸 빈" style="border:none"></div><div class="칸 빈" style="border:none"></div>
-    <div class="칸 빈" style="border:none"></div><div class="칸 빈" style="border:none"></div>
-    <div class="칸 빈" style="border:none"></div></div>`;
+  </div>`;
 }
 
 function 단계띠(지금){
@@ -501,7 +547,7 @@ function 손길걸기(){
   판.addEventListener('dragstart',e=>{
     const 칸=e.target.closest('.칸.카드'); if(!칸) return;
     const ㅇ=위치읽기(칸), c=카드찾기(ㅇ);
-    const 갈래=c?끌기갈래(c.이름,ㅇ):[];
+    const 갈래=끌기갈래(c,ㅇ);
     if(!갈래.length){ e.preventDefault(); return; }
     끄는중={위치:ㅇ,이름:c.이름,갈래};
     e.dataTransfer.effectAllowed='move';
@@ -613,7 +659,7 @@ async function 뽑기(){
     단계띠(b.단계);
     매트그리기($('적매트'),적자리,b.쪽[적자리],b.턴플레이어===적자리,true);
     매트그리기($('나매트'),내자리,b.쪽[내자리],b.턴플레이어===내자리,false);
-    $('적매트').insertAdjacentHTML('beforeend',가운데(b));
+    $('가운데').innerHTML=가운데(b);
     const g=$('기보');
     const 바닥=g.scrollTop+g.clientHeight>=g.scrollHeight-30;
     g.innerHTML=d.기보.map(l=>{
@@ -631,7 +677,7 @@ async function 뽑기(){
 }
 
 /* ---------- 메모(피드백) ---------- */
-let 메모갈래='버그';
+let 메모갈래='버그', 마지막판정수=0;
 document.getElementById('갈래줄').addEventListener('click',e=>{
   const b=e.target.closest('.갈래'); if(!b) return;
   메모갈래=b.dataset.갈래;
@@ -668,6 +714,12 @@ function 메모그리기(d){
   목.forEach(m=>센것[m.판정?m.판정.상태:'대기']++);
   $('메모셈').textContent=`${목.length}개`
     +(목.length?` · ✅${센것.고침} ⛔${센것.안함} ⏸${센것.보류} ⏳${센것.대기}`:'');
+  const 알=$('메모알');
+  알.textContent=목.length;
+  알.style.display=목.length?'':'none';
+  /* 판정이 새로 떴으면 메모 탭에 표가 난다 */
+  const 본것=센것.고침+센것.안함+센것.보류;
+  if(본것>마지막판정수){ 마지막판정수=본것; 알.textContent=`${목.length}·새`; }
   const b=d.보드;
   $('메모자리').textContent=b?`지금: 턴 ${b.턴} · ${b.단계} 단계 — 남기면 이 자리가 같이 붙는다`
     :'지금 어느 턴·단계인지는 서버가 자동으로 붙인다.';
@@ -679,6 +731,17 @@ function 메모그리기(d){
       +(p&&p.말?` — ${벗기기(p.말)}`:'')
       +(p&&p.커밋?` <code>${벗기기(p.커밋)}</code>`:'')+`</div></div>`;
   }).join('');
+}
+
+/* ---------- 탭 ---------- */
+document.getElementById('탭줄').addEventListener('click',e=>{
+  const b=e.target.closest('.탭'); if(!b) return;
+  document.querySelectorAll('#탭줄 .탭').forEach(x=>x.classList.toggle('켬',x===b));
+  document.querySelectorAll('.탭칸').forEach(x=>x.classList.toggle('켬',x.dataset.칸===b.dataset.탭));
+});
+function 탭열기(이름){
+  const b=document.querySelector(`#탭줄 .탭[data-탭="${이름}"]`);
+  if(b && !b.classList.contains('켬')) b.click();
 }
 
 손길걸기();
