@@ -251,6 +251,9 @@
       테스트 353개 통과, 스모크 오류 0, 솔루나 아츠 44판 11승(기준선 11승).
     - 2026-10-28 ⑥ 소원의 분수 시작 — `model/block-system` 2d0472e(작업 중 커밋): lib.py에 소원의 분수용 블록 일부(아래) · 검증 도구 `nny_sim/blocks/tools/`(smoke.py · freq.py).
       전체 테스트 353개 통과(건너뜀 4). **세션 압축 → R5 인계: 새 세션이 ⑥부터 이어서 한다**(아래 「새 세션 할 일」).
+    - 2026-10-28 ⑥ 소원의 분수 완료(새 세션) — `model/block-system` 5af4c46 · 87a24d5: t_wsft 27종, 효과 변경 [지속](effect_swap — 「코인」 카드 전부) · 낼 수도 있는 코스트 · 쉼(F05) ·
+      종류별 코스트 보존 가치 · [유언] 기대 가치 = 블록 가치 · 같은 [신속] 거듭 체인 안 함. 테스트 353개 통과, 스모크 시드 11 · 23 오류 0 · 중단 0, 소원의 분수 승수 4 · 4 → 5 · 6
+      (발동 빈도: 코인 버리기 · 스킬 2번은 기준선과 비슷, 스킬 1번 13 → 8). 다음 ⑦ 저주인형.
   - **새 세션 할 일 (2026-10-28 인계):**
     - 컨테이너 준비: `cd /home/user/card_simulation_model && git fetch origin model/block-system model/main data/main && git checkout model/block-system`
       → 카드 풀 · 덱(제외 목록 .git/info/exclude 에 이미 있음): `git archive origin/data/main nny_sim | tar -x`
