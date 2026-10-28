@@ -494,8 +494,8 @@ class Game:
     def free_s(self, p): return [i for i in range(SZ) if self.p[p].s[i] is None]
 
     def place_monster(self, c, p, pos='atk', faceup=True, allow_shared=True):
-        self.ix_note(c)
         """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2)"""
+        self.ix_note(c)
         fr = self.free_m(p)
         to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
         if not fr and not to_shared: return False
