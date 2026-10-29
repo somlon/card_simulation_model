@@ -10,7 +10,7 @@ import session as SS
 import nnai as NA
 import tables as T
 
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')

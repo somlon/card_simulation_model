@@ -10,7 +10,7 @@ choose 를 거치지 않는 판단 중 선후공 선택 · 덱 위 제외할 덱
 import sys, threading
 
 import policy as P
-from ai import HeuristicAI
+from ai import HeuristicAI, INTERFERE
 from cards import act_score
 
 # 수의 가치를 계산하는 함수 — 이 안에서 불린 고르기는 「가정」이므로 사람에게 묻지 않고 AI와 같은 기본 방식으로 고른다
@@ -112,8 +112,9 @@ class HumanAI(P.LearnedAI):
         return self.choose(g, p, f'시작 패 재배분({pos}·{n}장·남은 상급 {min(ups, 3)})',
                            self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10, shown=split_labels(n))
 
-    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None):
-        """shown: 화면에 보일 이름표(후보 라벨 → 표시 문자열). 학습 키는 후보 라벨 그대로"""
+    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None, forced=None):
+        """shown: 화면에 보일 이름표(후보 라벨 → 표시 문자열). 학습 키는 후보 라벨 그대로.
+        forced: 이미 사람이 다른 화면에서 고른 후보 번호 — 다시 묻지 않고 학습 기록 · 판단 줄만 남긴다(breeding_pick)"""
         if not opts: return None
         me = g.p[p].skill.name; op = g.p[1 - p].skill.name
         base = f'{me} vs {op}|{decision}|'; b = self.bucket(g, p)
@@ -122,13 +123,45 @@ class HumanAI(P.LearnedAI):
             k1 = base + lab; k2 = k1 + '|' + b
             v, n1, n2 = self.T.value(k1, k2, P.prior_of(h, scale))
             keyed.append((k1, k2, round(v * 100, 1)))
-        idx = 0 if len(opts) == 1 else self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed])
+        idx = forced if forced is not None else 0 if len(opts) == 1 else \
+            self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed])
         if self.learn: self.trace.append(keyed[idx][:2])
         if log and len(opts) > 1:
             g.L(f'판단[{g.pname(p)}] {decision}: → {opts[idx][0]} (사람)', 'decision')
             g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': opts[idx][0], 'why': '사람',
                                  'opts': [(o[0], keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
         return self._rec(g, p, idx, opts)
+
+    # ── 제물 · 번식지 (사람이 직접 — AI는 가치가 낮은 제물 · 견제/엔진 안의 우선순위로 골랐다) ──
+    def do_extra(self, g, p, pay):
+        """제물 소환 · 표시 형식 변경. 제물 소환의 후보(HeuristicAI.extra_summon_options)는 AI가 가치가 낮은 몬스터를 제물로 미리 정해 두므로,
+        실행할 때 릴리스할 몬스터를 사람에게 다시 묻는다(사용자 지시 2026-10-29)"""
+        kind, c, ts, pos = pay
+        if kind == 'summon' and ts and not evaluating():
+            ts = self.ask_tributes(g, p, c, len(ts))
+        return super().do_extra(g, p, (kind, c, ts, pos))
+
+    def ask_tributes(self, g, p, c, n):
+        """자신 필드의 릴리스할 수 있는 몬스터(Game.release_cands)에서 n장. 몬스터 존이 가득 차 있으면 1장 이상은 몬스터 존의 몬스터여야
+        소환할 자리가 생긴다(HeuristicAI.pick_tributes 와 같은 조건) — 마지막 1장에서 그 조건을 맞춘다"""
+        pool = list(g.release_cands(p)); out = []
+        while len(out) < n:
+            cand = pool
+            if len(out) == n - 1 and not g.free_m(p) and not any(t.zone == 'm' for t in out):
+                cand = [x for x in pool if x.zone == 'm']
+            x = ask_card(self, g, p, f'「{c.name}」 제물 소환 — 릴리스할 몬스터' + (f' {len(out) + 1}/{n}' if n > 1 else ''), cand)
+            out.append(x); pool.remove(x)
+        return tuple(out)
+
+    def breeding_pick(self, g, p, cands):
+        """번식지: 패에 넣을 카드를 사람이 직접 고르고, 학습표 기록(「번식지(…)」의 견제 · 엔진)은 고른 카드의 종류로 남긴다"""
+        if evaluating(): return super().breeding_pick(g, p, cands)
+        x = ask_card(self, g, p, '번식지 — 패에 넣을 카드', cands)
+        k = sum(1 for y in g.p[p].hand if y.name in INTERFERE)
+        when = '자신턴' if g.turn_player == p else '상대턴'
+        opts = [('견제', 5, x), ('엔진', 0, x)]
+        self.choose(g, p, f'번식지({when}·견제패{min(k, 3)})', opts, forced=0 if x.name in INTERFERE else 1)
+        return x
 
     def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
         """이전 라운드 패자가 정하는 rnd라운드 선후공"""
@@ -501,6 +534,33 @@ def install_block_hooks():
         return False
     L.swapped = swapped
 
+    # 포커짐승들: 족보 재료(지금 낼 수 있는 재료 조합 중에서 — cards8.plan_options) · 「원하는 레벨과 원하는 속성」 부여 · 짐승조커 선언
+    if hasattr(L, 'combo_pick'):
+        import cards8
+        orig_combo = L.combo_pick
+
+        def combo_pick(g, c, p, k):
+            ai = human_at(g, p)
+            if not ai: return orig_combo(g, c, p, k)
+            opts = cards8.plan_options(g, c, p, k['kind'])
+            if not opts: return orig_combo(g, c, p, k)
+            labs = [' + '.join(card_label(g, p, m.card) for m in sel) for _, sel in opts]
+            i = 0 if len(opts) == 1 else ai._ask(g, p, f'「{c.name}」 {cards8.KIND_LABEL[k["kind"]]} 재료', labs)
+            g.L(f'판단[{g.pname(p)}] {c.name} 족보 재료: {labs[i]} (사람)', 'decision')
+            return opts[i][1]
+        L.combo_pick = combo_pick
+        orig_grant, orig_joker = L.grant_pick, L.joker_pick
+
+        def grant_pick(g, p, t):
+            ai = human_at(g, p)
+            return ask_level_attr(cards8, ai, g, p, f'「{t.name}」에 부여할') if ai else orig_grant(g, p, t)
+        L.grant_pick = grant_pick
+
+        def joker_pick(g, p, c):
+            ai = human_at(g, p)
+            return ask_level_attr(cards8, ai, g, p, f'「{c.name}」 선언할') if ai else orig_joker(g, p, c)
+        L.joker_pick = joker_pick
+
     # 일반 서치 — 서치할 카드(같은 이름 · 같은 곳은 같은 선택)
     orig_search = L.BLOCKS['search'].run
 
@@ -524,6 +584,14 @@ def install_block_hooks():
         return len(got) == n or (k.get('upto') and bool(got))
     set_run('search', do_search)
     _HOOKED = True
+
+
+def ask_level_attr(cards8, ai, g, p, title):
+    """「원하는 레벨과 원하는 속성」 — 레벨(cards8.LEVELS) · 속성(cards8.SUITS)을 차례로 묻는다 → (레벨, 속성)"""
+    lv = list(cards8.LEVELS)[ai._ask(g, p, f'{title} 레벨', [f'레벨 {x}' for x in cards8.LEVELS])]
+    at = cards8.SUITS[ai._ask(g, p, f'{title} 속성', list(cards8.SUITS))]
+    g.L(f'판단[{g.pname(p)}] {title} 레벨 · 속성: 레벨 {lv} · {at} (사람)', 'decision')
+    return lv, at
 
 
 def kinds_ask(L, ai, g, c, p, k):
