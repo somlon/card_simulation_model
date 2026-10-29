@@ -187,7 +187,7 @@ async function pollLive() {
     st.appendLive(d);
     G.pending = d.pending;
     if (d.pending && st.caughtUp()) drawDecision();
-    if (!d.pending && decBox().dataset.rid) { decBox().innerHTML = ''; delete decBox().dataset.rid; st.setHighlight([]); }
+    if (!d.pending && decBox().dataset.rid) { decBox().innerHTML = ''; delete decBox().dataset.rid; st.setHighlight([]); st.clearZonePick(); }
     if (d.result && !G.done) {
       if (st.caughtUp()) { finishLive(d); return; }
     }
@@ -207,7 +207,7 @@ function finishLive(d) {
 // 판단 패널
 const DEC_TITLE = [[/^진행 행동$/, '진행 단계 — 할 행동을 고르세요'], [/^정비 행동$/, '정비 단계 — 할 행동을 고르세요'], [/^우선권$/, '우선권 — 효과를 발동할까요?'],
   [/^대응$/, '체인 대응 — 응답할까요?'], [/^공격$/, '전투 — 공격할 몬스터와 대상'], [/^대상:(.+)$/, '대상 고르기 ($1)'], [/^트리거:(.+)#(\d+)$/, '「$1」 $2번 트리거 — 발동할까요?'],
-  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식/, '소환 표시 형식'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
+  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
 function decTitle(q) { for (const [re, t] of DEC_TITLE) if (re.test(q)) return q.replace(re, t); return q; }
 function optText(lab) {
   let m;
@@ -237,28 +237,31 @@ function drawDecision() {
     b.onmouseleave = () => stages.play.setHighlight([]);
     b.onclick = () => answerDec(p, box, +b.dataset.i);
   });
+  if (p.zones) { stages.play.setZonePick(p.zones, i => answerDec(p, box, i)); if (p.card) stages.play.showName(p.card); }   // 놓을 존: 보드에서 눌러 고르기
   stages.play.fit();
 }
 async function answerDec(p, box, i) {
-  box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]);
+  box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]); stages.play.clearZonePick();
   try { await api('match/answer', {rid: p.id, idx: i}); } catch (e) { toast(e.message); }
   G.pending = null; delete box.dataset.rid; box.innerHTML = '';
 }
 // 라운드 사이 전략 덱 교체 — 서버가 보낸 할 수 있는 교체(opts)를 넣을 카드별로 묶어 보여 주고, 하나씩 고른다(고를 때마다 서버가 다시 계산)
 function drawSide(p, box) {
   const cnt = Object.fromEntries(p.active), stc = Object.fromEntries(p.strategy);
-  const btn = (o, i, t, s) => { const src = faceUrl(o.out); return `<button class="opt" data-i="${i}" data-card="${esc(o.out || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></button>`; };
+  const btn = (o, i, t, s) => { const src = faceUrl(o.out); return `<button class="opt${o.misfit ? ' misfit' : ''}" data-i="${i}" data-card="${esc(o.out || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></button>`; };
   const groups = {}; const order = [];
   p.opts.forEach((o, i) => { if (o.kind === 'card' || o.kind === 'skill') { const k = o.kind + ':' + o.in; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push([o, i]); } });
   const grp = order.map(k => { const [o0] = groups[k][0]; const src = faceUrl(o0.in);
     const head = o0.kind === 'skill' ? `스킬 교체 → 「${o0.in}」` : `넣기: 「${o0.in}」`;
     const sub = o0.kind === 'skill' ? '' : `전략 덱 ${stc[o0.in] || 0}장 · 활성 덱 ${cnt[o0.in] || 0}장 · 뺄 카드 ${groups[k].length}종`;
     return `<details class="sw"><summary data-card="${esc(o0.in)}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(head)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></summary><div class="opts">`
-      + groups[k].map(([o, i]) => btn(o, i, o.kind === 'skill' ? `「${o.out}」 대신 「${o.in}」` : `빼기: 「${o.out}」`, o.kind === 'skill' ? '' : `활성 덱 ${cnt[o.out] || 0}장`)).join('') + '</div></details>'; }).join('');
+      + groups[k].map(([o, i]) => btn(o, i, o.kind === 'skill' ? `「${o.out}」 대신 「${o.in}」` : `빼기: 「${o.out}」`, o.kind === 'skill' ? '바꾼 뒤 새 스킬 태그에 맞지 않는 메인 · 상급 카드는 전략 덱으로 보내야 진행할 수 있습니다' : `활성 덱 ${cnt[o.out] || 0}장${o.misfit ? ' · 스킬 태그 안 맞음 → 전략 덱으로' : ''}`)).join('') + '</div></details>'; }).join('');
+  const mis = (p.misfit || []).length ? `<div class="misfit">스킬 「${esc(p.skill)}」의 태그에 맞지 않는 메인 · 상급 카드 — 모두 전략 덱으로 보내야 진행할 수 있습니다: `
+    + p.misfit.map(([n, k]) => `「${esc(n)}」×${k}`).join(', ') + '</div>' : '';
   const fixed = p.opts.map((o, i) => o.kind === 'done' || o.kind === 'reset' ? `<button class="opt ${o.kind}" data-i="${i}"><span class="t">${esc(o.label)}</span></button>` : '').join('');
   const done = p.swaps.length ? '바꾼 카드: ' + p.swaps.map(([a, b]) => `「${a}」 → 「${b}」`).join(', ') : '아직 바꾼 카드 없음';
   box.innerHTML = `<div class="decision side"><div class="q">${esc(p.decision)} — 승점 ${p.wins[0]}–${p.wins[1]}<small>내 스킬 「${esc(p.skill)}」 · 상대 스킬 「${esc(p.opp_skill)}」 · ${esc(done)}</small></div>`
-    + (p.error ? `<div class="err">${esc(p.error)}</div>` : '') + `<div class="fixed">${fixed}</div>`
+    + (p.error ? `<div class="err">${esc(p.error)}</div>` : '') + mis + `<div class="fixed">${fixed}</div>`
     + `<div class="opts">${grp || '<small class="muted">지금 덱에서 할 수 있는 교체가 없습니다</small>'}</div></div>`;
   box.querySelectorAll('[data-card]').forEach(b => {
     b.onmouseenter = () => { const c = b.dataset.card; if (c) { stages.play.showName(c); stages.play.setHighlight([c]); } };
@@ -291,18 +294,25 @@ function newDeck() { ED.id = null; ED.deck = {이름: '새 덱', 스킬: BOOT.sk
 $('d-new').onclick = () => { if (ED.dirty && !confirm('저장하지 않은 변경이 있습니다. 새 덱을 만들까요?')) return; newDeck(); };
 $('d-name').oninput = () => { ED.deck['이름'] = $('d-name').value; ED.dirty = true; };
 $('d-skill').onchange = () => { ED.deck['스킬'] = $('d-skill').value; ED.dirty = true; renderEditor(); };
-function allowed(name) {   // 덱 구축 기준: 스킬의 태그 또는 「공용」(deck.validate 와 같음)
-  const sk = POOL[ED.deck['스킬']], c = POOL[name]; if (!sk || !c) return false;
+function skillTags(sk) { return sk ? [...(sk.skill_tags || []), ...(sk.no_common ? [] : ['공용'])] : []; }
+function allowed(name, sec) {   // 덱 구축 기준(deck.validate 와 같음): 메인 · 상급 = 주 스킬의 태그 또는 「공용」, 전략 = 주 스킬 또는 전략 덱의 스킬 카드 태그
+  const c = POOL[name]; if (!POOL[ED.deck['스킬']] || !c) return false;
   if (c.type === '스킬') return true;
-  const tags = new Set([...(sk.skill_tags || []), ...(sk.no_common ? [] : ['공용'])]);
+  const tags = new Set(skillTags(POOL[ED.deck['스킬']]));
+  if (sec === '전략') ED.deck['전략'].forEach(([, n]) => { if (POOL[n] && POOL[n].type === '스킬') skillTags(POOL[n]).forEach(t => tags.add(t)); });
   return (c.tags || []).some(t => tags.has(t));
 }
+const poolSec = () => $('p-strat').checked ? '전략' : '메인';
 function countOf(sec, name) { const e = ED.deck[sec].find(x => x[1] === name); return e ? e[0] : 0; }
 function totalIn(name) { return SECS.reduce((s, sec) => s + countOf(sec, name), 0); }
 function addCard(name, toStrat) {
   const c = POOL[name]; if (!c) return;
   if (c.type === '스킬' && !toStrat) { ED.deck['스킬'] = name; ED.dirty = true; renderEditor(); return; }
   const sec = toStrat || c.type === '스킬' ? '전략' : (c.deck === '상급' ? '상급' : '메인');
+  const MAXC = BOOT.max_copies || 3, group = sec === '전략' ? ['전략'] : ['메인', '상급'];   // 동명 카드 상한: 메인 · 상급 합계 / 전략 덱 (deck.validate)
+  if (group.reduce((s, x) => s + countOf(x, name), 0) >= MAXC) {
+    toast(`「${name}」는 ${sec === '전략' ? '전략 덱에' : '메인 · 상급 덱에'} 이미 ${MAXC}장 있습니다 — 같은 이름의 카드는 ${MAXC}장까지 넣을 수 있습니다.`); return;
+  }
   const lst = ED.deck[sec]; const e = lst.find(x => x[1] === name);
   if (e) e[0] += 1; else lst.push([1, name]);
   ED.dirty = true; renderEditor();
@@ -341,10 +351,10 @@ async function validate() {
 }
 function renderPool() {
   const q = $('p-q').value.trim(), th = $('p-theme').value, ty = $('p-type').value, fit = $('p-fit').checked;
-  const list = Object.values(POOL).filter(p => (!th || p.theme === th) && (!ty || p.type === ty) && (!fit || allowed(p.name))
+  const list = Object.values(POOL).filter(p => (!th || p.theme === th) && (!ty || p.type === ty) && (!fit || allowed(p.name, poolSec()))
     && (!q || p.name.includes(q) || (p.text || '').includes(q))).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   $('p-grid').innerHTML = list.map(p => { const src = faceUrl(p.name); const n = totalIn(p.name) + (ED.deck['스킬'] === p.name ? 1 : 0);
-    return `<div class="pc${allowed(p.name) ? '' : ' no'}" data-name="${esc(p.name)}" title="${esc(p.name)}">${src ? `<img src="${src}" alt="${esc(p.name)}" loading="lazy">` : esc(p.name)}${n ? `<span class="in">${n}</span>` : ''}</div>`; }).join('');
+    return `<div class="pc${allowed(p.name, poolSec()) ? '' : ' no'}" data-name="${esc(p.name)}" title="${esc(p.name)}">${src ? `<img src="${src}" alt="${esc(p.name)}" loading="lazy">` : esc(p.name)}${n ? `<span class="in">${n}</span>` : ''}</div>`; }).join('');
   $('p-grid').querySelectorAll('.pc').forEach(el => {
     const name = el.dataset.name;
     el.onclick = () => addCard(name, $('p-strat').checked);
@@ -357,7 +367,7 @@ function showPoolCard(name) {
   $('p-detail').innerHTML = `<div class="dwrap"><div>${src ? `<img class="big" src="${src}" alt="">` : ''}</div><div><div class="dn">${esc(p.name)}</div>
     <div class="dm">${esc(p.code || '')} · ${esc(typeLine(p))}${p.type === '몬스터' ? ` · 공 ${esc(p.atk ?? 0)} / 수 ${esc(p.def ?? 0)}` : ''} · ${esc((p.tags || []).join(', '))}</div><div class="dx">${esc(p.text || '')}</div></div></div>`;
 }
-['p-q', 'p-theme', 'p-type', 'p-fit'].forEach(id => $(id).addEventListener(id === 'p-q' ? 'input' : 'change', renderPool));
+['p-q', 'p-theme', 'p-type', 'p-fit', 'p-strat'].forEach(id => $(id).addEventListener(id === 'p-q' ? 'input' : 'change', renderPool));
 async function saveDeck(asNew) {
   const r = await api('deck/save', {deck: ED.deck, id: asNew ? null : ED.id});
   if (!r.ok) { $('d-msgs').innerHTML = r.errs.map(e => `<div class="err">✕ ${esc(e)}</div>`).join(''); return toast('덱 규칙 오류로 저장하지 못했습니다.'); }
