@@ -89,7 +89,31 @@ class HumanAI(P.LearnedAI):
         빈 몬스터 존이 있을 때 공유 존을 고르는 것은 choose_zone 의 후보로 묻는다(엔진이 choose_zone 을 부르면 여기는 쓰지 않음)"""
         return bool(full)
 
-    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps'):
+    # ── 시작 패 · 멀리건 메인 · 상급 배분 (사람이 직접) ──
+    def choose_split(self, g, p, n):
+        """시작 패 n장 중 메인 덱에서 뽑을 매수 — 학습표 AI 와 같은 판단 키(「시작 패 배분(선공|후공)」 · 후보 「메인 k」)로 사람에게 묻는다
+        (LearnedAI.choose_split 은 LearnedAI.choose 를 직접 불러 사람 자리의 choose 를 거치지 않았다)"""
+        pl = g.p[p]
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        k0 = max(lo, min(hi, self.split_default(g, p, n)[0]))
+        if evaluating() or lo >= hi: return k0
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 배분({pos})', self.split_opts(k0, lo, hi), scale=10, shown=split_labels(n))
+
+    def mulligan_split(self, g, p, back):
+        """멀리건으로 되돌린 장수만큼 다시 뽑을 때 메인 덱 몫 — 처음 배분과 달라도 된다(§4 STEP 6).
+        판단 키는 학습표 AI 와 같은 「시작 패 재배분(선공|후공·n장·남은 상급 k)」"""
+        n0 = HeuristicAI.mulligan_split(self, g, p, back)
+        pl = g.p[p]; n = len(back)
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        if evaluating() or lo >= hi: return max(lo, min(hi, n0))
+        ups = sum(1 for c in pl.hand if c.deck_kind() == '상급')
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 재배분({pos}·{n}장·남은 상급 {min(ups, 3)})',
+                           self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10, shown=split_labels(n))
+
+    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None):
+        """shown: 화면에 보일 이름표(후보 라벨 → 표시 문자열). 학습 키는 후보 라벨 그대로"""
         if not opts: return None
         me = g.p[p].skill.name; op = g.p[1 - p].skill.name
         base = f'{me} vs {op}|{decision}|'; b = self.bucket(g, p)
@@ -98,7 +122,7 @@ class HumanAI(P.LearnedAI):
             k1 = base + lab; k2 = k1 + '|' + b
             v, n1, n2 = self.T.value(k1, k2, P.prior_of(h, scale))
             keyed.append((k1, k2, round(v * 100, 1)))
-        idx = 0 if len(opts) == 1 else self._ask(g, p, decision, [o[0] for o in opts], [k[2] for k in keyed])
+        idx = 0 if len(opts) == 1 else self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed])
         if self.learn: self.trace.append(keyed[idx][:2])
         if log and len(opts) > 1:
             g.L(f'판단[{g.pname(p)}] {decision}: → {opts[idx][0]} (사람)', 'decision')
@@ -219,6 +243,11 @@ MAX_ACTIONS = 60   # 한 단계에서 행동을 고르는 최대 횟수(무한 �
 MAX_ATTACKS = 20
 ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '묘지', 'banish': '제외 존', 'main': '메인 덱', 'upper': '상급 덱',
               'shared': '공유 존', 'fieldz': '필드 존', 'skill': '스킬 존'}
+
+
+def split_labels(n):
+    """후보 라벨 「메인 k」 → 화면 이름표 「메인 k / 상급 n-k」"""
+    return lambda lab: f'{lab} / 상급 {n - int(lab.split()[-1])}'
 
 
 def card_label(g, who, x):
