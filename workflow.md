@@ -281,6 +281,12 @@
     - 2026-10-29 시작 — 루틴 생성, `blocks/lib.py` 자동 고르기 지점 조사(위 ① 목록).
     - 2026-10-29 세션 압축 → R5 인계: `claude/vibrant-euler-jekich` ccfc11b(시험 도구 보관 — eq split ↔ splithook ↔ full 동일 재확인). **새 세션이 ①부터 이어서 한다.**
       → 새 세션 session_018Feff8DNtcUzLSGgPZjYJc · 새 루틴 trig_01BFQdgaALcqmnmhWJyyvC1J(같은 이름, 매시 17분) 생성 2026-10-29. 옛 루틴 trig_017Ut2zBxoU5FagqEyJt9SVC 는 이전 세션이 끈다.
+    - 2026-10-29 ① · ② 완료 — `claude/vibrant-euler-jekich` 98f7a0a(하위 선택 감싸기) · 74e61c9(사람 전략 덱 교체 · VERSION 1.1.0 · README) · dedceb1(__pycache__ 무시), 병행 세션 커밋과 병합 66df90d.
+      하위 선택: 카드 고르기 · 서치 · J2 선택지(chooser 'opp' 포함) · 특수소환할 몬스터 · 원하는 수까지 · 카운터(놓을/뗄 카드 · 임의 개수) · 종류별 코스트 · 공개할 카드 · 뒷면 재배치 · 뒤집기 · 덱에서 묘지로 · 표시목 대상 · [지속] 효과 변경 여부.
+      블록 실행부 안 max(…) 고르기는 같은 코드 객체를 max만 바꾼 전역으로 실행(엔진 코드 옮겨 적지 않음). 전략 덱 교체: 서버가 match.py 규칙으로 교체 후보를 만들어 하나씩(kind 'side'), 「교체 끝」 때 deck.validate, 기록 'side' 줄.
+      검증: eq.py all(66 덱 쌍) split ↔ splithook 동일(병합 뒤 재확인), backend PAIRS=all REPEAT=4 44매치 오류 0(새 요청 모두 나옴), 효과 변경 · 덱에서 묘지로는 엔진 상태를 직접 만들어 확인,
+      화면 시험 1600 · 390px 오류 0, v1.1.0 빌드 wine(LC_ALL=C.UTF-8) 화면 시험 Bo3 오류 0.
+      **배포본은 병행 작업(재생 화면 시각화 개선 — 새 기본 재생 기록 포함)이 끝난 뒤 다시 빌드**(그 세션 요청) → 남은 일 ③ 빌드 · ④ exp/windows-app 추가 · 전달 · 보고 · 루틴 끄기.
 
 - **【완료 — 2026-10-29, 후속 사용자 확인】 Windows 게임 프로그램(.exe) — 관전 플레이리스트 · AI vs 사람 대전 · 덱 편집 · 사람 대전 학습 (사용자 지시 2026-10-29, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시: 시트 3장 반영(완료 58f6e84 — 풀 200장 · 11개 덱 모두 이미지) 뒤, 재생 영상을 모아 원하는 플레이리스트를 재생하는 싱글플레이 게임식 .exe → GitHub · 채팅창 업로드.
