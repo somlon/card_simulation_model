@@ -310,14 +310,20 @@ class LiveMatch:
         self.bridge.abort()
 
 
+def misfits(act, skill):
+    """활성 덱(메인 · 상급) 카드 중 지금 스킬의 태그에 맞지 않는 것 — 스킬을 바꾼 뒤 전략 덱으로 보내야 하는 카드"""
+    return sorted(n for n, k in act.items() if k > 0 and not M.fits(n, skill))
+
+
 def side_options(act, st, skill):
-    """지금 덱에서 할 수 있는 교체 하나하나 — match.py 교체 규칙 그대로(전략 덱 카드 1:1 · 같은 덱 종류 · 동명 3장 · 스킬 태그 · 고정 카드 제외,
-    스킬 카드는 새 스킬로 활성 덱 전부를 쓸 수 있을 때만)"""
-    out = []
+    """지금 덱에서 할 수 있는 교체 하나하나 — 카드는 match.py 교체 규칙 그대로(전략 덱 카드 1:1 · 같은 덱 종류 · 동명 3장 · 지금 스킬 태그 · 고정 카드 제외).
+    스킬 카드는 전략 덱에 있으면 언제든 고를 수 있고(사람), 바꾼 뒤 새 스킬 태그에 맞지 않는 활성 덱 카드(misfits)를 전략 덱으로 보내야 「교체 끝」이 된다.
+    태그에 맞지 않는 카드를 빼는 교체를 앞에 둔다"""
+    out = []; bad = set(misfits(act, skill))
     for i in M.swap_ins(act, st, skill):
-        for o in M.swap_outs(act, i):
-            out.append({'label': f'「{o}」 → 「{i}」', 'kind': 'card', 'out': o, 'in': i})
-    for n in M.skill_swaps(act, st, skill):
+        for o in sorted(M.swap_outs(act, i), key=lambda o: o not in bad):
+            out.append({'label': f'「{o}」 → 「{i}」', 'kind': 'card', 'out': o, 'in': i, 'misfit': o in bad})
+    for n in sorted(n for n, k in st.items() if k > 0 and M.is_skill(n) and n != skill):
         out.append({'label': f'스킬 「{skill}」 → 「{n}」', 'kind': 'skill', 'out': skill, 'in': n})
     return out
 
@@ -329,9 +335,10 @@ def human_side(bridge, decks, i, wins, rnd, log):
     act, st, skill = dict(base[0]), dict(base[1]), base[2]; swaps = []; err = None
     while True:
         opts = [{'label': '교체 끝', 'kind': 'done'}] + ([{'label': '처음으로 (교체 모두 취소)', 'kind': 'reset'}] if swaps else [])
-        opts += side_options(act, st, skill)
+        opts += side_options(act, st, skill); bad = misfits(act, skill)
         o = opts[bridge.ask({'kind': 'side', 'p': i, 'decision': f'{rnd}라운드 전 전략 덱 교체', 'opts': opts, 'turn': 0, 'phase': '',
                              'skill': skill, 'opp_skill': decks[1 - i]['스킬'], 'wins': list(wins), 'error': err,
+                             'misfit': [(n, act[n]) for n in bad],
                              'active': sorted(act.items()), 'strategy': sorted((n, k) for n, k in st.items() if k > 0),
                              'swaps': [[a, b] for a, b, _ in swaps]})]
         err = None
@@ -342,6 +349,10 @@ def human_side(bridge, decks, i, wins, rnd, log):
         elif o['kind'] == 'skill':
             st[o['in']] -= 1; st[skill] = st.get(skill, 0) + 1; swaps.append((skill, o['in'], '스킬 교체')); skill = o['in']
         else:
+            if bad:   # 스킬을 바꿨으면 새 스킬 태그에 맞지 않는 메인 · 상급 카드를 모두 전략 덱으로 보내야 진행할 수 있다
+                err = (f'스킬 「{skill}」의 태그에 맞지 않는 카드 {sum(act[n] for n in bad)}장을 모두 전략 덱으로 보내야 진행할 수 있습니다: '
+                       + ', '.join(f'「{n}」×{act[n]}' for n in bad) + ' — 맞는 카드로 바꿀 수 없으면 「처음으로」')
+                continue
             d = M.deck_from(deck, act, st); d['스킬'] = skill
             errs, _ = D.validate(d, policy=False)
             if errs: err = '덱 규칙 오류: ' + '; '.join(errs[:3]); continue
