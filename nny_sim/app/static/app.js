@@ -167,13 +167,14 @@ $('g-start').onclick = async () => {
   try {
     const human = $('g-mode').value === 'human';
     const r = await api('match/start', {mode: human ? 'human' : 'ai', deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
-                                        learn: $('g-learn').checked, hints: $('g-hints').checked});
+                                        learn: $('g-learn').checked, hints: $('g-hints').checked, ai_kind: $('g-aikind').value});
     G.id = r.id; G.pending = null; G.done = false; G.human = human;
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
     stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, human);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
-    $('g-status').textContent = `대전 중: ${r.title}` + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
+    $('g-status').textContent = `대전 중: ${r.title}` + ($('g-aikind').value === 'nn' ? ` · 신경망 AI(${BOOT.nn && BOOT.nn.using === 'local' ? '내 모델' : '기본 모델'})` : '')
+      + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
 };
@@ -201,6 +202,7 @@ function finishLive(d) {
   const msg = d.status === 'done' ? (res.winner == null ? `무승부 (${w[0]}–${w[1]})` : `${names[res.winner]} 승 (${w[0]}–${w[1]})`)
             : d.status === 'aborted' ? '그만둠' : d.status === 'stalled' ? '1000턴 안전장치로 중단' : '오류로 중단';
   $('g-status').innerHTML = `대전 끝: <b>${esc(msg)}</b>` + (d.learned ? ` · AI가 이 매치의 판단 ${d.learned}개를 학습했습니다(다음 대전부터 반영)` : '')
+    + (d.nn_saved ? ` · 신경망 표본 ${d.nn_saved}개 저장(「🧠 신경망 학습」에서 학습)` : '')
     + (d.replay_id ? ' · 재생 기록에 저장됨' : '') + (d.error ? `<pre class="err" style="white-space:pre-wrap">${esc(d.error)}</pre>` : '');
   refreshBoot().catch(() => {});
 }
@@ -387,6 +389,64 @@ $('l-git').onclick = async () => {
   const r = await api('learning/git', {}); $('l-gitlog').textContent = r.msg + '\n\n' + (r.log || []).join('\n\n');
 };
 $('g-learn').onchange = () => api('settings', {learn: $('g-learn').checked}).catch(() => {});
+// ── 신경망 학습 (머리 막대의 「🧠 신경망 학습」 — 홈 화면을 포함한 모든 화면에서 연다) ──
+const NN = {st: BOOT.nn, timer: null};
+const pct = v => v == null ? '–' : (v * 100).toFixed(1) + '%';
+const num = v => v == null ? '–' : (+v).toFixed(3);
+function nnAvail() { const o = $('g-aikind').querySelector('option[value=nn]'); o.disabled = !(NN.st && NN.st.available); if (o.disabled && $('g-aikind').value === 'nn') $('g-aikind').value = 'table'; }
+function nnMetrics(t, title) {
+  if (!t) return '';
+  const row = (lab, a, b, f, tip) => `<tr title="${tip}"><td>${lab}</td><td class="n">${f(a)}</td><td class="n">${f(b)}</td></tr>`;
+  const bf = t.before && (t.before.val || t.before.train), af = t.after && (t.after.val || t.after.train);
+  if (!bf || !af) return '';
+  return `<div class="muted" style="margin:6px 0 4px">${title} — ${t.after.val ? '검증 표본(학습에 쓰지 않은 매치)' : '학습 표본'} 기준</div>
+    <table class="t"><tr><th></th><th class="n">학습 전(기본 모델)</th><th class="n">학습 후</th></tr>
+    ${row('내 학습표와 최선 후보 일치', bf.teacher_agree, af.teacher_agree, pct, '로컬 학습표가 가장 높게 보는 후보를 신경망도 가장 높게 보는 비율')}
+    ${row('내 학습표와의 차이(KL)', bf.kl_teacher, af.kl_teacher, num, '작을수록 내 학습표의 판단에 가까움')}
+    ${row('기본 모델과의 차이(KL)', bf.kl_base, af.kl_base, num, '학습으로 기본 모델에서 얼마나 바뀌었는지')}
+    ${row('이긴 라운드 선택의 로그 확률', bf.win_logp, af.win_logp, num, '클수록(0에 가까울수록) 이긴 라운드의 선택을 더 고름')}
+    ${row('손실', bf.loss, af.loss, num, '학습 목표(작을수록 좋음)')}</table>`;
+}
+function nnRender() {
+  const st = NN.st; if (!st) return;
+  const sm = st.samples || {};
+  const mu = Object.entries(sm.by_matchup || {}).sort((a, b) => b[1].samples - a[1].samples).slice(0, 6)
+    .map(([k, v]) => `<div class="muted" style="font-size:12px">${esc(k)} · 매치 ${v.matches} · 판단 ${v.samples}</div>`).join('');
+  $('nn-samples').innerHTML = `<div class="nnbig">${sm.samples || 0}<small>판단</small> ${sm.matches || 0}<small>매치</small></div>${mu}
+    <div class="muted" style="font-size:12px;margin-top:6px">학습에는 최소 ${st.min_samples}개가 필요합니다. 학습표 기록(「학습」 화면)과 따로 쌓입니다.</div>`;
+  const base = st.base, loc = st.local;
+  const ev = base && base.eval ? Object.entries(base.eval).map(([k, v]) => `${k === 'table' ? '학습표 AI' : k === 'heuristic' ? '휴리스틱 AI' : k} 상대 ${v.win}% ±${v.ci95}`).join(' · ') : '';
+  $('nn-model').innerHTML = !st.available ? '<div class="err">기본 신경망 모델이 없습니다(배포본을 확인하세요).</div>'
+    : `<div class="nnbig">${st.using === 'local' ? '내 모델' : '기본 모델'}<small>대전에 쓰는 모델</small></div>
+       ${loc ? `<div class="muted" style="font-size:12px">내 모델: ${esc(loc.created || '')} 학습 · 매치 ${loc.matches ?? '–'} · 판단 ${loc.samples ?? '–'}</div>` : '<div class="muted" style="font-size:12px">아직 내 모델이 없습니다 — 기본 모델로 대전합니다.</div>'}
+       <div class="muted" style="font-size:12px">기본 모델: 학습표를 교사로 모방 학습 + 자기 대국${ev ? ` (단판 평가 ${ev})` : ''}</div>`;
+  const j = st.job; const run = !!(j && j.status === 'running');
+  $('nn-train').disabled = run || !st.available; $('nn-stop').disabled = !run; $('nn-reset').disabled = run || !loc;
+  $('nn-bar').style.width = ((j ? j.progress : 0) * 100).toFixed(1) + '%';
+  $('nn-msg').innerHTML = j ? `<span class="${j.status === 'error' ? 'err' : ''}">${esc(j.msg || '')}</span>` : '';
+  $('nn-result').innerHTML = (j && j.log) ? nnMetrics(j.log, '방금 학습') : (loc && loc.after ? nnMetrics(loc, '내 모델') : '');
+  nnAvail();
+}
+async function nnRefresh() {
+  try { NN.st = await api('nn/status'); BOOT.nn = NN.st; } catch (e) { return; }
+  nnRender();
+  clearTimeout(NN.timer);
+  if (NN.st.job && NN.st.job.status === 'running') NN.timer = setTimeout(nnRefresh, 1000);
+}
+$('nn-open').onclick = () => { $('nn-modal').hidden = false; nnRefresh(); };
+$('nn-close').onclick = () => { $('nn-modal').hidden = true; };
+$('nn-modal').onclick = e => { if (e.target === $('nn-modal')) $('nn-modal').hidden = true; };
+$('nn-train').onclick = async () => {
+  try { await api('nn/train', {epochs: +$('nn-epochs').value}); } catch (e) { return toast(e.message, 6000); }
+  nnRefresh();
+};
+$('nn-stop').onclick = async () => { await api('nn/stop', {}); nnRefresh(); };
+$('nn-reset').onclick = async () => {
+  if (!confirm('내 모델을 지우고 기본 모델로 되돌릴까요? (지운 모델은 폴더의 backups 에 남습니다)')) return;
+  try { NN.st = await api('nn/reset', {}); BOOT.nn = NN.st; nnRender(); toast('기본 모델로 되돌렸습니다.'); } catch (e) { toast(e.message); }
+};
+$('nn-folder').onclick = async () => { const r = await api('open', {what: 'nn'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
+nnAvail();
 $('g-hints').onchange = () => api('settings', {hints: $('g-hints').checked}).catch(() => {});
 stages.watch.fit();
 })();

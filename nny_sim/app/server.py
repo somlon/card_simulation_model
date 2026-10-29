@@ -7,9 +7,10 @@ import deck as D
 from cards import POOL
 
 import session as SS
+import nnai as NA
 import tables as T
 
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
@@ -21,6 +22,7 @@ class App:
         import human
         human.install_block_hooks()   # 첫 게임(카드 효과 코드 생성 · 캐시) 전에 — 사람 자리의 서치 · 카드 고르기를 화면에서 묻는다
         self.store = SS.Store(paths['user'], paths.get('library'))
+        self.nn = NA.Manager(paths['sim'], paths['user'], paths.get('nn_base'))   # 신경망 AI 모델 · 로컬 학습 작업
         self.token = secrets.token_hex(16)
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
@@ -47,8 +49,14 @@ class App:
             a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
             names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]}'
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
+        ai_kind = j.get('ai_kind', 'table'); nn_model = None; nn_label = ''
+        if ai_kind == 'nn':
+            nn_model = self.nn.current_path()
+            if not os.path.exists(nn_model): raise ValueError('신경망 모델이 없습니다')
+            nn_label = 'local' if nn_model == NA.local_path(self.store.dir) else 'base'
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=(mode == 'human'), seed=seed, first=first,
-                                 learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title).start()
+                                 learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
+                                 ai_kind=ai_kind, nn_model=nn_model, nn_label=nn_label).start()
         return {'id': self.live.id, 'names': names, 'title': title}
 
     def start_record(self, j):
@@ -70,7 +78,7 @@ class App:
                 'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces'],
                            'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
-                'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
+                'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None, 'nn': self.nn.status(),
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES}
 
     def learning(self):
@@ -112,12 +120,16 @@ class App:
             if j: j.stop = True
             return {'ok': bool(j)}
         if path == '/api/learning': return self.learning()
+        if path == '/api/nn/status': return self.nn.status()
+        if path == '/api/nn/train': return self.nn.start(body.get('epochs'))
+        if path == '/api/nn/stop': return self.nn.stop()
+        if path == '/api/nn/reset': return self.nn.reset()
         if path == '/api/learning/export':
             out = self.store.export_learning(); return {'ok': bool(out), 'path': out}
         if path == '/api/learning/git': return self.store.git_push()
         if path == '/api/settings': return self.store.save_settings(body)
         if path == '/api/open':
-            target = {'export': os.path.join(self.store.dir, 'export'), 'user': self.store.dir,
+            target = {'export': os.path.join(self.store.dir, 'export'), 'user': self.store.dir, 'nn': NA.nn_dir(self.store.dir),
                       'learning': os.path.dirname(self.store.log_path)}.get(body.get('what'))
             if target and hasattr(os, 'startfile'): os.startfile(target)
             return {'ok': bool(target), 'path': target}
@@ -134,7 +146,7 @@ class App:
     def watchdog(self):
         while True:
             time.sleep(15)
-            busy = any(j.status == 'running' for j in self.jobs.values())
+            busy = any(j.status == 'running' for j in self.jobs.values()) or self.nn.busy()
             if not busy and time.time() - self.last_beat > IDLE_EXIT:
                 self.shutdown(); return
 

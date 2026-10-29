@@ -53,8 +53,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     for k in ('sim', 'split', 'cards', 'library', 'user', 'viewer'): ap.add_argument('--' + k)
     ap.add_argument('--port', type=int, default=0); ap.add_argument('--no-browser', action='store_true')
+    ap.add_argument('--nn-base', help='기본 신경망 모델 파일(기본: <sim>/learned/drl/base_v2/model_best.npz)')
     a = ap.parse_args(argv)
     P = paths_from(a)
+    if a.nn_base: P['nn_base'] = os.path.abspath(a.nn_base)
     os.makedirs(P['user'], exist_ok=True)
     if sys.stderr is None or sys.stdout is None:   # 창 없는 실행(pythonw): 출력 · 오류를 사용자 폴더의 app.log 로
         log = open(os.path.join(P['user'], 'app.log'), 'a', encoding='utf-8', buffering=1)
