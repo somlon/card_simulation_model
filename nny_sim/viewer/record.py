@@ -92,18 +92,19 @@ class Recorder(list):
             self.states.append(st); self._last = key
         return len(self.states) - 1
 
-    def export_frames(self):
+    @staticmethod
+    def export_frame(fr):
         """판단 줄의 data는 줄이 붙은 뒤에 채워진다(policy.LearnedAI.choose) → 내보낼 때 읽는다"""
-        out = []
-        for fr in self.frames:
-            e = fr['_e']; fr = {k: v for k, v in fr.items() if k != '_e'}
-            d = e.get('data')
-            if fr['k'] == 'decision' and d:
-                fr['d'] = {'p': d.get('p'), 'q': d.get('decision'), 'pick': d.get('pick'), 'why': d.get('why'),
-                           'opts': [list(o[:2]) for o in d.get('opts', [])][:6]}
-            if fr['k'] == 'side' and d: fr['d'] = {'swaps': [list(x) for x in d.get('swaps', [])]}
-            out.append(fr)
-        return out
+        e = fr['_e']; fr = {k: v for k, v in fr.items() if k != '_e'}
+        d = e.get('data')
+        if fr['k'] == 'decision' and d:
+            fr['d'] = {'p': d.get('p'), 'q': d.get('decision'), 'pick': d.get('pick'), 'why': d.get('why'),
+                       'opts': [list(o[:2]) for o in d.get('opts', [])][:6]}
+        if fr['k'] == 'side' and d: fr['d'] = {'swaps': [list(x) for x in d.get('swaps', [])]}
+        return fr
+
+    def export_frames(self, start=0):
+        return [self.export_frame(fr) for fr in self.frames[start:]]
 
 
 _HOOKED = False
