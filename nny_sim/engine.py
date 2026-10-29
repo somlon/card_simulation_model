@@ -1002,6 +1002,7 @@ class Game:
         return (c.name, e.num, c.uid) if getattr(e, 'opt_per_card', False) else (c.name, e.num)
 
     def opt_ok(self, p, c, e):
+        if (self.turn, e.num) in c.flags.get('neg_spent', ()): return False   # 무효화된 그 카드 한 장(Game.spend_negated)
         if e.opt is None: return True
         return self.p[p].opt.get(self.opt_key(c, e), 0) < e.opt
 
@@ -1237,7 +1238,10 @@ class Game:
         while self.chain:
             link = self.chain.pop()
             c, e, p = link.card, link.eff, link.player
-            if link.negated:
+            if not link.negated and self.negated_by_card(link):
+                self.spend_negated(link)   # 카드의 무효로 생긴 일 — 무효화 사건은 카드를 무효로 할 때 이미 냈다(Game.negate_card)
+                self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — {c}의 효과가 무효라 처리하지 않음', 'res')
+            elif link.negated:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 무효', 'res')
             elif link.replaced:
                 self.L(f'체인 {len(self.chain)+1} {c} {e.num}번 — 처리 치환', 'res')
@@ -1306,12 +1310,25 @@ class Game:
             self.L(f'{link.card}은(는) 무효화되지 않음', 'sys'); return
         if self.link_unaffected(link, by if by is not None else self.src):
             self.L(f'{link.card} {link.eff.num}번 효과는 무효가 되지 않음 (효과를 받지 않음)', 'sys'); return
-        link.negated = True
-        for k in link.ctx.get('opt_keys', [(link.card.name, link.eff.num)]):   # 무효화된 발동은 사용 횟수를 소모하지 않는다 (§6-5)
-            if self.p[link.player].opt.get(k): self.p[link.player].opt[k] -= 1
+        self.spend_negated(link)
         self.L(f'{link.card} {link.eff.num}번 효과 무효' + (' 후 파괴' if destroy else ''))
         self.emit('negated', link=link, player=link.player, by=by)
         if destroy and self.on_field(link.card): self.destroy(link.card, ('effect', by))
+
+    def spend_negated(self, link):
+        """발동 link 를 무효로 한다. 무효화된 발동은 1턴 1번(카드명 × 번호)을 소모하지 않지만(§6-5), 무효화된 그 카드 한 장은 이 턴 같은 번호의 효과를
+        다시 발동할 수 없다 — 다시 하려면 다른 동명 카드로 (사용자 지시 2026-10-29: 패에서 발동해 무효화된 카드가 그대로 같은 효과를 다시 발동하던 것)"""
+        link.negated = True
+        for k in link.ctx.get('opt_keys', [(link.card.name, link.eff.num)]):
+            if self.p[link.player].opt.get(k): self.p[link.player].opt[k] -= 1
+        link.card.flags.setdefault('neg_spent', set()).add((self.turn, link.eff.num))
+
+    def negated_by_card(self, link):
+        """처리할 때 발동한 카드의 효과가 무효 상태인가(그 카드를 무효로 하는 효과 — 바이러스 모스키토 장착 · 「그 카드의 효과를 무효로 한다」 등).
+        카드가 무효화되면 체인에 있는 그 카드의 발동한 효과도 무효다 (사용자 지시 2026-10-29). 필드(스킬 존 포함)에 남아 있는 카드만 — 무효 상태는 필드의 카드에만 있다"""
+        c = link.card
+        if not (self.on_field(c) or c.zone == 'skill') or not self.is_neg(c): return False
+        return not (getattr(link.eff, 'unnegatable', False) or c.flags.get('unnegatable'))
 
     # ── 트리거 수집 ──
     def state_check(self):

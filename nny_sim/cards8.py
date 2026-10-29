@@ -68,6 +68,7 @@ PK = '포커짐승들'
 SKILL = '올인'
 GAMBLE = '포커짐승들의 도박장'
 SUITS = ('스페이드', '다이아', '하트', '클로버')
+LEVELS = range(1, 11)   # 부여 · 선언할 수 있는 레벨(「원하는 레벨」)
 ALL4 = frozenset(SUITS)
 FIELD_M = ('m', 'shared')
 RABBIT_UP, WOLF_UP, DOG_UP, CAT_UP = '♠ 스트레이트 토끼', '◆ 플러쉬 늑대', '♥ 풀 하우스 강아지', '♣ 포카드 고양이'
@@ -421,6 +422,49 @@ def plan(g, c, p, kind, R=None, D=None, over=None, virt=(), fresh=False):
     return gain_of(g, p, kind, sel, c) - tot, sel
 
 
+PLAN_ENUM_MAX = 20000   # 재료 조합을 나열할 때 살펴볼 조합 수 상한(넘으면 그 매수는 나열하지 않음)
+
+
+def plan_options(g, c, p, kind):
+    """사람이 고를 족보 재료: 규칙상 지금 낼 수 있는 재료 조합 전부 → [(순이익, [재료])] — 순이익(AI 가치) 높은 순, 같은 이름 · 같은 곳의 카드로 된
+    조합은 하나만. 각 조합이 맞는지는 AI와 같은 족보 찾기(FINDERS · f_triple)가 그 재료만으로 그 조합 전부를 쓰는지로 본다 (plan 과 같은 뒤 검사)"""
+    from itertools import combinations
+    from math import comb
+    R, D = pools(g, p, True)
+    mode = MODE[kind]
+    ms = list(R if mode == 'release' else D)
+    if not combo_opp_ok(g, c, p, kind): ms = [m for m in ms if m.where not in ('opp_f', 'opp_g')]
+    if kind in UP_TARGET and not any(x.name == UP_TARGET[kind] for x in g.p[p].upper): return []
+    sizes = combo_sizes(g, c, p, kind)
+    me = None
+    if kind != 'triple':
+        me = next((m for m in ms if m.card is c), None)
+        if me is None and mode == 'deck' and c.zone == 'hand' and c.is_monster() and c.level:
+            me = Mat(c, c.level, attrs(g, c), 'hand', 0.9)
+        if me is None: return []
+        ms = [m for m in ms if m.card is not c]
+    ks = sorted({a + b for a, b in sizes}) if kind == 'full' else [sizes]
+    out = {}
+    for n in ks:
+        k = n if kind == 'triple' else n - 1
+        if k < 0 or k > len(ms) or comb(len(ms), k) > PLAN_ENUM_MAX: continue
+        for sub in combinations(ms, k):
+            sub = list(sub)
+            r = f_triple(sub, n) if kind == 'triple' else FINDERS[kind](sub, me, sizes)
+            if r is None: continue
+            sel = r[1]
+            if len(sel) != k + (0 if kind == 'triple' else 1): continue
+            if kind in UP_TARGET:
+                up = next(x for x in g.p[p].upper if x.name == UP_TARGET[kind])
+                if not can_ss_after(g, p, up, sel, c): continue
+            elif kind == 'pair' and not steal_cands(g, p, sel): continue
+            elif kind == 'triple' and not deck_summons(g, p, sel, c): continue
+            key = tuple(sorted((m.card.name, m.where) for m in sel))
+            net = gain_of(g, p, kind, sel, c) - sum(m.cost for m in sel)
+            if key not in out or net > out[key][0]: out[key] = (net, sel)
+    return sorted(out.values(), key=lambda x: -x[0])
+
+
 def pay(g, c, p, sel, mode):
     names = ', '.join(f'{m.card}' + ('(상대)' if m.where in ('opp_f', 'opp_g') else '') for m in sel)
     if mode == 'release':
@@ -473,7 +517,7 @@ def plan_grant(g, p, t):
     lv0 = t.level if (t.is_monster() and t.level) else 1
     s0 = min(at0) if at0 else SUITS[0]
     blv, bv = lv0, best_play(g, p, over={t: (lv0, frozenset((s0,)))})
-    for lv in range(1, 11):
+    for lv in LEVELS:
         if lv == lv0: continue
         v = best_play(g, p, over={t: (lv, frozenset((s0,)))})
         if v > bv + 1e-9: blv, bv = lv, v
@@ -516,7 +560,7 @@ def plan_joker(g, p, c):
     lv0 = max(set(hand_lv), key=hand_lv.count) if hand_lv else 1   # 기본값: 자신 패 · 필드에 가장 많은 레벨 (다음 원페어용)
     s0 = SUITS[0]
     blv, bv = lv0, best_play(g, p, virt=[(c, lv0, frozenset((s0,)))])
-    for lv in range(1, 11):
+    for lv in LEVELS:
         if lv == lv0: continue
         v = best_play(g, p, virt=[(c, lv, frozenset((s0,)))])
         if v > bv + 1e-9: blv, bv = lv, v

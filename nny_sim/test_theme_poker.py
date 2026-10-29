@@ -69,9 +69,14 @@ DOG, DOG_F = '♥ 풀 하우스를 찾는 강아지', '♥ 메이드에 실패�
 CAT, CAT_F = '♣ 포카드를 보는 고양이', '♣ 메이드에 실패한 고양이'
 
 
+class YesButKeep(Yes):
+    """임의 트리거를 모두 발동하되 「메이드에 실패한 늑대」 [유언](몬스터의 효과 무효)은 쓰지 않음 — 자기 몬스터의 [소환] 효과를 무효로 만들지 않게"""
+    def choose_triggers(self, g, p, cands): return [x for x in cands if x[0].name != WOLF_F]
+
+
 class ComboTest(unittest.TestCase):
     def test_straight_releases_three_and_summons_rabbit(self):
-        g = make(ai=Yes); filler(g, 0)
+        g = make(ai=YesButKeep); filler(g, 0)
         up = put(g, K.RABBIT_UP, 0, 'upper')
         r = mon(g, RAB, 0); m2 = mon(g, WOLF_F, 0); m3 = put(g, DOG, 0, 'hand')
         e = eff(r, 2)
@@ -81,6 +86,17 @@ class ComboTest(unittest.TestCase):
         self.assertEqual(up.zone, 'm')
         self.assertTrue(all(x.zone == 'grave' for x in (r, m2, m3)))
         self.assertEqual(len(g.p[0].hand), hand0 - 1 + 3)   # 패의 강아지 릴리스 → 스트레이트 토끼 [소환] 3장 드로우
+
+    def test_wolf_lastwill_negating_rabbit_negates_its_chained_summon_effect(self):
+        """카드가 무효화되면 체인에 있는 그 카드의 발동한 효과도 무효 (사용자 지시 2026-10-29): 재료로 릴리스된 「메이드에 실패한 늑대」 [유언]이
+        체인 2로 스트레이트 토끼의 효과를 무효로 하면, 체인 1의 토끼 [소환](3장 드로우)도 처리되지 않는다"""
+        g = make(ai=Yes); filler(g, 0)
+        up = put(g, K.RABBIT_UP, 0, 'upper')
+        r = mon(g, RAB, 0); mon(g, WOLF_F, 0); put(g, DOG, 0, 'hand')
+        g.act(0, r, eff(r, 2)); run(g)
+        self.assertEqual(up.zone, 'm'); self.assertTrue(g.is_neg(up))
+        self.assertEqual(len(g.p[0].hand), 0)
+        self.assertTrue(any('무효라 처리하지 않음' in e['m'] for e in g.log))
 
     def test_straight_needs_consecutive_levels(self):
         g = make(); put(g, K.RABBIT_UP, 0, 'upper')
