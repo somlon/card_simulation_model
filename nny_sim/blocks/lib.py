@@ -1164,7 +1164,12 @@ def can_negate_chain(g, c, p, ev, k):
     return any(not lk.negated and _link_ok(lk, k, g, c, p) and not g.link_unaffected(lk, c) for lk in g.chain)
 
 
-@block('negate_chain', can=can_negate_chain, val=lambda g, c, p, ev, k: sum(lk.eff.threat for lk in g.chain if lk.player != p and _link_ok(lk, k, g)) / 10.0, threat=900)
+def v_negate_chain(g, c, p, ev, k):
+    """무효로 할 발동의 위협도 합 — 상대 것은 +, 자신 것은 −(앞선 처리 대기 효과 전부를 무효로 하면 자신 것도 사라진다)"""
+    return sum(lk.eff.threat * (1 if lk.player != p else -1) for lk in g.chain if not lk.negated and _link_ok(lk, k, g)) / 10.0
+
+
+@block('negate_chain', can=can_negate_chain, val=v_negate_chain, threat=900)
 def do_negate_chain(g, c, p, l, k):
     """A12 발동 무효 — 이 발동보다 먼저 체인에 오른 발동 중 조건(from_zone 등)에 맞는 것 전부"""
     idx = g.chain.index(l) if l in g.chain else len(g.chain)
