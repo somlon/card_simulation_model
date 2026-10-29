@@ -18,9 +18,11 @@ const { chromium } = require('playwright');
   await p.evaluate(() => { document.querySelector('#g-stage [data-a=speed]').value = '8'; document.querySelector('#g-stage [data-a=speed]').dispatchEvent(new Event('change')); });
   await p.click('#g-start');
   let shot = false, clicks = 0, sides = 0; const splits = []; const t0 = Date.now();
+  const sideRows = new Set();   // 대전 중 기록 패널의 전략 덱 교체 줄 — 상대(AI) 교체 내용은 감춰져야 한다
   while (Date.now() - t0 < (+process.env.LIMIT || 240000)) {
     const st = await p.textContent('#g-status');
     if (st.includes('대전 끝')) break;
+    (await p.$$eval('#g-stage .log .row', rs => rs.map(r => r.textContent).filter(t => t.includes('전략 덱 교체')))).forEach(t => sideRows.add(t.slice(0, 100)));
     const sw = await p.$$('#g-stage .decision.side details:not([open]) summary');   // 전략 덱 교체: 넣을 카드 하나를 펼친다
     if (sw.length && Math.random() < 0.6) { await sw[Math.floor(Math.random() * sw.length)].click(); sides++; }
     const opts = await p.$$('#g-stage .decision .opt:visible');
@@ -40,6 +42,6 @@ const { chromium } = require('playwright');
   const status = await p.textContent('#g-status');
   await p.click('header .tab[data-v=learn]'); await p.waitForTimeout(800);
   await p.screenshot({ path: `win_learn_${W}.png` });
-  console.log(JSON.stringify({ clicks, sides, splits, status, errs: errs.slice(0, 10) }));
+  console.log(JSON.stringify({ clicks, sides, splits, sideRows: [...sideRows], status, errs: errs.slice(0, 10) }));
   await b.close();
 })();
