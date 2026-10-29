@@ -209,7 +209,7 @@ function finishLive(d) {
 // 판단 패널
 const DEC_TITLE = [[/^진행 행동$/, '진행 단계 — 할 행동을 고르세요'], [/^정비 행동$/, '정비 단계 — 할 행동을 고르세요'], [/^우선권$/, '우선권 — 효과를 발동할까요?'],
   [/^대응$/, '체인 대응 — 응답할까요?'], [/^공격$/, '전투 — 공격할 몬스터와 대상'], [/^대상:(.+)$/, '대상 고르기 ($1)'], [/^트리거:(.+)#(\d+)$/, '「$1」 $2번 트리거 — 발동할까요?'],
-  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
+  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^시작 패 배분\((선공|후공)\)$/, '시작 패($1) — 메인 덱 · 상급 덱에서 몇 장씩 뽑을까요?'], [/^시작 패 재배분\((선공|후공)·(\d+)장·.*\)$/, '멀리건($1) — 되돌린 $2장을 메인 · 상급에서 몇 장씩 다시 뽑을까요? (처음과 달라도 됩니다)'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
 function decTitle(q) { for (const [re, t] of DEC_TITLE) if (re.test(q)) return q.replace(re, t); return q; }
 function optText(lab) {
   let m;
@@ -459,6 +459,17 @@ $('nn-reset').onclick = async () => {
   try { NN.st = await api('nn/reset', {}); BOOT.nn = NN.st; nnRender(); toast('기본 모델로 되돌렸습니다.'); } catch (e) { toast(e.message); }
 };
 $('nn-folder').onclick = async () => { const r = await api('open', {what: 'nn'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
+$('nn-export').onclick = async () => {
+  const r = await api('nn/export', {}).catch(e => ({ok: false, err: e.message}));
+  $('nn-share').textContent = r.ok ? `내보냄: ${r.path}\nGitHub 웹에서 저장소의 nny_sim/learned/drl/human_nn/ 폴더에 이 파일을 올려 주세요.` : (r.err || '아직 신경망 표본이 없습니다.');
+};
+$('nn-git').onclick = async () => {
+  $('nn-git').disabled = true; $('nn-share').textContent = 'GitHub에 올리는 중…';
+  try { const r = await api('nn/git', {}); $('nn-share').textContent = r.msg + (r.ok ? '' : (r.log ? '\n' + r.log.slice(-2).join('\n').slice(-600) : '')); }
+  catch (e) { $('nn-share').textContent = e.message; }
+  finally { $('nn-git').disabled = false; }
+};
+$('nn-exdir').onclick = async () => { const r = await api('open', {what: 'export'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
 nnAvail(); if (NN.st && NN.st.numpy && NN.st.numpy.ok === null) setTimeout(nnRefresh, 1500);   // numpy 확인이 끝나면 AI 종류 선택을 다시 정한다
 $('g-hints').onchange = () => api('settings', {hints: $('g-hints').checked}).catch(() => {});
 stages.watch.fit();

@@ -187,6 +187,16 @@
     </div>
     <div style="margin-top:10px"><div class="progress"><b id="nn-bar"></b></div><div class="muted" id="nn-msg" style="margin-top:4px"></div></div>
     <div id="nn-result" style="margin-top:10px"></div>
+    <h2 class="sec" style="margin-top:14px">신경망 나누기 (GitHub)</h2>
+    <div class="bigtxt muted">쌓인 신경망 표본과 내 모델을 저장소에 모으면, 저장소에서 여러 사람의 표본으로 기본 모델을 다시 학습합니다(<code>merge_nn.py</code>).
+      ① <b>내보내기</b>: zip 파일 하나를 만들어 두었다가 GitHub 웹에서 <code>nny_sim/learned/drl/human_nn/</code> 폴더에 올립니다(인터넷은 올릴 때만).
+      ② <b>GitHub에 올리기</b>: 인터넷 · git · GitHub 로그인이 있으면 <code>data/human-nn-컴퓨터이름</code> 브랜치에 바로 올립니다(저장소 주소 · 기준 브랜치는 「학습」 화면 설정).</div>
+    <div class="row2" style="margin-top:8px">
+      <button class="btn" id="nn-export">신경망 내보내기(zip)</button>
+      <button class="btn" id="nn-git">GitHub에 올리기</button>
+      <button class="btn sm" id="nn-exdir">내보낸 폴더 열기</button>
+    </div>
+    <div class="muted" id="nn-share" style="margin-top:6px;white-space:pre-wrap"></div>
   </div>
 </div>
 <script src="board.js"></script>

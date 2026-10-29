@@ -17,7 +17,7 @@ const { chromium } = require('playwright');
   await p.selectOption('#g-first', 'me');
   await p.evaluate(() => { document.querySelector('#g-stage [data-a=speed]').value = '8'; document.querySelector('#g-stage [data-a=speed]').dispatchEvent(new Event('change')); });
   await p.click('#g-start');
-  let shot = false, clicks = 0, sides = 0; const t0 = Date.now();
+  let shot = false, clicks = 0, sides = 0; const splits = []; const t0 = Date.now();
   const sideRows = new Set();   // 대전 중 기록 패널의 전략 덱 교체 줄 — 상대(AI) 교체 내용은 감춰져야 한다
   while (Date.now() - t0 < (+process.env.LIMIT || 240000)) {
     const st = await p.textContent('#g-status');
@@ -29,6 +29,8 @@ const { chromium } = require('playwright');
     if (opts.length) {
       if (!shot && clicks > 6) { await p.screenshot({ path: `win_play_${W}.png` }); shot = true; }
       const texts = await Promise.all(opts.map(o => o.textContent()));
+      const q = await p.textContent('#g-stage .decision .q');   // 시작 패 · 멀리건 메인 · 상급 배분: 제목 · 이름표를 남기고 처음 한 번 찍는다
+      if (/시작 패|멀리건\(/.test(q)) { if (!splits.length) await p.screenshot({ path: `win_split_${W}.png` }); splits.push(q + ' :: ' + texts.join(' | ')); }
       let i = Math.floor(Math.random() * opts.length);
       const end = texts.findIndex(t => t.includes('끝내기') || t.includes('교체 끝')); if (end >= 0 && Math.random() < 0.35) i = end;
       await opts[i].click(); clicks++;
@@ -40,6 +42,6 @@ const { chromium } = require('playwright');
   const status = await p.textContent('#g-status');
   await p.click('header .tab[data-v=learn]'); await p.waitForTimeout(800);
   await p.screenshot({ path: `win_learn_${W}.png` });
-  console.log(JSON.stringify({ clicks, sides, sideRows: [...sideRows], status, errs: errs.slice(0, 10) }));
+  console.log(JSON.stringify({ clicks, sides, splits, sideRows: [...sideRows], status, errs: errs.slice(0, 10) }));
   await b.close();
 })();

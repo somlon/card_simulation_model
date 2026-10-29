@@ -35,6 +35,7 @@ class Recorder(list):
         self.cards = {}                       # uid → [카드 이름, 주인 자리]
         self.pending = []                     # 다음 기록 줄에 붙일 연출
         self.chain_prev = []
+        self.activating = []                  # 발동 중인 고리 [(카드, 효과, 자리, 그때 체인 길이)] — 엔진은 발동 줄을 체인에 넣기 전에 남긴다
 
     def append(self, e):
         super().append(e)
@@ -73,23 +74,31 @@ class Recorder(list):
         return d
 
     def state(self, g):
-        from engine import link_targets
         P = []
         for pl in g.p:
             P.append({'hp': pl.hp, 'hand': [self.reg(c) for c in pl.hand], 'main': len(pl.main), 'upper': len(pl.upper),
                       'grave': [self.reg(c) for c in pl.grave], 'ban': [self.reg(c) for c in pl.banish],
                       'm': [self.cell(g, c) for c in pl.m], 's': [self.cell(g, c) for c in pl.s], 'sk': self.cell(g, pl.skill)})
-        ch = []
-        for l in g.chain:   # [카드, 효과 번호, 발동한 자리, 무효, 대상 카드들(engine.link_targets — 발동 때 고른 「대상」)]
-            lk = [self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))]
-            to = [self.reg(x) for x in link_targets(l) if x is not l.card]
-            if to: lk.append(to)
-            ch.append(lk)
-        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': ch,
+        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': self.chain_state(g),
               'sh': self.cell(g, g.shared), 'so': g.shared_owner, 'fz': self.cell(g, g.fieldz)}
         if g.shared is not None: st['sc'] = g.shared.controller
         if g.fieldz is not None: st['fc'] = g.fieldz.controller
         return st
+
+    def chain_state(self, g):
+        """체인 고리 [카드, 효과 번호, 발동한 자리, 무효, 대상 카드들(engine.link_targets — 발동 때 고른 「대상」)].
+        engine.Game.activate 는 「… 발동 — 체인 k」 줄과 코스트를 고리를 체인에 넣기 전에 처리한다 → 발동 중인 고리를 체인 끝에 덧붙여
+        그 사이의 프레임에도 고리 k 가 보이게 한다(처리는 높은 번호부터 — 체인 패널 · res 연출이 이 고리를 찾는다)"""
+        from engine import link_targets
+        ch = []
+        for l in g.chain:
+            lk = [self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))]
+            to = [self.reg(x) for x in link_targets(l) if x is not l.card]
+            if to: lk.append(to)
+            ch.append(lk)
+        for c, e, p, n0 in self.activating:
+            if len(g.chain) <= n0: ch.append([self.reg(c), e.num, p, 0])
+        return ch
 
     def snapshot(self):
         g = self.game
@@ -143,8 +152,14 @@ def install_hooks():
         if isinstance(log, Recorder): log.game = self
 
     def activate(self, p, c, e, ev=None):
-        if isinstance(self.log, Recorder): self.log.pending.append({'t': 'act', 'u': self.log.reg(c), 'n': e.num, 'p': p})
-        return o_act(self, p, c, e, ev)
+        log = self.log
+        if not isinstance(log, Recorder): return o_act(self, p, c, e, ev)
+        log.pending.append({'t': 'act', 'u': log.reg(c), 'n': e.num, 'p': p})
+        if self is not log.game: return o_act(self, p, c, e, ev)
+        log.activating.append((c, e, p, len(self.chain)))
+        try: return o_act(self, p, c, e, ev)
+        finally:   # 고리가 체인에 들어갔으면(대상 포함) 다음 처리 줄이 찾을 직전 체인도 지금 체인으로
+            log.activating.pop(); log.chain_prev = log.chain_state(self)
 
     def attack(self, a, target):
         if isinstance(self.log, Recorder):
