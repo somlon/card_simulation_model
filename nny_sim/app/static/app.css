@@ -279,3 +279,14 @@ table.t td.n{text-align:right;font-variant-numeric:tabular-nums}
 .bigtxt code{background:var(--panel2);padding:1px 5px;border-radius:4px}
 .progress{height:8px;background:#1d2538;border-radius:999px;overflow:hidden}
 .progress b{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}
+/* 신경망 학습 */
+header.nav .nnbtn{margin-left:8px;border-color:#5b4a8f;background:#241d3d;font-weight:800}
+header.nav .nnbtn:hover{background:#2f2650}
+.modal{position:fixed;inset:0;background:#05070cd0;z-index:300;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal[hidden]{display:none}
+.modal-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;width:min(980px,100%);box-shadow:0 20px 60px #000c}
+.modal-box h2.mt{margin:0;font-size:17px}
+.cols.nncols{grid-template-columns:minmax(0,1fr)}
+@media (min-width:800px){.cols.nncols{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.nnbig{font-size:22px;font-weight:900}
+.nnbig small{font-size:12px;color:var(--muted);font-weight:600;margin-left:4px}

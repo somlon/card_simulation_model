@@ -18,6 +18,8 @@ from engine import StalledGame
 
 import record as REC
 import tables as T
+import nnai as NA
+import nn_samples as NS
 from human import Abort, Bridge, HumanAI
 
 SAFE = re.compile(r'[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _\-().!]+')
@@ -234,8 +236,10 @@ class Store:
 class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리(0) 여부"""
 
-    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title=''):
+    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='',
+                 ai_kind='table', nn_model=None, nn_label='', nn_record=False):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names; self.human = human
+        self.ai_kind = ai_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_record = nn_record; self.nn_saved = 0   # P2(AI) 종류: 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base')
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
         self.learn = learn and human; self.hints = hints; self.title = title
         self.bridge = Bridge(); self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
@@ -255,14 +259,20 @@ class LiveMatch:
         REC.install_hooks()
         meta = {'decks': [d['스킬'] for d in self.decks], 'names': self.names, 'seed': self.seed, 'first': self.first,
                 'ai': 'table', 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
-        rounds = []; mw = None
+        if self.ai_kind == 'nn': meta['ai2'] = 'nn:' + (self.nn_label or 'model')
+        rounds = []; mw = None; tap = None
         try:
             table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
             self.table = table; self.status = 'running'
+            actor = NA.load_actor(self.nn_model) if self.ai_kind == 'nn' else None
+            if self.learn and self.nn_record: tap = NS.Tap()   # 신경망 학습 표본(두 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포) — numpy 를 쓸 수 있을 때만
 
             def make_ai(d):
-                if self.human and d['_seat'] == 0: return HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
-                return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
+                seat = d['_seat']
+                if self.human and seat == 0: ai = HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
+                elif actor is not None and seat == 1: ai = NA.make_ai(d['스킬'], actor, table)
+                else: ai = P.LearnedAI(d['스킬'], learn=self.learn, table=table)
+                return tap.attach(ai, seat, table) if tap else ai
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
                 if self.human and i == 0: return human_side(self.bridge, decks, i, wins, len(rnds) + 1, log)
@@ -285,6 +295,9 @@ class LiveMatch:
                                                        'rounds': [[r['winner'], r['reason']] for r in meta['rounds']]}, self.table.deltas)
                     self.learned = len(self.table.deltas)
                     if self.store.settings().get('auto_push'): threading.Thread(target=self.store.auto_push, daemon=True).start()
+                if tap is not None:
+                    _, self.nn_saved = tap.save(self.store.dir, mw, {'decks': meta['decks'], 'human_seat': 0, 'ai2': meta.get('ai2', 'table'),
+                                                                      'seed': self.seed, 'status': self.status})
                 if self.rec.frames: self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
             except Exception:
                 self.error = (self.error or '') + '\n저장 오류:\n' + traceback.format_exc()[-2000:]
@@ -304,7 +317,7 @@ class LiveMatch:
         return {'id': self.id, 'status': self.status, 'frames': frames, 'f_from': f_from, 'states': states, 's_from': s_from,
                 'cards': {str(u): v for u, v in cards}, 'c_from': c_from, 'pending': self.bridge.pending if self.human else None,
                 'result': self.result if self.status not in ('starting', 'running') else None, 'error': self.error,
-                'replay_id': self.replay_id, 'learned': self.learned, 'names': self.names, 'human': self.human}
+                'replay_id': self.replay_id, 'learned': self.learned, 'nn_saved': self.nn_saved, 'names': self.names, 'human': self.human}
 
     def abort(self):
         self.bridge.abort()

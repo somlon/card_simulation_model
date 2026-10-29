@@ -12,6 +12,21 @@
   대전 중에는 AI의 패 · 뒷면 카드 · 드로우한 카드 이름 · 판단 줄을 가리고, 끝나면 모두 공개(복기).
 - **덱 편집**: 카드 풀(이미지)에서 덱을 짜고 `deck.validate` 규칙 검사 후 저장 → AI 대전 · 녹화에 사용.
 - **학습**: 「AI 학습」을 켜고 대전하면, 매치가 끝날 때 AI와 사람의 판단 기록이 학습표에 더해집니다(아래).
+- **🧠 신경망 학습**(머리 막대 — 홈 화면 포함 모든 화면): 사람 대전에서 쌓인 신경망 표본으로 신경망 AI를 내 컴퓨터에서 학습합니다(아래).
+  AI 대전의 「AI 종류」를 「신경망 AI」로 고르면 내 모델(없으면 기본 모델)과 대전합니다.
+
+## 신경망 AI · 로컬 신경망 학습
+
+- **신경망**: 저장소의 DRL 배우망(`drl/model.py` — 판단 후보마다 점수를 매기는 구조). 대국은 `drl.agent.DRLAI`
+  (학습표 AI의 후보 생성 · 지침은 그대로, 고르기만 신경망). 전략 덱 교체는 학습표 규칙(`match.side_swap`).
+- **기본 모델**: `learned/drl/base_v2/model_best.npz`(저장소 data 계열) — 지금 엔진 · 11개 덱에서 학습표를 교사로 모방 학습(3,000매치) + 자기 대국 PPO(`python -m drl.train`, PyTorch).
+- **표본**(`nn_samples.py`): 「AI 학습」을 켠 나 vs AI 대전에서 두 자리의 판단 = 게임 상태 관측 · 후보 특징 · 고른 후보 · 그 라운드 승패 ·
+  교사 분포(사람 대전 기록 `human_games.jsonl` 이 반영된 로컬 학습표의 후보 값). 사용자 폴더 `learning/nn/samples/`(매치당 약 15KB).
+  학습표 기록(판단 키 · 승패)에는 게임 상태가 없어서 신경망 표본은 따로 쌓는다 — 학습표 기록은 교사 분포로 신경망 학습에 들어간다.
+- **학습**(`nn_train.py`, numpy만 — 배포본에 PyTorch 없음): 학습할 때마다 기본 모델에서 시작해 쌓인 표본 전체로 다시 학습한다.
+  손실 = `C_TEACHER`·KL(교사 ‖ π) + `C_BASE`·KL(기본 모델 ‖ π) − `C_RESULT`·(라운드 승패 ±1)·log π(고른 후보), Adam · 기울기 노름 상한,
+  매치 10개 중 1개꼴을 검증용으로 떼어 검증 손실이 가장 낮은 에포크의 가중치를 남긴다. 결과는 `learning/nn/model.npz`(이전 모델은 `backups/`).
+  `tests/nn_grad_check.py`: 순전파 = NumpyActor, 역전파 = PyTorch 학습망 자동 미분, 손실 기울기 = 수치 미분.
 
 ## 학습 흐름 (사람 대전 → 저장소)
 
@@ -33,7 +48,7 @@ python3 nny_sim/app/make_library.py --sim <sim(전체 표 없는 사본)> --spli
 # 개발 실행(리눅스) — <sim> 에 learned/policy.json.xz 가 있으면 import 때 4GB를 읽으므로 그 파일을 뺀 사본을 쓴다
 python3 nny_sim/app/main.py --sim <sim> --split <split> --cards <cards> --library <library> --user <사용자 폴더> --port 8765
 # Windows 배포본(우분투: gcc-mingw-w64-x86-64 · Pillow)
-python3 nny_sim/app/build_windows.py --sim <실행 폴더(전체 표 포함)> --nupkg python.3.13.17.nupkg --out <out> --split <split> --library <library>
+python3 nny_sim/app/build_windows.py --sim <실행 폴더(전체 표 포함)> --nupkg python.3.13.17.nupkg --numpy-wheel numpy-2.4.6-cp313-cp313-win_amd64.whl --out <out> --split <split> --library <library> [--nn-base <기본 모델.npz>]
 ```
 
 Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https://www.nuget.org/packages/python)(3.13.17)을 씁니다(python.org 는 이 개발 환경 네트워크 정책에 막혀 있음).
@@ -49,6 +64,7 @@ Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https
 | `static/` | 화면: `board.js`(보드 · 재생 부품 — 단일 HTML 재생 파일 `viewer/replay.py` 도 같은 파일을 넣어 씀) · `app.js`(네 화면) |
 | `make_library.py` · `build_assets.py` · `build_windows.py` · `win/` | 기본 재생 기록(`--rerecord` — 기록기를 바꾼 뒤 같은 매치 다시 녹화) · 카드 이미지 · Windows 배포본 |
 | `merge_learning.py` | 저장소 쪽: 사람 대전 학습 기록 → policy 표 |
+| `nnai.py` · `nn_samples.py` · `nn_train.py` | 신경망 AI: 모델 · 학습 작업 / 사람 대전 표본 / numpy 로컬 학습기 |
 | `tests/` | `eq.py`(감싸기가 AI끼리 대전을 바꾸지 않는지 — 같은 시드 기록 비교, `all` 은 모든 덱 쌍) · `backend.py`(가짜 사람 대전 — 하위 선택 · 전략 덱 교체 요청 집계 · 학습 · 재생 저장, `PAIRS=all`) · `app_test.js`(화면 자동 시험, Playwright) |
 
 ## 알려진 한계
@@ -60,6 +76,8 @@ Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https
   제물은 행동 목록의 후보(제물 포함)로 고릅니다. 선택지 이름표는 처리 블록 이름(「서치 1장」 · 「묘지로 보내기 2장」 등)이라 카드 텍스트와 함께 보세요.
 - 놓을 존 · 소환 표시 형식(1.1.1부터): 몬스터 · 마법 카드를 놓을 때 빈 존(몬스터는 빈 공유 존 포함)을 보드에서 눌러 고르고, 소환할 때 앞면 공격 · 앞면 수비를 고릅니다
   (엔진 `Game.pick_zone` — `choose_zone` 을 가진 사람 자리만, AI는 첫 빈칸 그대로). 텍스트가 표시 형식을 정한 소환은 묻지 않습니다.
+- 시작 패 · 멀리건 배분(1.2.x부터): 사람 자리는 시작 패를 메인 덱 · 상급 덱에서 몇 장씩 뽑을지(「메인 k / 상급 n-k」), 멀리건으로 되돌린 장수를 다시 뽑을 때의 배분(처음과 달라도 됨, §4 STEP 6)을 직접 고릅니다.
+  판단 키는 학습표 AI 와 같은 「시작 패 배분(선공|후공)」 · 「시작 패 재배분(…)」(`HumanAI.choose_split` · `mulligan_split`). AI 는 학습표로 재배분을 고릅니다(기본 재생 기록 멀리건 287번 중 171번이 되돌린 카드와 다른 배분).
 - 덱 편집(1.1.1부터): 같은 이름의 카드는 메인 · 상급 합계 · 전략 덱 각각 3장을 넘겨 넣을 수 없고, 전략 덱에는 주 스킬 또는 전략 덱의 스킬 카드 태그에 맞는 카드를 넣을 수 있습니다(`deck.validate`).
   게임 중 전략 덱의 스킬 카드로 바꾸면 새 스킬 태그에 맞지 않는 메인 · 상급 카드가 표시되고, 모두 전략 덱으로 보내기 전에는 「교체 끝」을 할 수 없습니다(AI의 교체 규칙은 그대로).
 - 라운드 사이 전략 덱 교체(1.1.0부터): 사람 덱도 2 · 3라운드 전에 화면에서 교체합니다. 넣을 카드를 펼쳐 뺄 카드를 고르고(한 번에 1:1 하나씩),
