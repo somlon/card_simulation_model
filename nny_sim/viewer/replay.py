@@ -21,6 +21,8 @@ import assets as AS    # noqa: E402
 
 def build_html(recs, out):
     names = {n for rec in recs for n in rec['pool']}
+    # 라운드 사이 전략 덱 교체 화면이 보여 줄 카드(게임에 나오지 않은 전략 덱 카드 포함)
+    names |= {x for rec in recs for fr in rec['frames'] if fr['k'] == 'side' for sw in (fr.get('d') or {}).get('swaps', []) for x in sw[:2]}
     bundle = AS.bundle(names)
     today = datetime.date.today().isoformat()
     recs = [dict(rec, built=today) for rec in recs]

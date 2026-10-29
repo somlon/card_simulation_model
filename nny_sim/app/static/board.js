@@ -8,6 +8,8 @@ const CH = 262, HAND_SCALE = 0.68;
 const PHASES = ['준비', '진행', '전투', '정비', '종료'];
 // 1× 재생의 기록 줄 사이 시간(ms) · 카드 이동 연출 시간 — 사람이 따라가기 쉽게 예전(발동 1000 · 이동 380)의 약 1.6배 (사용자 지시 2026-10-29)
 const BASE_DELAY = {act: 1600, res: 1450, draw: 850, sys: 1100, turn: 1700, round: 3000, end: 3200, side: 2400, decision: 650};
+const SIDE_SWAP_DELAY = 600, SIDE_SWAP_DELAY_MAX = 6;   // 전략 덱 교체 화면: 교체 1장마다 더 보여 주는 시간(ms) · 그 장수 상한
+const SWAP_CARD = {max: 188, min: 92, row: 1500, gap: 18};   // 교체 화면 카드 폭(보드 px) — 한 줄(뺌 · 넣음)의 종류 수에 맞춰 줄인다
 const MOVE_MS = 640, MOVE_MS_MAX = 1100;
 const TOKEN = {x: 1504, y: 926, d: 188};   // 매트의 「주인 토큰」 원(오른쪽 가운데) 중심 · 지름 — 공유 존 마커를 놓는 곳
 const TOKEN_DROP = 300;                    // 마커를 처음 놓을 때 주인 쪽에서 날아오는 거리
@@ -317,7 +319,9 @@ class Stage {
       ov.classList.add('on');
       box.innerHTML = fr.k === 'round' ? `${fr.r}라운드<small>${this.nameHtml(esc(fr.m.replace(/█/g, '').trim().replace(/^\d+라운드\s*—\s*/, '')))}</small>`
         : fr.k === 'end' ? `${fr.r}라운드 종료<small>${this.nameHtml(esc(fr.m.replace(/^■\s*/, '').replace(/^라운드 종료 — /, '')))}</small>`
+        : fr.k === 'side' ? this.sideHtml(fr)
         : `${fr.r}라운드 → ${fr.r + 1}라운드 준비<small>${this.nameHtml(esc(this.shortMsg(fr)))}</small>`;
+      box.classList.toggle('swapbox', fr.k === 'side' && !this.sideHidden(fr) && this.swapsOf(fr).length > 0);
     } else ov.classList.remove('on');
     const prevSt = animate && this.lastRendered >= 0 && this.lastRendered < i ? this.stateAt(this.lastRendered) : null;
     this.drawBars(st, fr, prevSt, i); this.drawTurn(st, fr); this.drawChain(st, fx); this.drawCaption(i); this.drawLogCursor(i);
@@ -433,7 +437,29 @@ class Stage {
     if (fr.k === 'decision') return fr.d ? fr.d.p === 1 || fr.m.startsWith(`판단[${this.names[1]}]`) : fr.m.startsWith(`판단[${this.names[1]}]`);
     return false;
   }
+  // ── 라운드 사이 전략 덱 교체 ──
+  // 실시간 대전 중에는 상대(AI)가 무엇을 빼고 넣었는지 감춘다(실제 게임에서도 상대의 교체 내용은 모른다) — 재생 기록에서는 카드 이미지로 보여 준다
+  sideSeat(fr) { return [0, 1].find(s => fr.m.startsWith(`${this.names[s]} 전략 덱 교체`)) ?? null; }
+  sideHidden(fr) { return !!this.mask && fr.k === 'side' && this.sideSeat(fr) === 1; }
+  swapsOf(fr) { return (fr.d && fr.d.swaps) || []; }
+  sideHtml(fr) {
+    const head = `${fr.r}라운드 → ${fr.r + 1}라운드 준비`, seat = this.sideSeat(fr), sw = this.swapsOf(fr);
+    if (this.sideHidden(fr) || !sw.length) return `${head}<small>${this.nameHtml(esc(this.shortMsg(fr)))}</small>`;
+    const who = seat != null ? `<span class="chip p${seat}">P${seat + 1}</span>${esc(this.names[seat])}` : '';
+    // 뺀 카드 줄 · 넣은 카드 줄(같은 카드는 한 장으로 ×장수) — 스킬 교체는 두 스킬 카드에 「스킬」 표시
+    const tally = names => { const m = new Map(); names.forEach(n => m.set(n, (m.get(n) || 0) + 1)); return [...m]; };
+    const outs = tally(sw.map(x => x[0])), ins = tally(sw.map(x => x[1]));
+    const skill = new Set(sw.filter(x => x[2] === '스킬 교체').flatMap(x => [x[0], x[1]]));
+    const w = Math.max(SWAP_CARD.min, Math.min(SWAP_CARD.max, Math.floor(SWAP_CARD.row / Math.max(outs.length, ins.length)) - SWAP_CARD.gap));
+    const card = ([name, n], cls) => {
+      const p = this.POOL[name] || this.pool[name] || {name}, src = this.face(name);
+      return `<div class="sc ${cls}"><div class="im">${src ? `<img src="${src}" alt="${esc(name)}">` : genCard(p)}${n > 1 ? `<i class="cnt">×${n}</i>` : ''}${skill.has(name) ? '<i class="sk">스킬</i>' : ''}</div><span class="nm">${esc(name)}</span></div>`;
+    };
+    const row = (list, cls, lab) => `<div class="row ${cls}"><b class="lab">${lab}</b>${list.map(x => card(x, cls)).join('')}</div>`;
+    return `${head}<small>${who} 전략 덱 교체 ${sw.length}장</small><div class="swaps" style="--sw:${w}px">${row(outs, 'out', '뺌')}${row(ins, 'in', '넣음')}</div>`;
+  }
   maskMsg(fr, m) {
+    if (this.sideHidden(fr)) return `${this.names[1]} 전략 덱 교체 — 무엇을 바꿨는지는 대전이 끝난 뒤 재생 기록에서 볼 수 있습니다`;
     if (!this.mask || !m.startsWith(this.names[1])) return m;
     if (/드로우|시작 패|멀리건|세트$/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
     return m;
@@ -532,7 +558,10 @@ class Stage {
   go(i, animate) { if (!this.F.length) return; i = Math.max(0, Math.min(this.F.length - 1, i)); this.cur = i; this.render(i, animate); }
   step(dir) { const j = this.nextIdx(this.cur, dir); if (j !== this.cur || this.lastRendered !== j) this.go(j, dir > 0 && j - this.cur <= 40); }
   jumpTurn(dir) { const j = dir > 0 ? this.TURNS.find(t => t > this.cur) : [...this.TURNS].reverse().find(t => t < this.cur); this.go(j ?? (dir > 0 ? this.F.length - 1 : 0), false); }
-  delayOf(i) { return (BASE_DELAY[this.F[i].k] || 700) / this.speed; }
+  delayOf(i) {
+    const fr = this.F[i], sw = fr.k === 'side' && !this.sideHidden(fr) ? Math.min(this.swapsOf(fr).length, SIDE_SWAP_DELAY_MAX) : 0;
+    return ((BASE_DELAY[fr.k] || 700) + sw * SIDE_SWAP_DELAY) / this.speed;
+  }
   caughtUp() { return this.nextIdx(this.cur, 1) === this.cur || this.cur >= this.F.length - 1; }
   tick() {
     if (!this.playing) return;
