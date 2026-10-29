@@ -277,7 +277,7 @@ function genCard(p, big) {
   const st = p.type === '몬스터' ? `<div class="gs">공 ${esc(p.atk ?? 0)} / 수 ${esc(p.def ?? 0)}</div>` : '';
   return `<div class="gen${big ? ' big' : ''}" style="--cc:${cc}"><div class="gn">${esc(p.name)}</div><div class="gt">${esc(typeLine(p))}</div>${st}<div class="gx">${esc(p.text || '')}</div></div>`;
 }
-const faceSrc = p => p && p.code && A.faces[p.code];
+const faceSrc = p => p && A.faces[p.name];
 
 // ── 카드 요소 ──
 const els = new Map();

@@ -2,6 +2,7 @@
 
   python3 viewer/replay.py --a "투기장의 규칙" --b "던전마스터 셔플!" --seed 7 --out 재생.html
   python3 viewer/replay.py --a ... --b ... --seed 7 --matches 5 --out 재생.html   # 시드 7~11 매치 5개를 한 파일에(화면에서 골라 봄)
+  python3 viewer/replay.py --pair 세제 "소원의 분수" --pair "솔루나 아츠" "투기장의 규칙" --out 재생.html   # 대진 여러 개
   python3 viewer/replay.py --list                       # 덱 목록과 카드 이미지 보유 현황
   python3 viewer/replay.py --from-json 기록.json --out 재생.html   # 저장해 둔 기록으로 다시 만들기
 
@@ -18,34 +19,38 @@ import assets as AS    # noqa: E402
 
 
 def build_html(recs, out):
-    codes = {p['code'] for rec in recs for p in rec['pool'].values() if p.get('code')}
-    bundle = AS.bundle(codes)
+    names = {n for rec in recs for n in rec['pool']}
+    bundle = AS.bundle(names)
     today = datetime.date.today().isoformat()
     recs = [dict(rec, built=today) for rec in recs]
     m = recs[0]['meta']
-    title = f"매치 재생 — {m['names'][0]} vs {m['names'][1]}"
+    pairs = {tuple(r['meta']['decks']) for r in recs}
+    title = f"매치 재생 — {m['names'][0]} vs {m['names'][1]}" if len(pairs) == 1 else f"매치 재생 — 대진 {len(pairs)}개 · {len(recs)}매치"
     def js(o): return json.dumps(o, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
     with open(os.path.join(HERE, 'template.html'), encoding='utf-8') as f:
         html = f.read()
     html = html.replace('__TITLE__', title).replace('/*__DATA__*/', f'const REPLAYS={js(recs)};\nconst ASSETS={js(bundle)};', 1)
     with open(out, 'w', encoding='utf-8') as f:
         f.write(html)
-    have = sum(1 for c in codes if c in bundle['faces'])
-    return have, len(codes)
+    have = sum(1 for n in names if n in bundle['faces'])
+    return have, len(names)
 
 
 def list_decks():
     import season as SE, cards as C
-    have = set(AS.card_faces().keys())
+    extra, missing = AS.check(set(C.POOL))
+    have = set(C.POOL) - set(missing)
     for name, d in sorted(SE.load_decks().items()):
         cards = {n for sec in ('메인', '상급', '전략') for _, n in d[sec]} | {d['스킬']}
-        codes = {C.POOL[n]['code'] for n in cards}
-        print(f'{name}: 카드 {len(codes)}종 중 이미지 {len(codes & have)}종')
+        print(f'{name}: 카드 {len(cards)}종 중 이미지 {len(cards & have)}종')
+    if extra: print('시트에 있지만 카드 풀에 없는 이름(쓰지 않음):', ', '.join(extra))
+    if missing: print(f'이미지가 없는 풀 카드 {len(missing)}장:', ', '.join(missing))
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--a', help='P1 덱(스킬 이름)'); ap.add_argument('--b', help='P2 덱(스킬 이름)')
+    ap.add_argument('--pair', nargs=2, action='append', metavar=('P1', 'P2'), help='대진(여러 번 줄 수 있음) — --a/--b 대신')
     ap.add_argument('--seed', type=int, default=1); ap.add_argument('--first', type=int, default=0, help='1라운드 선공 자리 (0 = P1)')
     ap.add_argument('--matches', type=int, default=1, help='매치 수 — 시드를 1씩 늘리고 1라운드 선공을 번갈아 정한다')
     ap.add_argument('--ai', default='table'); ap.add_argument('--sim', default=REC.DEFAULT_SIM)
@@ -60,8 +65,9 @@ def main(argv=None):
     else:
         REC.use_sim(a.sim)
         if a.list: list_decks(); return
-        if not (a.a and a.b and out): ap.error('--a · --b · --out 이 필요함 (덱 목록은 --list)')
-        recs = [REC.record_match(a.a, a.b, seed=a.seed + k, first=(a.first + k) % 2, ai=a.ai) for k in range(a.matches)]
+        pairs = a.pair or ([(a.a, a.b)] if a.a and a.b else [])
+        if not (pairs and out): ap.error('--a · --b(또는 --pair)와 --out 이 필요함 (덱 목록은 --list)')
+        recs = [REC.record_match(x, y, seed=a.seed + k, first=(a.first + k) % 2, ai=a.ai) for x, y in pairs for k in range(a.matches)]
         if save:
             with open(save, 'w', encoding='utf-8') as f: json.dump(recs, f, ensure_ascii=False, separators=(',', ':'))
     if not out: ap.error('--out 이 필요함')
