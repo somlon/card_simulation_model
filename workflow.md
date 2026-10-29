@@ -242,9 +242,11 @@
     → 발동 프레임에 고리 k 가 보이고 res 연출이 고리를 찾음. 확인: res 연출 빠진 프레임 수 ≈ 0, 브라우저에서 체인 2 → 1 순서로 「처리 중」 표시. 기본 재생 기록은 새 기록기로 다시 녹화(make_library --rerecord).
   - 브랜치 · PR(R2): 기준 = 최신 앱 `claude/vibrant-euler-jekich` 21e7740(1.2.0 — 신경망 + 앱 수정 5건). `app/opening-split-mulligan`(① ②) · `app/chain-order-display`(③) — 각각 app/main 으로 PR(#86 · #89 · 신경망 PR 위에 쌓임을 PR 본문에 명시).
     엔진(model) 수정이 필요하면 `model/play-fixes-1029`(#87) 위 새 model 브랜치.
+  - 매시 루틴 「시작 패 비율 · 멀리건 · 체인 표시 자동 이어하기(매시)」(trig_01BWMyq8NMsCRhCCXhRntrtE, 새 세션 session_018Feff9yF96AUnWiPkfo3s1, 매시 13분).
   - 배포본: 이 세션(session_018Feff9p4FHuAiYB3fcz4ve)이 기본 신경망(PPO, 이 컨테이너)을 마치고 v1.2.x 빌드 · wine 시험 · 채팅창 전달 — 새 세션은 ① ~ ③ 브랜치를 푸시하고 커밋을 이 세션에 send_message 로 알림.
   - 진행 기록:
     - 2026-10-29 조사(위) · 세션 압축 → 새 세션에 인계(R5).
+    - 2026-10-29 새 세션 session_018Feff9yF96AUnWiPkfo3s1 인계 받음 — 루틴 trig_01BWMyq8NMsCRhCCXhRntrtE 생성.
 
 - **【진행 중 — 2026-10-29】 앱 수정 5건 — 존 · 표시 형식 선택, 메뚜기여왕 · 아우렘 티라누스, 덱 편집 3장 · 전략 덱 스킬 태그 (사용자 지시 2026-10-29 「최신 버전의 앱에 반영해서 PR과 세션 채팅창에 업로드」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시 원문 요약: ① 사람 vs AI에서 몬스터 · 마법 카드를 놓을 존(그 카드가 놓일 영역 안에서)을 고르지 못함, 몬스터 소환 때 표시 형식(앞면 공격 · 앞면 수비)을 사람이 못 고름
