@@ -21,7 +21,7 @@ def _record(args):
     import season as SE, session as SS
     decks = SE.load_decks()
     names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']
-    store = SS.Store(tmp)
+    store = SS.Store(os.path.join(tmp, str(os.getpid())))   # 작업자마다 따로(같은 임시 폴더의 색인 파일을 동시에 쓰지 않게)
     m = SS.LiveMatch(store, split, [decks[a], decks[b]], names, human=False, seed=seed, first=first, title=f'{names[0]} vs {names[1]}')
     m._run()
     rec = m.replay_dict(); rec['meta']['created'] = time.strftime('%Y-%m-%d')
