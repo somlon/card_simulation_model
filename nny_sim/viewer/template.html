@@ -18,7 +18,7 @@ button,select,input{font-family:inherit;font-size:inherit;color:inherit}
 header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:10px}
 header.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.2px}
 header.top .meta{color:var(--muted);font-size:13px}
-header.top select{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 8px;max-width:100%}
+header.top select{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 8px;max-width:min(460px,100%)}
 /* 배치: 넓은 화면 3열(정보 · 보드 · 카드/기록), 중간 2열, 좁은 화면 1열 */
 .layout{display:grid;gap:10px 14px;align-items:start;grid-template-columns:minmax(0,1fr);
   grid-template-areas:"pb1" "board" "pb0" "ctl" "cap" "turn" "chain" "detail" "log"}
@@ -632,8 +632,10 @@ board.addEventListener('click', () => { selected = null; els.forEach(e => e.el.c
 
 // ── 크기 맞추기 ──
 function fit() {
-  // 보드 높이 한도: 넓은 화면은 머리말 · 조작 막대만, 중간 화면은 플레이어 막대 둘까지 뺀다. 좁은 화면은 가로 폭에 맞춘다
-  const maxH = innerWidth >= 1240 ? innerHeight - 150 : innerWidth >= 980 ? innerHeight - 260 : Infinity;
+  // 보드 높이 한도: 화면 높이에서 머리말 · 조작 막대(중간 화면은 플레이어 막대 둘도)를 뺀다. 좁은 화면은 가로 폭에 맞춘다
+  const top = document.querySelector('.layout').getBoundingClientRect().top + scrollY, ctl = $('controls').offsetHeight + 34;
+  const bars = $('pbar0').offsetHeight + $('pbar1').offsetHeight + 20;
+  const maxH = innerWidth >= 1240 ? innerHeight - top - ctl : innerWidth >= 980 ? innerHeight - top - ctl - bars : Infinity;
   const w = Math.max(280, Math.min(wrap.parentElement.clientWidth, maxH * MAT_W / MAT_H));
   const s = w / MAT_W;
   wrap.style.width = w + 'px'; wrap.style.height = (MAT_H * s) + 'px';
@@ -671,7 +673,7 @@ function load(k) {
   const M = R.meta;
   $('title').textContent = `${NAMES[0]} vs ${NAMES[1]}`;
   $('meta').textContent = `Bo3 매치 · 시드 ${M.seed} · 양쪽 ${aiName(M.ai)} · 결과: ${result(M, NAMES)}${R.built ? ' · 생성 ' + R.built : ''}`;
-  go(0, false);
+  go(0, false); fit();
 }
 const sel = $('matchSel');
 if (REPLAYS.length > 1) {
