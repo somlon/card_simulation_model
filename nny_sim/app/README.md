@@ -49,6 +49,7 @@ Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https
 | `static/` | 화면: `board.js`(보드 · 재생 부품) · `app.js`(네 화면) |
 | `make_library.py` · `build_assets.py` · `build_windows.py` · `win/` | 기본 재생 기록 · 카드 이미지 · Windows 배포본 |
 | `merge_learning.py` | 저장소 쪽: 사람 대전 학습 기록 → policy 표 |
+| `tests/` | `eq.py`(감싸기가 AI끼리 대전을 바꾸지 않는지 — 같은 시드 기록 비교) · `backend.py`(가짜 사람 2매치 — 학습 · 재생 저장) · `app_test.js`(화면 자동 시험, Playwright) |
 
 ## 알려진 한계
 
