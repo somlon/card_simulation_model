@@ -9,6 +9,7 @@ import json, os, time, uuid
 # numpy 는 쓸 때 불러온다 — numpy 를 못 불러오는 컴퓨터에서도 프로그램의 나머지는 돌아가게(nnai.Manager 가 따로 확인)
 
 TEACHER_TEMP = 0.03   # 교사 분포 온도 (drl.train 기본값 teacher_temp 와 같음)
+NOT_NN = ('소환 표시 형식',)   # 신경망 AI(DRLAI)가 신경망으로 고르지 않는 판단(학습표 경로 — policy.LearnedAI.choose_summon_pos) — 표본에 넣지 않는다
 DIR = ('learning', 'nn', 'samples')
 
 
@@ -40,7 +41,7 @@ class Tap:
         orig_choose, orig_end = ai.choose, ai.end_game
 
         def choose(g, p, decision, opts, *a, **kw):
-            want = bool(opts) and len(opts) > 1 and getattr(g, 'script', None) is None and not evaluating()
+            want = bool(opts) and len(opts) > 1 and getattr(g, 'script', None) is None and not decision.startswith(NOT_NN) and not evaluating()
             if not want:
                 return orig_choose(g, p, decision, opts, *a, **kw)
             scale = a[0] if a else kw.get('scale', 40.0)
