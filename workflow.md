@@ -238,6 +238,10 @@
     배포본: 신경망 작업(`claude/vibrant-euler-jekich`)에 위 셋을 합쳐 v1.2.0 빌드 · wine 시험 · 채팅창.
   - 진행 기록:
     - 2026-10-29 시작 — 원인 조사(위), 루틴 생성.
+    - 2026-10-29 구현 · PR 완료 — **#87** `model/play-fixes-1029` 95231f4(Game.pick_zone · SWRM-004 · AMBR-001 zero_ok · deck.skill_allowed, 시험 7개 · 전체 362개 통과,
+      같은 시드 휴리스틱 21판: 메뚜기여왕 없는 대진 기록 동일) · **#88** `data/fix-swrm004-text` 5a9590f(card_pool.json · 카드자료/번성충.md · 덱_등록기.html) ·
+      **#89** `app/play-deck-fixes` 97baeff(1.1.1 — #86 위; HumanAI choose_zone · choose_summon_pos · use_shared, 덱 편집 3장 차단 · 전략 덱 태그, 스킬 교체 정리 — side_skill_test 통과,
+      가짜 사람 11개 덱 오류 0 · 놓을 존 159 · 표시 형식 90, 화면 시험 오류 0). 신경망 브랜치에 합침 `claude/vibrant-euler-jekich` 21e7740(1.2.0). 다음: PPO 끝나면 v1.2.0 빌드 · wine 시험 · 채팅창.
 
 - **【진행 중 — 2026-10-29】 게임 프로그램 「신경망 학습」 버튼 — 로컬 데이터로 신경망 학습 · 신경망 AI 대전 (사용자 지시 2026-10-29 「로컬에서 쌓인 데이터로 신경망 학습을 진행하는 버튼을 홈 화면에 만들어서 유저가 원할 때 신경망 학습을 할 수 있도록」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 매시 루틴 「신경망 학습 버튼 자동 이어하기(매시)」(trig_01M2dNk3Efw6eufGG2GwpSyQ, 이 세션, 매시 23분).
