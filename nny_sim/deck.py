@@ -45,13 +45,21 @@ def parse(text):
         deck[sec].append((int(m.group(1)),c['name']))
     return deck,errs
 
+def skill_allowed(sk):
+    """스킬 카드로 덱에 넣을 수 있는 카드 태그: 스킬에 표기된 태그 + 「공용」(no_common 스킬은 제외) (§3-1)"""
+    return set(sk['skill_tags']) | (set() if sk.get('no_common') else {'공용'})
+
 def validate(deck,policy=True):
     """덱 구축 규칙 검사. policy=False면 시뮬레이션 방침(전략 덱 STRATEGY_FILL장 채우기)은 빼고 규칙만 본다"""
     errs=[];warns=[]
     sk=lookup(deck['스킬'] or '')
     if not sk or sk['type']!='스킬':
         errs.append(f'스킬 카드 「{deck["스킬"]}」을(를) 찾을 수 없음'); return errs,warns
-    allowed=set(sk['skill_tags']) | (set() if sk.get('no_common') else {'공용'})
+    allowed=skill_allowed(sk)
+    # 전략 덱 카드는 주 스킬 또는 전략 덱의 스킬 카드 중 하나의 태그에 맞으면 된다(사용자 지시 2026-10-29 — 그 스킬로 바꾼 뒤 넣을 카드).
+    # 메인 · 상급 덱 카드는 지금 쓰는 주 스킬의 태그에 맞아야 한다
+    st_skills=[BY_NAME[name] for _,name in deck['전략'] if name in BY_NAME and BY_NAME[name]['type']=='스킬']
+    allowed_st=allowed.union(*(skill_allowed(x) for x in st_skills))
     for sec,(lo,hi) in LIMITS.items():
         total=sum(n for n,_ in deck[sec])
         if not lo<=total<=hi: errs.append(f'[{sec}] {total}장 — 허용 범위 {lo}~{hi}장')
@@ -60,8 +68,9 @@ def validate(deck,policy=True):
             if c['type']=='스킬':   # 스킬 카드는 전략 덱에만 넣을 수 있다 (§3-1)
                 if sec!='전략': errs.append(f'[{sec}] 스킬 카드 「{name}」는 메인 · 상급 덱에 넣을 수 없음 (전략 덱만 가능)')
                 continue
-            if not set(c['tags'])&allowed:
-                errs.append(f'[{sec}] 「{name}」 태그 {c["tags"]} — 스킬 「{sk["name"]}」로 사용 불가')
+            if not set(c['tags'])&(allowed_st if sec=='전략' else allowed):
+                who=f'스킬 「{sk["name"]}」' + (' 또는 전략 덱의 스킬 카드' if sec=='전략' and st_skills else '')
+                errs.append(f'[{sec}] 「{name}」 태그 {c["tags"]} — {who}로 사용 불가')
             if c['type']=='몬스터' and not 1<=(c.get('level') or 0)<=10:
                 errs.append(f'[{sec}] 「{name}」 레벨 {c.get("level")} — 레벨은 1~10 (레벨 0은 존재하지 않음, §3-2)')
             elif sec=='메인' and c['deck']!='메인': errs.append(f'[메인] 「{name}」(레벨 {c.get("level")})는 상급 덱 카드')

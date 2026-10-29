@@ -34,10 +34,11 @@ summon_seals('AMBR-001')
 fx('AMBR-001', '2', ACE_GUARD, cont=ACE_GUARD_BLOCKS)
 fx('AMBR-001', '3', f'[지속] 이 카드에 봉인 카운터가 놓여 있는 한, 이 카드는 표시 형식을 변경할 수 없으며 공격할 수 없다. {NOT_ONCE}',
    cont=[card_flag('no_pos_change', **W), card_flag('no_attack', **W)])
-# 4번 「임의의 개수」 — AI는 파괴할 상대 카드 수만큼, 보호용 1개는 남기고(lib._any_n)
+# 4번 「임의의 개수」 — AI는 파괴할 상대 카드 수만큼, 보호용 1개는 남기고(lib._any_n). 「제거한 개수까지」는 0장도 된다:
+# 카운터를 제거하고 아무것도 파괴하지 않을 수 있으므로 상대 필드에 카드가 없어도 카운터가 있으면 발동할 수 있다(사용자 재정 2026-10-29 — zero_ok)
 fx('AMBR-001', '4', '1턴에 1번, 이 카드의 봉인 카운터를 임의의 개수만큼 제거하고 발동. 제거한 개수까지 상대 필드의 카드를 고르고 파괴한다.',
-   cost=[counter(SEAL, op='remove_any', ref='SELF', fit=OPP_FIELD, count_as='N')],
-   do=[destroy(scope=OPP_FIELD, n=('ref', 'N'), upto=True)])
+   cost=[counter(SEAL, op='remove_any', ref='SELF', fit=OPP_FIELD, count_as='N', zero_ok=True)],
+   do=[destroy(scope=OPP_FIELD, n=('ref', 'N'), upto=True, zero_ok=True)])
 
 fx('AMBR-006', '1', '[소환] 이 카드가 특수소환되었을 경우에 발동. 이 카드에 봉인 카운터를 {n}개 놓는다.',
    when=[when('summoned', self=True, how='special')], do=[counter(SEAL, '$n', ref='SELF')])

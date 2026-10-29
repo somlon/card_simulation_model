@@ -312,6 +312,7 @@ def can_subjects(g, c, p, ev, k):
     n = k.get('n', 1)
     if not isinstance(n, int): n = 1
     n = cost_n(g, c, p, k, n)
+    if k.get('upto') and k.get('zero_ok'): return True   # 「…까지」가 0장이어도 되는 문장(카운터만 떼고 아무것도 파괴하지 않음 등)
     return len(pick_pool(g, c, p, k['scope'])) >= (1 if k.get('upto') else n)
 
 
@@ -792,7 +793,8 @@ def can_counter(g, c, p, ev, k):
     if k.get('partial'): return True
     if k.get('total'): return sum(x.counters.get(name, 0) for x in xs) >= num(None, k.get('n', 1))
     need = 1 if op in ('remove_all', 'remove_any') else num(None, k.get('n', 1))
-    if op == 'remove_any' and k.get('fit') is not None and not pick_pool(g, c, p, k['fit']): return False
+    # 「제거한 개수까지 …」의 쓸 곳(fit)이 비어도 되는 문장(zero_ok — 카운터만 떼고 아무것도 하지 않을 수 있음)이 아니면 쓸 곳이 있어야 발동
+    if op == 'remove_any' and k.get('fit') is not None and not k.get('zero_ok') and not pick_pool(g, c, p, k['fit']): return False
     return any(x.counters.get(name, 0) >= need for x in xs)
 
 
@@ -839,7 +841,7 @@ def _any_n(g, c, p, x, k):
     fit = len(pick_pool(g, c, p, k['fit'])) if k.get('fit') is not None else cur
     keep = counter_keep(x, k['name'])
     avail = cur - keep if cur - keep >= 1 else cur
-    return max(0, min(fit, avail))
+    return max(1 if cur else 0, min(fit, avail))   # 발동했으면 1개 이상 뗀다(쓸 곳이 없어도 되는 zero_ok 문장 — 쓸 곳이 있으면 예전과 같음)
 
 
 def _remove_pick(g, c, p, xs, k):
