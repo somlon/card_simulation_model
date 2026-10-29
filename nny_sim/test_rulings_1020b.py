@@ -97,10 +97,12 @@ class TalismanTextChangeTest(unittest.TestCase):
         return g, tal, ace, doll, link
 
     def test_numbers_from_text(self):
-        import cards6
+        # 문턱 · 제거 개수는 카드 텍스트에서 읽는다 — 블록 체계(2026-10-28): 조립표의 문장 틀 구멍 {n} · {m}
+        from blocks import dsl, text
         g = make('희생제', '세제')
         tal = next(x for x in g.spells(1) if x.name == '퇴마의 부적')
-        self.assertEqual(cards6.talisman_numbers(tal), (4, 4))
+        holes = text.match(dsl.TABLE[tal.d['code']]['2'].tmpl, text.sentences(tal.d)['2'])
+        self.assertEqual((holes['n'], holes['m']), (4, 4))
 
     def test_next_effect_negated_and_owner_of_dolls_chooses(self):
         g, tal, ace, doll, link = self._setup(keep='저주인형 - 저주인형')
