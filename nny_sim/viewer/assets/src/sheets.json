@@ -1,0 +1,18 @@
+{
+ "_설명": "사용자 업로드 카드 시트. 시트는 카드를 왼쪽 위부터 가로로 채운 균등 격자다 — assets.py가 칸마다 잘라 카드 코드별 앞면 이미지로 쓴다. codes: [접두어, 첫 번호, 매수] 범위 또는 코드 문자열의 목록(시트에 적힌 순서). 파일이 없는 시트는 건너뛴다(그 카드는 카드 데이터로 그린 틀로 대신).",
+ "mat": "field_mat.png",
+ "back": "card_back.png",
+ "sheets": [
+  {"file": "sheet_comn.webp", "cols": 5, "rows": 2, "codes": [["COMN", 1, 10]]},
+  {"file": "sheet_fgtr.webp", "cols": 4, "rows": 3, "codes": [["FGTR", 1, 11]]},
+  {"file": "sheet_dgms.webp", "cols": 5, "rows": 4, "codes": [["DGMS", 1, 18]]},
+  {"file": "sheet_dtbg.webp", "cols": 6, "rows": 4, "codes": [["DTBG", 1, 23]]},
+  {"file": "sheet_swrm.webp", "cols": 7, "rows": 3, "codes": [["SWRM", 1, 21]]},
+  {"file": "sheet_taxm.webp", "cols": 4, "rows": 3, "codes": [["TAXM", 1, 11]]},
+  {"file": "sheet_wsft.webp", "cols": 7, "rows": 4, "codes": [["WSFT", 1, 27]]},
+  {"file": "sheet_slna.webp", "cols": 6, "rows": 4, "codes": [["SLNA", 1, 24]]},
+  {"file": "sheet_crsd.webp", "cols": 6, "rows": 3, "codes": [["CRSD", 1, 18]]},
+  {"file": "sheet_pkbs.webp", "cols": 5, "rows": 4, "codes": ["PKBS-001", "PKBS-001-1", "PKBS-002", "PKBS-002-1", "PKBS-003", "PKBS-003-1", "PKBS-004", "PKBS-004-1", ["PKBS", 5, 12]]},
+  {"file": "sheet_ambr.webp", "cols": 6, "rows": 4, "codes": [["AMBR", 1, 18], ["UNSL", 1, 5]]}
+ ]
+}
