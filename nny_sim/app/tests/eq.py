@@ -1,15 +1,19 @@
 """사람 자리 감싸기(human.install_block_hooks)가 AI끼리의 대전을 바꾸지 않는지 — 같은 시드 기록 문장 비교.
 python3 eq.py split <sim> <split> <out>      # 감싸기 없이
 python3 eq.py splithook <sim> <split> <out>  # 감싸기 설치 뒤 → 두 out 파일이 같아야 한다(cmp)
-python3 eq.py full <sim> <split> <out>       # 전체 학습표(sim/learned/policy.json.xz, 메모리 약 4GB) — split 과 같아야 한다"""
+python3 eq.py full <sim> <split> <out>       # 전체 학습표(sim/learned/policy.json.xz, 메모리 약 4GB) — split 과 같아야 한다
+끝에 all 을 붙이면 모든 덱 쌍(같은 덱끼리 포함)을 시드 ALL_SEED로 — 감싼 블록(카운터 · 종류별 코스트 · 뒤집기 등)을 쓰는 덱까지"""
 import sys, os, json, random
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = [('투기장의 규칙', '던전마스터 셔플!', 7), ('올인', '희생제', 3), ('세제', '세제', 5)]   # (P1 덱, P2 덱, 시드)
+ALL_SEED = 1
 mode, sim, split, out = sys.argv[1:5]
 sim = os.path.abspath(sim); split = os.path.abspath(split); out = os.path.abspath(out)
 sys.path.insert(0, sim); os.chdir(sim); sys.path.insert(0, APP)
 import season as SE, match as M, policy as P
 decks = SE.load_decks()
+if sys.argv[5:6] == ['all']:
+    names = sorted(decks); CASES = [(a, b, ALL_SEED) for i, a in enumerate(names) for b in names[i:]]
 if mode == 'splithook':
     import human; human.install_block_hooks()
 res = {}
