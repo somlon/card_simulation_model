@@ -264,8 +264,8 @@ class LiveMatch:
                 if self.human and d['_seat'] == 0: return HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
                 return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
 
-            def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 그대로, AI는 학습표 교체 규칙대로
-                if self.human and i == 0: return decks[i]
+            def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
+                if self.human and i == 0: return human_side(self.bridge, decks, i, wins, len(rnds) + 1, log)
                 return M.side_swap(decks[i], decks[1 - i]['스킬'], rng, eps, log, decks[i]['이름'])
             dA = dict(self.decks[0], 이름=self.names[0]); dB = dict(self.decks[1], 이름=self.names[1])
             mw, rounds = M.play_match(dA, dB, self.first, random.Random(self.seed), self.rec, make_ai,
@@ -308,6 +308,48 @@ class LiveMatch:
 
     def abort(self):
         self.bridge.abort()
+
+
+def side_options(act, st, skill):
+    """지금 덱에서 할 수 있는 교체 하나하나 — match.py 교체 규칙 그대로(전략 덱 카드 1:1 · 같은 덱 종류 · 동명 3장 · 스킬 태그 · 고정 카드 제외,
+    스킬 카드는 새 스킬로 활성 덱 전부를 쓸 수 있을 때만)"""
+    out = []
+    for i in M.swap_ins(act, st, skill):
+        for o in M.swap_outs(act, i):
+            out.append({'label': f'「{o}」 → 「{i}」', 'kind': 'card', 'out': o, 'in': i})
+    for n in M.skill_swaps(act, st, skill):
+        out.append({'label': f'스킬 「{skill}」 → 「{n}」', 'kind': 'skill', 'out': skill, 'in': n})
+    return out
+
+
+def human_side(bridge, decks, i, wins, rnd, log):
+    """라운드 사이 사람의 전략 덱 교체 — 할 수 있는 교체 목록을 서버가 만들어 보내고(Bridge 요청 kind 'side'), 하나씩 받아 적용한다.
+    「교체 끝」이면 덱 규칙(deck.validate)을 다시 확인해 새 덱을 돌려주고, 기록에 side_swap 과 같은 'side' 줄을 남긴다"""
+    deck = decks[i]; base = (M.counts_of(deck), M.counts_of(deck, ('전략',)), deck['스킬'])
+    act, st, skill = dict(base[0]), dict(base[1]), base[2]; swaps = []; err = None
+    while True:
+        opts = [{'label': '교체 끝', 'kind': 'done'}] + ([{'label': '처음으로 (교체 모두 취소)', 'kind': 'reset'}] if swaps else [])
+        opts += side_options(act, st, skill)
+        o = opts[bridge.ask({'kind': 'side', 'p': i, 'decision': f'{rnd}라운드 전 전략 덱 교체', 'opts': opts, 'turn': 0, 'phase': '',
+                             'skill': skill, 'opp_skill': decks[1 - i]['스킬'], 'wins': list(wins), 'error': err,
+                             'active': sorted(act.items()), 'strategy': sorted((n, k) for n, k in st.items() if k > 0),
+                             'swaps': [[a, b] for a, b, _ in swaps]})]
+        err = None
+        if o['kind'] == 'reset':
+            act, st, skill = dict(base[0]), dict(base[1]), base[2]; swaps = []
+        elif o['kind'] == 'card':
+            M.apply_card_swap(act, st, o['out'], o['in']); swaps.append((o['out'], o['in'], '사람'))
+        elif o['kind'] == 'skill':
+            st[o['in']] -= 1; st[skill] = st.get(skill, 0) + 1; swaps.append((skill, o['in'], '스킬 교체')); skill = o['in']
+        else:
+            d = M.deck_from(deck, act, st); d['스킬'] = skill
+            errs, _ = D.validate(d, policy=False)
+            if errs: err = '덱 규칙 오류: ' + '; '.join(errs[:3]); continue
+            break
+    pname = deck['이름']
+    log.append({'t': 0, 'ph': '', 'tp': 0, 'k': 'side', 'data': {'player': pname, 'swaps': swaps},
+                'm': f'{pname} 전략 덱 교체: ' + ', '.join(f'「{a}」 → 「{b}」 ({why})' for a, b, why in swaps) if swaps else f'{pname} 전략 덱 교체 없음'})
+    return d
 
 
 class RecordJob:

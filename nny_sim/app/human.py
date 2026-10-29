@@ -4,7 +4,8 @@
 HumanAI 는 choose 에서 후보를 화면(Bridge)으로 보내 사람이 고른 것을 돌려준다. 고른 후보의 학습표 키는 AI와 똑같이 trace 에 남기므로,
 라운드가 끝나면 사람의 판단도 그 덱의 학습표 값으로 쌓인다(LearnedAI.end_game).
 choose 를 거치지 않는 판단 중 선후공 선택 · 덱 위 제외할 덱 · 1턴 1번 [지속] 적용 여부도 사람에게 묻는다.
-카드 블록 안의 일부 하위 선택(J2 선택지, 코스트로 버릴 카드 등 블록 가치로 고르는 것)은 AI와 같은 방식으로 자동 처리된다.
+카드 블록 안에서 엔진이 블록 가치로 자동으로 고르는 하위 선택(J2 선택지 · 코스트로 버릴 카드 · 특수소환할 몬스터 · 카운터 등)도
+고르는 쪽이 사람이면 화면에서 묻는다(install_block_hooks — 엔진은 고치지 않고 감싼다).
 """
 import sys, threading
 
@@ -213,35 +214,248 @@ def uniq_cards(g, who, cards):
     return list(out.items())
 
 
+def human_at(g, who):
+    """who 자리가 사람이고 가치 계산(가정) 중이 아니면 그 HumanAI, 아니면 None"""
+    ai = g.p[who].ai
+    return ai if isinstance(ai, HumanAI) and not evaluating() else None
+
+
+def called_from(*names):
+    """감싼 함수를 부른 엔진 함수 이름이 names 중 하나인가 — 처리(블록 실행부)에서 부를 때만 묻고, 발동 판정 · 가치 계산에서 부를 때는 AI 방식"""
+    return sys._getframe(2).f_code.co_name in names
+
+
+def ask_card(ai, g, who, title, cards):
+    """후보 카드 중 1장을 사람에게 묻는다(이름표가 같은 후보는 하나 — uniq_cards)"""
+    opts = uniq_cards(g, who, cards)
+    return opts[0][1] if len(opts) == 1 else opts[ai._ask(g, who, title, [lab for lab, _ in opts])][1]
+
+
+def ask_cards(ai, g, who, title, pool, n, stop=False):
+    """후보에서 n장(stop이면 0 ~ n장 — 「그만 고르기」)을 1장씩 묻는다"""
+    pool = list(pool); out = []
+    while pool and len(out) < n:
+        opts = uniq_cards(g, who, pool); labs = [lab for lab, _ in opts]
+        if stop: labs = [STOP_LABEL] + labs
+        elif len(opts) == 1: out.append(opts[0][1]); pool.remove(opts[0][1]); continue
+        i = ai._ask(g, who, f'{title} {len(out) + 1}/{n}' if n > 1 else title, labs)
+        if stop:
+            if i == 0: break
+            i -= 1
+        out.append(opts[i][1]); pool.remove(opts[i][1])
+    return out
+
+
+STOP_LABEL = '그만 고르기'
+# J2 선택지 이름표 — 선택지의 처리 블록(blocks.lib BLOCKS · dsl 이름) → 화면에 보일 말. 없는 블록은 블록 이름 그대로
+BLOCK_LABEL = {'search': '서치', 'special': '특수소환', 'draw': '드로우', 'destroy': '파괴', 'release': '릴리스', 'damage': '대미지',
+               'heal': 'HP 회복', 'mill': '덱 위에서 제외', 'counter': '카운터', 'negate_link': '발동 무효', 'negate_card': '효과 무효',
+               'place': '필드에 놓기', 'equip': '장착', 'status': '상태 부여', 'stat': '능력치 변경', 'control': '컨트롤 이동',
+               'deck_pick_grave': '덱에서 묘지로', 'show_set': '보여 주고 세트', 'kinds': '종류별로 이동'}
+MOVE_LABEL = {'grave': '묘지로 보내기', 'banish': '제외', 'deck': '덱으로 되돌리기', 'hand': '패에 넣기'}
+MILL_LABEL = {'grave': '덱 위에서 묘지로'}
+
+
+def option_label(L, l, i, steps):
+    parts = []
+    for b in steps:
+        if b.name in ('branch',): continue
+        if b.name == 'move': lab = MOVE_LABEL.get(b.k.get('dest'), b.k.get('dest', 'move'))
+        elif b.name == 'mill': lab = MILL_LABEL.get(b.k.get('dest'), BLOCK_LABEL['mill'])
+        else: lab = BLOCK_LABEL.get(b.name, b.name)
+        n = b.k.get('n')
+        if n is not None and b.name in ('search', 'special', 'draw', 'move', 'mill', 'destroy', 'release'):
+            try: lab += f' {L.num(l, n)}장'
+            except Exception: pass
+        parts.append(lab)
+    return f'선택지 {i + 1}: ' + (' → '.join(parts) or '처리')
+
+
+class _HookGlobals(dict):
+    """블록 실행부 사본의 전역 이름 — 여기 넣은 이름(max)만 바꾸고 나머지는 blocks.lib 모듈의 지금 값을 읽는다"""
+    def __init__(self, mod, **over): super().__init__(over); self.mod = mod
+
+    def __missing__(self, key): return self.mod.__dict__[key]
+
+
+def run_with_max(L, fn, title):
+    """블록 실행부 fn 안에서 「후보 카드 중 max(…, key=…)」로 자동으로 고르는 곳을, 고르는 쪽(실행부의 p)이 사람이면 묻도록 바꾼 사본.
+    title(실행부의 지역 변수 → 질문 문구). 엔진 코드를 옮겨 적지 않고 같은 코드 객체를 다른 전역 이름으로 실행한다"""
+    import builtins, types
+    def pick_max(*a, **kw):
+        if len(a) == 1 and 'key' in kw and not kw.get('default'):
+            f = sys._getframe(1); loc = f.f_locals
+            xs = list(a[0]); g = loc.get('g'); p = loc.get('p')
+            if g is not None and p is not None and len(xs) > 1 and all(isinstance(x, L.Card) for x in xs):
+                ai = human_at(g, p)
+                if ai: return ask_card(ai, g, p, title(loc), xs)
+        return builtins.max(*a, **kw)
+    return types.FunctionType(fn.__code__, _HookGlobals(L, max=pick_max, __builtins__=builtins), fn.__name__, fn.__defaults__, fn.__closure__)
+
+
 _HOOKED = False
 
 
 def install_block_hooks():
-    """카드 블록 안에서 자동으로 고르던 것 중 「카드 n장 고르기」(blocks.lib.pick_cards — 코스트 · 대상 · 소환할 카드 등)와
-    「서치할 카드」(search 블록)를, 고르는 쪽이 사람이면 화면에서 묻도록 감싼다. AI의 고르기 · 가치 계산(가정)은 그대로"""
+    """카드 블록 안에서 자동으로 고르던 하위 선택을, 고르는 쪽이 사람이면 화면에서 묻도록 감싼다. AI의 고르기 · 가치 계산(가정)은 그대로.
+    모듈 함수는 L.<함수>를 바꾸고(블록 실행부가 전역 이름으로 부름), 블록 실행부는 L.BLOCKS[이름]의 run을 바꾼다
+    (카드 효과 코드 생성이 첫 게임 때 run을 붙잡아 캐시하므로 첫 게임 전에 설치)"""
     global _HOOKED
     if _HOOKED: return
     import blocks.lib as L
+
+    def set_run(name, run): L.BLOCKS[name] = L.BLOCKS[name]._replace(run=run)
+
+    # 「카드 n장 고르기」(코스트 · 대상 · 처리 때 고르는 카드 — 고르는 사람 chooser 'opp'면 상대)
     orig_pick = L.pick_cards
 
     def pick_cards(g, c, p, pool, n, k):
         who = p if k.get('chooser', 'self') == 'self' else 1 - p
-        ai = g.p[who].ai; pool = list(pool)
-        if not isinstance(ai, HumanAI) or evaluating() or n <= 0 or len(pool) <= n: return orig_pick(g, c, p, pool, n, k)
-        out = []
-        while pool and len(out) < n:
-            opts = uniq_cards(g, who, pool)
-            x = opts[0][1] if len(opts) == 1 else opts[ai._ask(g, who, f'「{c.name}」 카드 고르기 {len(out) + 1}/{n}', [lab for lab, _ in opts])][1]
-            out.append(x); pool.remove(x)
-        return out
+        pool = list(pool); ai = human_at(g, who)
+        if not ai or n <= 0 or len(pool) <= n: return orig_pick(g, c, p, pool, n, k)
+        return ask_cards(ai, g, who, f'「{c.name}」 카드 고르기', pool, n)
     L.pick_cards = pick_cards
 
+    # 처리 때 고르는 카드: AI만의 고르기 보조(feeds — 버린 카드를 뒤 처리에 쓰기 · spare — 뒤 처리에 쓸 카드 남기기)는 사람에게는 빼고 그대로 고르게
+    orig_subjects = L.subjects
+
+    def subjects(g, c, p, l, k):
+        q = L.payer(g, p, k) if k.get('cost') and k.get('transfer') else p
+        if (k.get('feeds') is not None or k.get('spare') is not None) and human_at(g, q):
+            k = {x: v for x, v in k.items() if x not in ('feeds', 'spare')}
+        return orig_subjects(g, c, p, l, k)
+    L.subjects = subjects
+
+    # 「원하는 수까지」
+    orig_want = L.want_pick
+
+    def want_pick(g, c, p, pool, k):
+        ai = human_at(g, p)
+        if not ai or not called_from('subjects'): return orig_want(g, c, p, pool, k)
+        return ask_cards(ai, g, p, f'「{c.name}」 원하는 만큼 고르기', pool, len(pool), stop=True)
+    L.want_pick = want_pick
+
+    # 특수소환할 몬스터(처리 때 후보에서)
+    orig_summon = L.summon_pick
+
+    def summon_pick(g, c, p, pool, why, brief=False):
+        ai = human_at(g, p)
+        if not ai or not called_from('do_special'): return orig_summon(g, c, p, pool, why, brief)
+        return ask_card(ai, g, p, f'「{c.name}」 특수소환할 몬스터', pool)
+    L.summon_pick = summon_pick
+
+    # 카운터: 뗄 카드 · 뗄 개수(「임의의 개수」)
+    orig_rm = L._remove_pick
+
+    def remove_pick(g, c, p, xs, k):
+        ai = human_at(g, p)
+        if not ai or not called_from('do_counter'): return orig_rm(g, c, p, xs, k)
+        return ask_card(ai, g, p, f'「{c.name}」 {k["name"]} 카운터를 뗄 카드', xs)
+    L._remove_pick = remove_pick
+    orig_any = L._any_n
+
+    def any_n(g, c, p, x, k):
+        ai = human_at(g, p); cur = x.counters.get(k['name'], 0)
+        if not ai or not called_from('do_counter') or cur <= 1: return orig_any(g, c, p, x, k)
+        return 1 + ai._ask(g, p, f'「{c.name}」 {x.name}에서 뗄 {k["name"]} 카운터 수', [f'{i}개' for i in range(1, cur + 1)])
+    L._any_n = any_n
+
+    # 블록 실행부 안의 max(후보, key=…) 자동 고르기
+    set_run('counter', run_with_max(L, L.BLOCKS['counter'].run,
+                                    lambda loc: f'「{loc["c"].name}」 {loc["name"]} 카운터를 {"놓을" if loc["op"] == "add" else "뗄"} 카드'))
+    set_run('deck_pick_grave', run_with_max(L, L.BLOCKS['deck_pick_grave'].run, lambda loc: f'「{loc["c"].name}」 메인 덱에서 묘지로 보낼 카드'))
+    set_run('flip_pick', run_with_max(L, L.BLOCKS['flip_pick'].run, lambda loc: f'「{loc["c"].name}」 앞면 표시로 뒤집을 몬스터'))
+
+    # 레벨 · 속성 부여의 대상(picker 'mark' — AI는 족보 계획으로): 사람은 후보에서 직접
+    orig_pick_run = L.BLOCKS['pick'].run
+
+    def pick_run(g, c, p, l, k):
+        if k.get('picker') == 'mark' and human_at(g, p): k = {x: v for x, v in k.items() if x != 'picker'}
+        return orig_pick_run(g, c, p, l, k)
+    set_run('pick', pick_run)
+
+    # J2 「A하거나 B한다」 — 고르는 사람(chooser 'opp'면 상대)
+    orig_opt = L.best_option
+
+    def best_option(g, c, p, l, k):
+        who = 1 - p if k.get('chooser') == 'opp' else p
+        ai = human_at(g, who)
+        if not ai: return orig_opt(g, c, p, l, k)
+        ev = l.ctx.get('ev')
+        ok = [i for i, o in enumerate(k['options']) if L.opt_ok(g, c, p, ev, o)]
+        if len(ok) <= 1: return orig_opt(g, c, p, l, k)
+        i = ok[ai._ask(g, who, f'「{c.name}」 선택지', [option_label(L, l, i, k['options'][i]) for i in ok])]
+        g.L(f'판단[{g.pname(who)}] {c.name}: 선택지 {i + 1} (사람)', 'decision')
+        return i
+    L.best_option = best_option
+
+    # 「「A」 · 「B」 … 카드를 각각 n장씩 / 합계 n장(같은 종류 cap장까지)」 코스트
+    orig_kinds = L.kinds_pick
+
+    def kinds_pick(g, c, p, k):
+        xs = orig_kinds(g, c, p, k)
+        ai = human_at(g, p)
+        if xs is None or not ai or not called_from('do_kinds'): return xs
+        return kinds_ask(L, ai, g, c, p, k) or xs
+    L.kinds_pick = kinds_pick
+
+    # 「덱에서 X n장을 골라 상대에게 보여 준다」 — 보여 줄 카드
+    orig_show = L.BLOCKS['show_set'].run
+
+    def show_run(g, c, p, l, k):
+        ai = human_at(g, p)
+        if not ai: return orig_show(g, c, p, l, k)
+        cs = L.pick_pool(g, c, p, k['scope'], l)
+        if len(cs) < k['show'] or not g.free_s(p): return orig_show(g, c, p, l, k)
+        shown = ask_cards(ai, g, p, f'「{c.name}」 상대에게 보여 줄 카드', cs, k['show'])
+        return show_set_with(L, g, c, p, k, shown)
+    set_run('show_set', show_run)
+
+    # 「필드의 뒷면 표시 카드를 전부 원하는 대로 재배치한다」 — 맞바꿀 자신 · 상대 뒷면 카드 쌍
+    orig_fd = L.fd_plan
+
+    def fd_plan(g, c, p):
+        ai = human_at(g, p)
+        if not ai or not called_from('do_rearrange'): return orig_fd(g, c, p)
+        o = 1 - p; out = []; used = set()
+        while True:
+            pairs = []
+            for z in ('m', 's'):
+                mine = [x for x in getattr(g.p[p], z) if x is not None and not x.faceup and not g.immune(x, p, c) and x.uid not in used]
+                theirs = [y for y in getattr(g.p[o], z) if y is not None and not y.faceup and not g.immune(y, p, c) and y.uid not in used]
+                pairs += [(x, y) for x in mine for y in theirs]
+            if not pairs: return out
+            labs = [STOP_LABEL] + [f'{card_label(g, p, x)} ↔ {card_label(g, p, y)}' for x, y in pairs]
+            i = ai._ask(g, p, f'「{c.name}」 맞바꿀 뒷면 카드', labs)
+            if i == 0: return out
+            x, y = pairs[i - 1]; out.append((x, y, 0.0)); used.update((x.uid, y.uid))
+    L.fd_plan = fd_plan
+
+    # [지속] 효과 변경 「자신의 「X」 카드의 효과를 「…」로 변경할 수 있다」 — 바꿀지
+    orig_swapped = L.swapped
+
+    def swapped(g, c, p, l):
+        ai = human_at(g, p)
+        if not ai: return orig_swapped(g, c, p, l)
+        for src in g.srcs_with('rule:effect_swap'):
+            f = src.rules.get('effect_swap')
+            if f is None or src.controller != p or not f(g, src, p, c): continue
+            if ai._ask(g, p, f'「{src.name}」: {c.name}의 효과를 「{f.label}」로 변경할까요?', ['변경', '변경 안 함']) != 0: return False
+            if not g.rule('effect_swap', p, c, use=True, choose=False, why=f'{c.name} 효과 변경'): return False
+            g.L(f'판단[{g.pname(p)}] {src.name}: {c}의 효과를 「{f.label}」로 변경 (사람)', 'decision')
+            from blocks import build
+            build.steps_fn(f.steps)(g, c, p, l)
+            return True
+        return False
+    L.swapped = swapped
+
+    # 일반 서치 — 서치할 카드(같은 이름 · 같은 곳은 같은 선택)
     orig_search = L.BLOCKS['search'].run
 
     def do_search(g, c, p, l, k):
         """search 블록과 같은 처리 — 일반 서치에서 사람이 고르는 것만 다르다(blocks.lib.do_search)"""
-        ai = g.p[p].ai
-        if not isinstance(ai, HumanAI) or k.get('picker') == 'breeding' or k.get('name_ref'): return orig_search(g, c, p, l, k)
+        ai = human_at(g, p)
+        if not ai or k.get('picker') == 'breeding' or k.get('name_ref'): return orig_search(g, c, p, l, k)
         sc = k['scope']; n = L.num(l, k.get('n', 1)); got = []
         for j in range(n):
             cs = g.search_cands(p, lambda y: L.match_card(g, c, p, y, sc) and y not in got, which=L.deck_which(sc))
@@ -256,5 +470,53 @@ def install_block_hooks():
             g.L(f'{g.pname(p)} {k.get("why") or c.name}: {x} 패에 넣음'); got.append(x)
         if k.get('as') and got: L.refs(l)[k['as']] = got[0] if len(got) == 1 else got
         return len(got) == n or (k.get('upto') and bool(got))
-    L.BLOCKS['search'] = L.BLOCKS['search']._replace(run=do_search)
+    set_run('search', do_search)
     _HOOKED = True
+
+
+def kinds_ask(L, ai, g, c, p, k):
+    """kinds_pick 의 사람 판 — 같은 후보 · 매수 규칙(두플리카토르 2배 · 필드 카드는 KINDS_FIELD_MAX 이하)에서 1장씩 묻는다.
+    카드 1장은 한 종류에만 쓴다. 남은 종류를 채울 수 없게 되는 카드는 후보에서 뺀다. 못 고르면 None(AI 고르기)"""
+    m = 2 if k.get('cost') and g.rule('cost_double', p) else 1
+    pool = [x for x in L.cards_in(g, c, p, k['scope']) if not g.on_field(x) or L.value(g, x) <= L.KINDS_FIELD_MAX]
+    groups = list(k['groups'])
+    if 'per' in k:
+        need = {a: k['per'] * m for a in groups}; total = sum(need.values())
+    else:
+        need = {a: k.get('cap', 1) * m for a in groups}; total = k['total'] * m
+    used = {a: 0 for a in groups}; out = []
+
+    def feasible(rest, used):   # 남은 칸을 채울 수 있는가(종류마다 차례로 욕심껏 — 겹치는 카드는 앞 종류에)
+        left = [x for x in pool if x not in rest]; got = 0
+        for a in groups:
+            room = need[a] - used[a]
+            xs = [x for x in left if L.grp(x, a)][:room]
+            got += len(xs); left = [x for x in left if x not in xs]
+        return got >= total - len(rest)
+
+    while len(out) < total:
+        cands = []
+        for x in pool:
+            if x in out: continue
+            a = next((a for a in groups if L.grp(x, a) and used[a] < need[a]), None)
+            if a is None: continue
+            u = dict(used); u[a] += 1
+            if feasible(out + [x], u): cands.append((x, a))
+        if not cands: return None
+        labs = uniq_cards(g, p, [x for x, _ in cands])
+        x = labs[0][1] if len(labs) == 1 else labs[ai._ask(g, p, f'「{c.name}」 코스트로 쓸 카드 {len(out) + 1}/{total}', [lab for lab, _ in labs])][1]
+        a = next(a for y, a in cands if y is x); used[a] += 1; out.append(x)
+    return out
+
+
+def show_set_with(L, g, c, p, k, shown):
+    """show_set 블록의 처리를 사람이 고른 공개 카드로(blocks.lib.do_show_set — 공개 카드 고르기 뒤는 같다: 상대가 무작위로 m장 → 세트 · 나머지 덱으로)"""
+    m = g.flag(c, 'pick_n') or k.get('pick', 1)
+    picks = g.rng.sample(shown, min(m, len(shown)))
+    g.L(f'{g.pname(p)} 덱에서 {", ".join(map(str, shown))} 공개 → {g.pname(1 - p)} 무작위로 {", ".join(map(str, picks))}', 'decision')
+    done = 0
+    for x in picks:
+        if not g.free_s(p): break
+        g._remove(x); g.place_spell(x, p, False); g.L(f'{x} 마법 존에 세트'); done += 1
+    g.shuffle(p)
+    return done > 0

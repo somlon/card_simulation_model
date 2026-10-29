@@ -227,6 +227,7 @@ function drawDecision() {
   if (!p || G.done) return;
   if (box.dataset.rid === String(p.id)) return;
   box.dataset.rid = String(p.id);
+  if (p.kind === 'side') { drawSide(p, box); return; }
   const opts = p.opts.map((o, i) => { const x = optText(o.label); const src = x.card && faceUrl(x.card);
     const eff = x.eff && x.card && POOL[x.card] ? effText(POOL[x.card], x.eff).split('\n')[0] : '';
     return `<button class="opt" data-i="${i}" data-card="${esc(x.card || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(x.t)}${x.s || eff ? `<small>${esc(x.s || '')}${eff ? ' — ' + esc(eff.replace(/^\d+\.\s*/, '')) : ''}</small>` : ''}</span>${o.v != null ? `<span class="v">${o.v}%</span>` : ''}</button>`; }).join('');
@@ -234,12 +235,36 @@ function drawDecision() {
   box.querySelectorAll('.opt').forEach(b => {
     b.onmouseenter = () => { const c = b.dataset.card; if (c) { stages.play.showName(c); stages.play.setHighlight([c]); } };
     b.onmouseleave = () => stages.play.setHighlight([]);
-    b.onclick = async () => {
-      box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]);
-      try { await api('match/answer', {rid: p.id, idx: +b.dataset.i}); } catch (e) { toast(e.message); }
-      G.pending = null; delete box.dataset.rid; box.innerHTML = '';
-    };
+    b.onclick = () => answerDec(p, box, +b.dataset.i);
   });
+  stages.play.fit();
+}
+async function answerDec(p, box, i) {
+  box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]);
+  try { await api('match/answer', {rid: p.id, idx: i}); } catch (e) { toast(e.message); }
+  G.pending = null; delete box.dataset.rid; box.innerHTML = '';
+}
+// 라운드 사이 전략 덱 교체 — 서버가 보낸 할 수 있는 교체(opts)를 넣을 카드별로 묶어 보여 주고, 하나씩 고른다(고를 때마다 서버가 다시 계산)
+function drawSide(p, box) {
+  const cnt = Object.fromEntries(p.active), stc = Object.fromEntries(p.strategy);
+  const btn = (o, i, t, s) => { const src = faceUrl(o.out); return `<button class="opt" data-i="${i}" data-card="${esc(o.out || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(t)}${s ? `<small>${esc(s)}</small>` : ''}</span></button>`; };
+  const groups = {}; const order = [];
+  p.opts.forEach((o, i) => { if (o.kind === 'card' || o.kind === 'skill') { const k = o.kind + ':' + o.in; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push([o, i]); } });
+  const grp = order.map(k => { const [o0] = groups[k][0]; const src = faceUrl(o0.in);
+    const head = o0.kind === 'skill' ? `스킬 교체 → 「${o0.in}」` : `넣기: 「${o0.in}」`;
+    const sub = o0.kind === 'skill' ? '' : `전략 덱 ${stc[o0.in] || 0}장 · 활성 덱 ${cnt[o0.in] || 0}장 · 뺄 카드 ${groups[k].length}종`;
+    return `<details class="sw"><summary data-card="${esc(o0.in)}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(head)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></summary><div class="opts">`
+      + groups[k].map(([o, i]) => btn(o, i, o.kind === 'skill' ? `「${o.out}」 대신 「${o.in}」` : `빼기: 「${o.out}」`, o.kind === 'skill' ? '' : `활성 덱 ${cnt[o.out] || 0}장`)).join('') + '</div></details>'; }).join('');
+  const fixed = p.opts.map((o, i) => o.kind === 'done' || o.kind === 'reset' ? `<button class="opt ${o.kind}" data-i="${i}"><span class="t">${esc(o.label)}</span></button>` : '').join('');
+  const done = p.swaps.length ? '바꾼 카드: ' + p.swaps.map(([a, b]) => `「${a}」 → 「${b}」`).join(', ') : '아직 바꾼 카드 없음';
+  box.innerHTML = `<div class="decision side"><div class="q">${esc(p.decision)} — 승점 ${p.wins[0]}–${p.wins[1]}<small>내 스킬 「${esc(p.skill)}」 · 상대 스킬 「${esc(p.opp_skill)}」 · ${esc(done)}</small></div>`
+    + (p.error ? `<div class="err">${esc(p.error)}</div>` : '') + `<div class="fixed">${fixed}</div>`
+    + `<div class="opts">${grp || '<small class="muted">지금 덱에서 할 수 있는 교체가 없습니다</small>'}</div></div>`;
+  box.querySelectorAll('[data-card]').forEach(b => {
+    b.onmouseenter = () => { const c = b.dataset.card; if (c) { stages.play.showName(c); stages.play.setHighlight([c]); } };
+    b.onmouseleave = () => stages.play.setHighlight([]);
+  });
+  box.querySelectorAll('.opt').forEach(b => { b.onclick = () => answerDec(p, box, +b.dataset.i); });
   stages.play.fit();
 }
 
