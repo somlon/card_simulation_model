@@ -261,6 +261,7 @@
   - 진행 기록:
     - 2026-10-29 시작 — 루틴 생성, `blocks/lib.py` 자동 고르기 지점 조사(위 ① 목록).
     - 2026-10-29 세션 압축 → R5 인계: `claude/vibrant-euler-jekich` ccfc11b(시험 도구 보관 — eq split ↔ splithook ↔ full 동일 재확인). **새 세션이 ①부터 이어서 한다.**
+      → 새 세션 session_018Feff8DNtcUzLSGgPZjYJc · 새 루틴 trig_01BFQdgaALcqmnmhWJyyvC1J(같은 이름, 매시 17분) 생성 2026-10-29. 옛 루틴 trig_017Ut2zBxoU5FagqEyJt9SVC 는 이전 세션이 끈다.
 
 - **【완료 — 2026-10-29, 후속 사용자 확인】 Windows 게임 프로그램(.exe) — 관전 플레이리스트 · AI vs 사람 대전 · 덱 편집 · 사람 대전 학습 (사용자 지시 2026-10-29, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시: 시트 3장 반영(완료 58f6e84 — 풀 200장 · 11개 덱 모두 이미지) 뒤, 재생 영상을 모아 원하는 플레이리스트를 재생하는 싱글플레이 게임식 .exe → GitHub · 채팅창 업로드.
