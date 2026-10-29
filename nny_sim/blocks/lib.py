@@ -1937,13 +1937,34 @@ def v_combo(g, c, p, ev, k):
     return -sum(m.cost for m in r[1]) * UNIT if r else 0.0
 
 
+def combo_pick(g, c, p, k):
+    """족보 코스트의 재료 → [재료] 또는 None. AI는 조합 탐색의 최선(cards8.plan) — 사람 자리는 화면에서 고른다(app/human.py 가 바꿔 씀)"""
+    import cards8
+    r = cards8.plan(g, c, p, k['kind'], fresh=True)
+    return None if r is None else r[1]
+
+
+def grant_pick(g, p, t):
+    """「원하는 레벨과 원하는 속성」을 부여할 때 고르는 (레벨, 속성) — AI는 족보 가치가 가장 큰 것(cards8.plan_grant). 사람 자리는 화면에서"""
+    import cards8
+    _, lv, at = cards8.plan_grant(g, p, t)
+    return lv, at
+
+
+def joker_pick(g, p, c):
+    """짐승조커 「레벨과 속성을 선언한다」 — AI는 족보 가치가 가장 큰 것(cards8.plan_joker). 사람 자리는 화면에서"""
+    import cards8
+    _, lv, at = cards8.plan_joker(g, p, c)
+    return lv, at
+
+
 @block('combo', can=can_combo, val=v_combo, threat=0)
 def do_combo(g, c, p, l, k):
     """족보 코스트 「…를 포함하는 … n장을 릴리스(덱으로 되돌리)고 발동」 — 재료는 AI가 조합 탐색으로 고른다(cards8.plan). 패에서 발동한 것이
     원래 패에서 쓸 수 없는 [신속]이면 패 허가 [지속]의 1턴 횟수를 쓴다(무효화되면 돌려받음 — opt_keys)"""
     import cards8
-    r = cards8.plan(g, c, p, k['kind'], fresh=True)
-    if r is None: return False
+    sel = combo_pick(g, c, p, k)
+    if sel is None: return False
     if l.ctx.get('from_zone') == 'hand' and not k.get('hand_ok'):
         s = hand_quick_src(g, p)
         if s is None: return False
@@ -1951,7 +1972,7 @@ def do_combo(g, c, p, l, k):
         l.ctx.setdefault('opt_keys', []).append(key)   # 엔진이 발동 횟수로 센다(무효화되면 돌려받음)
         g.L(f'{s.name}: 패에서 [신속] 발동', 'sys')
     g.L(f'{cards8.KIND_LABEL[k["kind"]]} 완성')
-    cards8.pay(g, c, p, r[1], cards8.MODE[k['kind']])
+    cards8.pay(g, c, p, sel, cards8.MODE[k['kind']])
     return True
 
 
@@ -1973,7 +1994,7 @@ def do_grant_la(g, c, p, l, k):
     import cards8
     xs = [x for x in subjects(g, c, p, l, k) if g.on_field(x) and not g.blocked(x, ('effect', c))]
     if not xs: return False
-    _, lv, at = cards8.plan_grant(g, p, xs[0])
+    lv, at = grant_pick(g, p, xs[0])
     return cards8.grant(g, xs[0], lv, at, c) is not False
 
 
@@ -1989,7 +2010,7 @@ def do_joker(g, c, p, l, k):
     """「레벨과 속성을 선언한다. 이 카드는 해당 레벨과 속성을 가진 몬스터로 취급되어 원하는 자신 필드에 특수소환한다」 — 선언은 족보 가치(cards8.plan_joker)"""
     import cards8
     if not g.on_field(c): g.L(f'{c}이(가) 필드에 없음 — 처리 없음', 'sys'); return False
-    _, lv, at = cards8.plan_joker(g, p, c)
+    lv, at = joker_pick(g, p, c)
     c.flags.pop('clear_on_leave', None)
     c.flags.update(as_monster=True, level_set=lv, attr_set=at)
     g.L(f'{c}: 레벨 {lv} · {at} 속성 선언 — 몬스터로 취급 (공격력 0 / 수비력 0)')
@@ -2016,7 +2037,7 @@ def do_take_grant(g, c, p, l, k):
     t = g.p[p].ai.pick_target(g, p, ts, 'steal')
     if g.blocked(t, ('effect', c)) or not cards8.take_control(g, t, p): return False
     g.L(f'{t} 컨트롤 획득')
-    _, lv, at = cards8.plan_grant(g, p, t)
+    lv, at = grant_pick(g, p, t)
     cards8.grant(g, t, lv, at, c)
     return True
 

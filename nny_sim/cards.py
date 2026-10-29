@@ -39,6 +39,16 @@ class Impl:
         if blocks.attach(c): return   # 조립표가 있는 카드는 블록으로 조립 (blocks/README.md) — 없으면 아래 옛 카드 함수
         c.flags['unimplemented'] = True   # 조립표가 없는 카드(카드 풀에 새로 들어온 카드) — 효과 없음
 
+SELF_REF = r'이 카드(를|와|도|는|만)'          # 이 카드를 가리키는 말
+SELF_TAKE = r'소환|패에 넣|패로 (되돌|가져)'   # 소환 · 패에 넣기(같은 이름 규칙 Game.pickable 이 보는 처리)
+
+
+def sentences(line):
+    """효과 문장 → 문장들(마침표 뒤 공백에서 나눔 — 「…고 발동.」 · 「…한다.」 · 「…)」)"""
+    import re as _re
+    return [x for x in _re.split(r'\.\s+', line) if x.strip()]
+
+
 def text_attrs(e, line, name):
     """효과 문장 line(카드 name의 그 번호 줄, 부여 효과는 부여하는 카드의 「-」 항목)에서 Effect의 성질을 단다 — Impl.attach · 부여 효과(cards2.cer_effect) 공통"""
     import re as _re
@@ -46,8 +56,11 @@ def text_attrs(e, line, name):
     if _re.search(r'동명의 카드를 (패에 넣을|특수소환할) 수 있다', line) or \
        (f'「{name}」' in line and _re.search(r'특수소환|패에 넣', line)):
         e.same_name_ok = True
-    # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 효과 문장이 이 카드를 직접 가리킨다 (「이 카드를 특수소환한다」 · 「이 카드와 …」 등)
-    if _re.search(r'이 카드(를|와|도|는|만)|자신을 포함하는', line): e.self_ok = True
+    # 같은 이름 규칙(engine.Game.pickable)의 자기 자신 예외: 이 카드를 직접 소환하거나 패에 넣는 문장이 있다 (「묘지의 이 카드를 특수소환한다」 ·
+    # 「이 카드는 … 패에서 특수소환할 수 있다」 등) — 같은 문장 안이어야 한다. 「이 카드를 덱으로 되돌린다. 덱에서 「X」 몬스터를 특수소환한다」처럼
+    # 다른 문장이면 덱으로 돌아간 이 카드를 고를 수 없다(저주인형 - 저주인형 3번 — 사용자 지시 2026-10-29)
+    if _re.search(r'(이 카드|자신)를? ?포함하는|자신을 포함하는', line) or any(_re.search(SELF_REF, x) and _re.search(SELF_TAKE, x) for x in sentences(line)):
+        e.self_ok = True
     # 대상 지정 효과인가 (발동 판정 중 내성 판정 — engine.Game.immune): 문장에 「대상으로 하고」가 있으면 대상 지정, 없으면 비대상
     if line: e.targets_text = bool(_re.search(r'대상으로 하', line))
     # 「서로가 … 하고 발동」: 어느 플레이어든 발동할 수 있다 (세제 2 · 3번 — 사용자 답변 2026-10-20, engine.Game.zone_ok · options)
