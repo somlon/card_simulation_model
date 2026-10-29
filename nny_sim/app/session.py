@@ -28,6 +28,11 @@ SAFE = re.compile(r'[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _\-().!]+')
 def now(): return time.strftime('%Y-%m-%d %H:%M:%S')
 
 
+GIT_LEARN_DIR = 'nny_sim/learned/human_games'          # 학습 기록을 올리는 저장소 폴더(merge_learning.py 가 읽음)
+GIT_LEARN_BRANCH = 'data/human-games-{host}'
+GIT_NN_BRANCH = 'data/human-nn-{host}'                  # 신경망 표본(nnai.SHARE_REL 폴더 — merge_nn.py 가 읽음)
+
+
 def safe_name(s, default='덱'):
     s = SAFE.sub('', s or '').strip()[:60]
     return s or default
@@ -196,14 +201,33 @@ class Store:
         try: return json.load(open(os.path.join(self.dir, 'learning', 'last_push.json'), encoding='utf-8'))
         except (OSError, ValueError): return None
 
+    def host(self):
+        return safe_name(os.environ.get('COMPUTERNAME') or os.environ.get('HOSTNAME') or 'pc', 'pc')
+
     def git_push(self):
-        """앱이 관리하는 얕은 clone(사용자 폴더/git)에 학습 기록을 넣고 커밋 · 푸시한다 — 인터넷과 git, GitHub 로그인이 필요"""
+        """학습 기록(human_games.jsonl)을 저장소 nny_sim/learned/human_games/<컴퓨터>.jsonl 로 — 브랜치는 설정 또는 data/human-games-<컴퓨터>"""
+        if not os.path.exists(self.log_path): return {'ok': False, 'msg': '아직 학습 기록이 없습니다.'}
+        st = T.log_stats(self.log_path)
+        return self.git_upload(GIT_LEARN_DIR, self.settings()['git_branch'] or GIT_LEARN_BRANCH,
+                               lambda dst, host: shutil.copyfile(self.log_path, os.path.join(dst, f'{host}.jsonl')),
+                               lambda host: f'사람 대전 학습 기록: {host} — 매치 {st["matches"]}개 · 갱신 {st["updates"]}개')
+
+    def git_push_nn(self, nn):
+        """신경망 표본 · 내 모델(nnai.Manager.place_share)을 저장소 nny_sim/learned/drl/human_nn/<컴퓨터>/ 로 — 브랜치 data/human-nn-<컴퓨터>"""
+        import nn_samples as NS
+        st = NS.stats(self.dir)
+        if not st['matches']: return {'ok': False, 'msg': '아직 신경망 표본이 없습니다 — 「AI 학습」을 켜고 나 vs AI 대전을 해 주세요.'}
+        return self.git_upload('/'.join(NA.SHARE_REL), GIT_NN_BRANCH, lambda dst, host: nn.place_share(os.path.join(dst, host), host),
+                               lambda host: f'사람 대전 신경망 표본: {host} — 매치 {st["matches"]}개 · 표본 {st["samples"]}개')
+
+    def git_upload(self, sub, branch, place, message):
+        """앱이 관리하는 얕은 clone(사용자 폴더/git/repo, sparse)의 sub 폴더에 place(폴더, 컴퓨터 이름)로 파일을 넣고 커밋 · 푸시한다
+        — 인터넷과 git, GitHub 로그인이 필요. branch 의 {host} 는 컴퓨터 이름. 브랜치가 아직 없으면 설정의 기준 브랜치에서 만든다"""
         s = self.settings()
         git = shutil.which('git')
         if not git: return {'ok': False, 'msg': 'git 이 설치되어 있지 않습니다. 「내보내기」한 파일을 GitHub 웹에서 올려 주세요.'}
-        if not os.path.exists(self.log_path): return {'ok': False, 'msg': '아직 학습 기록이 없습니다.'}
-        repo = os.path.join(self.dir, 'git', 'repo'); host = safe_name(os.environ.get('COMPUTERNAME') or os.environ.get('HOSTNAME') or 'pc', 'pc')
-        branch = s['git_branch'] or f'data/human-games-{host.lower().replace(" ", "-")}'
+        repo = os.path.join(self.dir, 'git', 'repo'); host = self.host()
+        branch = branch.replace('{host}', host.lower().replace(' ', '-'))
         log = []
 
         def run(*args, cwd=None):
@@ -215,17 +239,16 @@ class Store:
                 os.makedirs(os.path.dirname(repo), exist_ok=True)
                 if not run('clone', '--depth', '1', '--filter=blob:none', '--no-checkout', '-b', s['git_base'], s['git_url'], repo):
                     return {'ok': False, 'msg': 'clone 실패 — 인터넷 연결 · 저장소 주소 · 권한을 확인하세요.', 'log': log}
-                run('sparse-checkout', 'set', 'nny_sim/learned/human_games', cwd=repo)
-            if run('fetch', '--depth', '1', 'origin', branch, cwd=repo):
-                run('checkout', '-B', branch, 'FETCH_HEAD', cwd=repo)
+                run('sparse-checkout', 'set', sub, cwd=repo)
             else:
-                run('checkout', '-B', branch, cwd=repo)
-            dst = os.path.join(repo, 'nny_sim', 'learned', 'human_games'); os.makedirs(dst, exist_ok=True)
-            shutil.copyfile(self.log_path, os.path.join(dst, f'{host}.jsonl'))
-            run('add', '-A', 'nny_sim/learned/human_games', cwd=repo)
-            st = T.log_stats(self.log_path)
-            run('-c', 'user.name=NNY Simulator', '-c', 'user.email=nny-simulator@localhost', 'commit', '-m',
-                f'사람 대전 학습 기록: {host} — 매치 {st["matches"]}개 · 갱신 {st["updates"]}개', cwd=repo)
+                run('sparse-checkout', 'add', sub, cwd=repo)
+            if not run('fetch', '--depth', '1', 'origin', branch, cwd=repo) and not run('fetch', '--depth', '1', 'origin', s['git_base'], cwd=repo):
+                return {'ok': False, 'msg': 'fetch 실패 — 인터넷 연결 · 저장소 주소를 확인하세요.', 'log': log}
+            run('checkout', '-B', branch, 'FETCH_HEAD', cwd=repo)
+            dst = os.path.join(repo, *sub.split('/')); os.makedirs(dst, exist_ok=True)
+            place(dst, host)
+            run('add', '-A', sub, cwd=repo)
+            run('-c', 'user.name=NNY Simulator', '-c', 'user.email=nny-simulator@localhost', 'commit', '-m', message(host), cwd=repo)
             if not run('push', '-u', 'origin', f'HEAD:{branch}', cwd=repo):
                 return {'ok': False, 'msg': 'push 실패 — 인터넷 연결 · GitHub 로그인(권한)을 확인하세요.', 'log': log}
             return {'ok': True, 'msg': f'GitHub 브랜치 {branch} 에 올렸습니다.', 'branch': branch, 'log': log}

@@ -4,8 +4,10 @@
 교사 분포는 대전에 쓰는 로컬 학습표(사람 대전 기록 human_games.jsonl 이 다시 적용된 표)의 후보 값 → softmax(값 / TEACHER_TEMP)
 — drl.agent.DRLAI.teacher_values 와 같은 키 · 사전값. 후보가 하나뿐인 판단 · AI의 가치 계산(가정) 안의 판단은 기록하지 않는다.
 저장: 사용자 폴더 learning/nn/samples/<시각>_<번호>.npz (drl.buffer 묶음, 매치 1개) + index.json(매치별 표본 수 · 덱).
+나누기: 표본 파일 이름은 컴퓨터마다 겹치지 않으므로(시각 + 무작위 번호) 여러 사람의 표본을 모아도 같은 매치는 이름으로 한 번만 센다
+(load_sources — 표본 폴더 · 내보낸 zip(nnai.Manager.export) · 저장소의 human_nn 폴더를 함께 읽음).
 """
-import json, os, time, uuid
+import io, json, os, time, uuid, zipfile
 # numpy 는 쓸 때 불러온다 — numpy 를 못 불러오는 컴퓨터에서도 프로그램의 나머지는 돌아가게(nnai.Manager 가 따로 확인)
 
 TEACHER_TEMP = 0.03   # 교사 분포 온도 (drl.train 기본값 teacher_temp 와 같음)
@@ -113,16 +115,42 @@ def stats(user_dir):
 
 def load_all(path):
     """표본 폴더(또는 사용자 폴더의 표본 폴더) → (묶음, 표본별 매치 번호, 정보)"""
+    d = path if os.path.basename(path) == DIR[-1] else samples_dir(path)
+    return load_sources([d])
+
+
+def iter_sample_files(src):
+    """표본 출처 하나 → (파일 이름, 내용 bytes) — 폴더(하위 폴더 포함)의 *.npz · 내보낸 zip 안의 *.npz.
+    폴더 안의 zip도 읽는다(GitHub 웹으로 올린 내보내기 파일)"""
+    if os.path.isdir(src):
+        for root, _, files in sorted(os.walk(src)):
+            for n in sorted(files):
+                f = os.path.join(root, n)
+                if n.endswith('.npz') and os.path.basename(root) == DIR[-1]:
+                    with open(f, 'rb') as fh: yield n, fh.read()
+                elif n.endswith('.zip'):
+                    yield from iter_sample_files(f)
+    elif zipfile.is_zipfile(src):
+        with zipfile.ZipFile(src) as z:
+            for n in sorted(z.namelist()):
+                if n.endswith('.npz') and n.split('/')[-2:-1] == [DIR[-1]]:
+                    yield n.split('/')[-1], z.read(n)
+
+
+def load_sources(srcs):
+    """표본 출처 여러 개(폴더 · zip) → (묶음, 표본별 매치 번호, 정보). 같은 이름의 표본 파일(같은 매치)은 한 번만"""
     import numpy as np
     from drl import buffer as B
-    d = path if os.path.basename(path) == DIR[-1] else samples_dir(path)
-    names = sorted(n for n in os.listdir(d) if n.endswith('.npz')) if os.path.isdir(d) else []
-    packs = []; matches = []
-    for k, n in enumerate(names):
-        with np.load(os.path.join(d, n), allow_pickle=False) as z:
-            P = {'kind': 'game', **{key: z[key] for key in z.files}}
-        packs.append(P); matches.append(np.full(len(P['idx']), k, np.int32))
+    packs = []; matches = []; seen = set(); dup = 0
+    for src in srcs:
+        for n, data in iter_sample_files(src):
+            if n in seen:
+                dup += 1; continue
+            seen.add(n)
+            with np.load(io.BytesIO(data), allow_pickle=False) as z:
+                P = {'kind': 'game', **{key: z[key] for key in z.files}}
+            matches.append(np.full(len(P['idx']), len(packs), np.int32)); packs.append(P)
     if not packs:
-        return None, np.zeros(0, np.int32), {'files': 0, 'samples': 0}
+        return None, np.zeros(0, np.int32), {'files': 0, 'samples': 0, 'duplicates': dup}
     P = B.concat(packs)
-    return P, np.concatenate(matches), {'files': len(names), 'samples': len(P['idx'])}
+    return P, np.concatenate(matches), {'files': len(packs), 'samples': len(P['idx']), 'duplicates': dup}

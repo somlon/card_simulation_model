@@ -125,6 +125,9 @@ class App:
         if path == '/api/nn/train': return self.nn.start(body.get('epochs'))
         if path == '/api/nn/stop': return self.nn.stop()
         if path == '/api/nn/reset': return self.nn.reset()
+        if path == '/api/nn/export':
+            out = self.nn.export(os.path.join(self.store.dir, 'export'), self.store.host()); return {'ok': bool(out), 'path': out}
+        if path == '/api/nn/git': return self.store.git_push_nn(self.nn)
         if path == '/api/learning/export':
             out = self.store.export_learning(); return {'ok': bool(out), 'path': out}
         if path == '/api/learning/git': return self.store.git_push()
