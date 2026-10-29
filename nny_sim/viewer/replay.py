@@ -80,7 +80,7 @@ def main(argv=None):
     for rec in recs:
         m = rec['meta']
         print(f"  {m['names'][0]} vs {m['names'][1]} · 시드 {m['seed']} · 기록 {len(rec['frames'])}줄"
-              f" · 승자 {m['names'][m['winner']] if m['winner'] is not None else '없음'}" + (f" · 중단: {m['stalled']}" if m['stalled'] else ''))
+              f" · 승자 {m['names'][m['winner']] if m['winner'] is not None else '없음'}" + (f" · 중단: {m['stalled']}" if m.get('stalled') else ''))
 
 
 if __name__ == '__main__':
