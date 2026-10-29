@@ -9,7 +9,10 @@ import json, os, time, uuid
 # numpy 는 쓸 때 불러온다 — numpy 를 못 불러오는 컴퓨터에서도 프로그램의 나머지는 돌아가게(nnai.Manager 가 따로 확인)
 
 TEACHER_TEMP = 0.03   # 교사 분포 온도 (drl.train 기본값 teacher_temp 와 같음)
-NOT_NN = ('소환 표시 형식',)   # 신경망 AI(DRLAI)가 신경망으로 고르지 않는 판단(학습표 경로 — policy.LearnedAI.choose_summon_pos) — 표본에 넣지 않는다
+NOT_NN = ('소환 표시 형식', '시작 패 배분', '시작 패 재배분')
+# 신경망 AI(DRLAI)가 신경망으로 고르지 않는 판단 — 표본에 넣지 않는다:
+#   소환 표시 형식(학습표 경로 — policy.LearnedAI.choose_summon_pos),
+#   시작 패 배분 · 재배분(policy.LearnedAI.choose_split · mulligan_split 이 LearnedAI.choose 직접 — 사람 자리는 HumanAI 가 self.choose 로 물어 감싸개에 걸리므로 빼야 두 자리가 같다)
 DIR = ('learning', 'nn', 'samples')
 
 
