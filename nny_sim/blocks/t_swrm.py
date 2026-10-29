@@ -21,8 +21,9 @@ fx('SWRM-002', '1', f'[신속] 이 카드를 패에서 상대 필드의 앞면 �
 fx('SWRM-003', '1', f'[신속] 이 카드를 패에서 묘지로 보내고 발동. 이 턴, 상대가 몬스터를 소환할 때마다 덱에서 「번성충」 마법 카드 {{n}}장을 패에 넣는다. {OATH}',
    zones=HAND, cost=[TO_GRAVE_SELF, oath(BSC)],
    do=[floating(when('summoned', who='opp'), [search(S('own', 'deck', 'spell', group=BSC), '$n')])])
-fx('SWRM-004', '1', f'[신속] 상대 필드의 카드 {{n}}장을 릴리스하고 발동. 이 카드를 패에서 특수소환한다. {OATH}',
-   zones=HAND, cost=[release(scope=S('opp', 'field', pred='releasable'), n='$n'), oath(BSC)], do=[special(**SELF_HAND)])
+# 메뚜기여왕 1번: 상대 필드의 「몬스터」만 릴리스(사용자 지시 2026-10-29 — 카드 텍스트 「카드」 → 「몬스터」, data/fix-swrm004-text)
+fx('SWRM-004', '1', f'[신속] 상대 필드의 몬스터 {{n}}장을 릴리스하고 발동. 이 카드를 패에서 특수소환한다. {OATH}',
+   zones=HAND, cost=[release(scope=S('opp', 'field', 'monster', pred='releasable'), n='$n'), oath(BSC)], do=[special(**SELF_HAND)])
 # 노린재 — 바뀐 효과의 「상대 플레이어」 = 노린재를 쓴 플레이어의 상대(바뀐 효과를 발동한 플레이어)가 드로우(예전 구현과 같은 해석)
 fx('SWRM-005', '1', f'[트리거] 상대가 카드의 효과를 발동하였을 때, 이 카드를 패에서 묘지로 보내고 발동. '
    f'그 효과를 「상대 플레이어는 자신의 덱에서 카드 {{n}}장을 드로우한다」로 변경하여 처리한다. {OATH}',

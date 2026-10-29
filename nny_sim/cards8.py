@@ -438,7 +438,7 @@ def take_control(g, t, p):
     if t.zone == 's':
         fr = g.free_s(p)
         if not fr: return False
-        o = g.p[t.controller]; o.s[o.s.index(t)] = None; g.p[p].s[fr[0]] = t; t.controller = p
+        o = g.p[t.controller]; o.s[o.s.index(t)] = None; g.p[p].s[g.pick_zone(p, t, 'spell', fr)] = t; t.controller = p
         return True
     if t.zone == 'fieldz': t.controller = p; return True
     return False

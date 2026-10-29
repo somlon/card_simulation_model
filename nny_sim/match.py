@@ -37,7 +37,7 @@ def card_value(me, opp, name, A=10.0):
     return u * pw + (1 - u) * 0.4
 
 def skill_tags(skill):
-    sk = POOL[skill]; return set(sk['skill_tags']) | (set() if sk.get('no_common') else {'공용'})
+    return D.skill_allowed(POOL[skill])   # 덱 구축 규칙과 같은 태그(deck.skill_allowed)
 
 def fits(name, skill):
     """덱 구축 기준은 태그 (§3-1): 스킬에 표기된 태그 또는 「공용」"""

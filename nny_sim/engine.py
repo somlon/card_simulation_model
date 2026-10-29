@@ -504,15 +504,29 @@ class Game:
     def free_m(self, p): return [i for i in range(MZ) if self.p[p].m[i] is None]
     def free_s(self, p): return [i for i in range(SZ) if self.p[p].s[i] is None]
 
+    def pick_zone(self, p, c, kind, opts):
+        """놓을 존 고르기: 플레이어(AI)가 choose_zone(g, p, c, kind, opts)을 가지면 그것이 고른다(사람 자리 — 화면에서 고름).
+        없으면 첫 빈칸(지금까지의 엔진 동작 — AI는 존 번호를 고르지 않는다). opts: 빈 존 번호, 몬스터는 빈 공유 존 'shared' 포함"""
+        f = getattr(self.p[p].ai, 'choose_zone', None)
+        return f(self, p, c, kind, opts) if f is not None and len(opts) > 1 else opts[0]
+
     def place_monster(self, c, p, pos='atk', faceup=True, allow_shared=True):
-        """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2)"""
+        """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2).
+        놓을 존을 직접 고르는 플레이어(choose_zone — 사람 자리)는 빈 몬스터 존과 빈 공유 존 중에서 고른다(Game.pick_zone)"""
         self.ix_note(c)
         fr = self.free_m(p)
-        to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
-        if not fr and not to_shared: return False
+        if getattr(self.p[p].ai, 'choose_zone', None) is not None:
+            opts = fr + (['shared'] if allow_shared and self.shared is None else [])
+            if not opts: return False
+            z = self.pick_zone(p, c, 'monster', opts)
+            to_shared = z == 'shared'; slot = None if to_shared else z
+        else:
+            to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
+            if not fr and not to_shared: return False
+            slot = None if to_shared else fr[0]
         c.controller = p; c.pos = pos; c.faceup = faceup
         if not to_shared:
-            self.p[p].m[fr[0]] = c; c.zone = 'm'; return True
+            self.p[p].m[slot] = c; c.zone = 'm'; return True
         # 공유 존 마커 (사용자 재정 2026-09-30): 라운드에서 처음 놓으면 놓은 플레이어의 마커를 올린다(뒤집힘 아님).
         # 그 뒤에는 공유 존이 비어도 마커가 남고, 치워진 공유 존에 상대가 자신의 카드를 놓으면 뒤집힌다 (§10-3 a)
         self.shared = c; c.zone = 'shared'
@@ -536,7 +550,7 @@ class Game:
         self.ix_note(c)
         fr = self.free_s(p)
         if not fr: return False
-        self.p[p].s[fr[0]] = c; c.zone = 's'; c.controller = p; c.faceup = faceup
+        self.p[p].s[self.pick_zone(p, c, 'spell', fr)] = c; c.zone = 's'; c.controller = p; c.faceup = faceup
         if not faceup: c.set_turn = self.turn
         return True
 
@@ -649,7 +663,7 @@ class Game:
         if self.field_limited(c, p, use=True): self.L(f'{c} — {self.pname(p)} 필드에 같은 종류가 이미 있어 컨트롤을 옮길 수 없음', 'sys'); return False
         if c.zone == 'shared': self.shared = None
         else: self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
-        self.p[p].m[fr[0]] = c; c.zone = 'm'; c.controller = p
+        self.p[p].m[self.pick_zone(p, c, 'monster', fr)] = c; c.zone = 'm'; c.controller = p
         return True
 
     # ── 소환 ──
