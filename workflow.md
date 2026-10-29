@@ -239,6 +239,10 @@
   - 다시 만들기(새 컨테이너): 앞 항목들의 「다시 만들기」(../run = model/main + data/main, ../appsim = 배포본 zip의 data) + `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
   - 진행 기록:
     - 2026-10-29 시작 — DRL 코드 · 시험 모델 조사(위), 루틴 생성.
+    - 2026-10-29 ② · ③ · ④ 완료 — `claude/vibrant-euler-jekich` e5156e6: nn_samples(사람 대전 두 자리 표본) · nn_train(numpy 학습기 — 순전파 = NumpyActor 5e-7, 역전파 = PyTorch 자동 미분 1e-6, 손실 기울기 = 수치 미분) ·
+      nnai(모델 · 학습 작업) · 화면(머리 막대 「🧠 신경망 학습」 · AI 종류). 무작위 가중치 대역 모델로 표본 → 학습 → 내 모델 대전 → 되돌리기 흐름 · 화면(1600 · 390px) 오류 0.
+      ① 기본 모델: PyTorch 2.14.0(PyPI — download.pytorch.org 는 네트워크 정책에 막힘) 설치, drl 테스트 23개 통과, 시험 24매치 정상(작업자 2개 · 메모리 8.3GB) →
+      `../appsim/sim/learned/drl/base_v2` 모방 학습 3,000매치 실행 중(교사 = `data/main` 학습표 policy.json.xz). 다음: PPO 시간 예산 · 평가 → data 계열 브랜치 → ⑤ 배포본.
 
 - **【완료 — 2026-10-29, 후속 사용자 확인】 재생 화면 시각화 개선 — 공유 존 마커 · 느린 재생 · 화살표 · 오른쪽 체인 순서 (사용자 지시 2026-10-29, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시: 공유 존을 한쪽 플레이어가 쓰면(카드를 놓으면) 필드의 주인 토큰 존에 공유 존 마커(양면 색이 다름 — 선공 백 · 후공 흑)를 놓아 소유권이 보이게.
