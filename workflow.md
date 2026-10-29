@@ -293,7 +293,9 @@
     - 2026-10-29 ③ · ④ 완료 — 병행 세션 완료 알림 뒤 코드 cbe59ca(시험 도구 c1e71fb — app_test.js LIMIT) + 기본 재생 기록 `exp/windows-app` release/library_v1.1 로 빌드,
       **`exp/windows-app` 96ca656 `release/NNY_Simulator_v1.1.0_win64.zip`(90.4MB, SHA-256 03494a73…43731)**, v1.0.0 유지, release/README.md 갱신. wine Bo3 끝까지 화면 오류 0. 채팅창 전달 · 병행 세션에 알림. 루틴 trig_01BFQdgaALcqmnmhWJyyvC1J 끔.
       참고: 관전 탭 보드가 1600×1000에서 약 280px로 작게 그려짐 — 병합 전 74e61c9도 같음(이번 변경과 무관, 병행 세션에 알림).
-    - 후속(사용자): ⓐ 실제 Windows PC 실행 ⓑ 코드 브랜치 계열 이름(R2 — `app` 계열 신설 또는 `model`) · PR 여부.
+    - 2026-10-29 사용자 확인: ⓐ 실제 Windows에서 잘 작동(문제 생기면 알려 주기로) ⓑ `app` 계열 신설 · PR — CLAUDE.md R2에 `app` 추가(default bb1829c),
+      `app/main` = `main` c86aa6f(차이가 앱 · 재생 화면 새 파일 40개만 되게 — default 에서 만들면 옛 CLAUDE.md · settings 차이가 섞임),
+      `app/game-program` = `claude/vibrant-euler-jekich` 693b4cd → **PR #86**(app/game-program → app/main). `claude/vibrant-euler-jekich` 는 이력 보존, 앞으로 앱 작업은 `app/main` 에서 분기.
 
 - **【완료 — 2026-10-29, 후속 사용자 확인】 Windows 게임 프로그램(.exe) — 관전 플레이리스트 · AI vs 사람 대전 · 덱 편집 · 사람 대전 학습 (사용자 지시 2026-10-29, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시: 시트 3장 반영(완료 58f6e84 — 풀 200장 · 11개 덱 모두 이미지) 뒤, 재생 영상을 모아 원하는 플레이리스트를 재생하는 싱글플레이 게임식 .exe → GitHub · 채팅창 업로드.
