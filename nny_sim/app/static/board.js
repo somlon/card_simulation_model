@@ -13,6 +13,7 @@ const TOKEN = {x: 1504, y: 926, d: 188};   // 매트의 「주인 토큰」 원(
 const TOKEN_DROP = 300;                    // 마커를 처음 놓을 때 주인 쪽에서 날아오는 거리
 const ARROW = {start: 80, end: 120, head: 64, bend: 0.16, bendMax: 150, min: 60};   // 화살표: 카드 중심에서 띄우는 길이 · 머리 크기 · 휘는 정도
 const SVGNS = 'http://www.w3.org/2000/svg';
+const FIT_PUSHED = 0.4;   // 무대 윗변이 화면 높이의 이 비율보다 아래면 「밀린」 것으로 본다
 const COLOR = {'적색': '#c9403f', '녹색': '#3f9a5a', '청색': '#2f72b8', '황색': '#c99a2e', '자색': '#8d52c9', '백색': '#a9b0bd', '흑색': '#555b66'};
 const PC = ['var(--p1)', 'var(--p2)'];
 const ICON = {act: '▶', res: '↳', draw: '✋', sys: '✦', turn: '━', round: '█', end: '■', side: '⇄', decision: '·'};
@@ -541,7 +542,11 @@ class Stage {
   fit() {
     this.arrange();
     if (!this.root.offsetParent) return;
-    const W = innerWidth, ctl = this.q('.ctl').offsetHeight + 24, top = this.root.getBoundingClientRect().top + scrollY;
+    const W = innerWidth, ctl = this.q('.ctl').offsetHeight + 24;
+    let top = this.root.getBoundingClientRect().top + scrollY;
+    if (top > innerHeight * FIT_PUSHED) {   // 위의 내용(재생 목록 등)이 길어 무대가 아래로 밀렸으면 남은 틈 대신 화면 한 장 높이에 맞춘다(스크롤해서 봄)
+      top = [...document.querySelectorAll('header')].reduce((s, h) => s + (getComputedStyle(h).position === 'sticky' ? h.offsetHeight : 0), 0) + 12;
+    }
     const bars = this.q('.pb0').offsetHeight + this.q('.pb1').offsetHeight + 20;
     const maxH = W >= 1360 ? innerHeight - top - ctl - 10 : W >= 1000 ? innerHeight - top - ctl - bars : Infinity;
     const w = Math.max(280, Math.min(this.wrap.parentElement.clientWidth, maxH * this.MW / this.MH));
