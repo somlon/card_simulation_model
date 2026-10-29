@@ -1,8 +1,8 @@
 """매치 기록기 — 재생 화면(viewer)용.
 
 엔진은 고치지 않는다. match.play_match 의 log 자리에 Recorder를 넣으면 기록 줄이 붙을 때마다 그 시점의 보드 상태
-(HP · 패 · 덱 매수 · 묘지 · 제외 · 몬스터/마법 존 · 스킬 · 필드 존 · 공유 존 · 체인 · 턴 · 단계)를 찍어 둔다.
-발동 · 공격 · 파괴는 Game 메서드를 감싼 관찰 훅이 연출 정보(fx)로 다음 기록 줄에 붙인다 — 훅은 원래 메서드를 그대로 부르고
+(HP · 패 · 덱 매수 · 묘지 · 제외 · 몬스터/마법 존 · 스킬 · 필드 존 · 공유 존 · 체인(고리마다 대상) · 턴 · 라운드 선공 · 단계)를 찍어 둔다.
+발동 · 공격 · 파괴 · 효과가 고른 카드는 Game 메서드 · blocks.lib.pick_cards 를 감싼 관찰 훅이 연출 정보(fx)로 다음 기록 줄에 붙인다 — 훅은 원래 메서드를 그대로 부르고
 게임 상태 · 난수를 건드리지 않는다(같은 시드에서 기록기 유무로 기록 문장이 같은지 check_same 으로 확인).
 
 AI · 덱 · 전략 덱 교체는 match_sim 과 같은 설정(학습표 AI, 학습 끔, 교체 학습 끔)을 쓴다.
@@ -46,7 +46,9 @@ class Recorder(list):
         if k == 'res' and self.game is not None:   # 처리 중인 발동은 이미 체인에서 빠졌다 → 직전 체인에서 찾는다
             m = RES_RE.match(e['m']); n = int(m.group(1)) if m else 0
             if 0 < n <= len(self.chain_prev):
-                u, num, p, _ = self.chain_prev[n - 1]; fx = fx + [{'t': 'res', 'u': u, 'n': num, 'p': p}]
+                lk = self.chain_prev[n - 1]; f = {'t': 'res', 'u': lk[0], 'n': lk[1], 'p': lk[2]}
+                if len(lk) > 4: f['to'] = lk[4]
+                fx = fx + [f]
         fr = {'k': k, 'm': e['m'], 'r': self.round, 's': self.snapshot(), '_e': e}
         if fx: fr['fx'] = fx
         self.frames.append(fr)
@@ -71,13 +73,19 @@ class Recorder(list):
         return d
 
     def state(self, g):
+        from engine import link_targets
         P = []
         for pl in g.p:
             P.append({'hp': pl.hp, 'hand': [self.reg(c) for c in pl.hand], 'main': len(pl.main), 'upper': len(pl.upper),
                       'grave': [self.reg(c) for c in pl.grave], 'ban': [self.reg(c) for c in pl.banish],
                       'm': [self.cell(g, c) for c in pl.m], 's': [self.cell(g, c) for c in pl.s], 'sk': self.cell(g, pl.skill)})
-        ch = [[self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))] for l in g.chain]
-        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'ph': g.phase, 'ch': ch,
+        ch = []
+        for l in g.chain:   # [카드, 효과 번호, 발동한 자리, 무효, 대상 카드들(engine.link_targets — 발동 때 고른 「대상」)]
+            lk = [self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))]
+            to = [self.reg(x) for x in link_targets(l) if x is not l.card]
+            if to: lk.append(to)
+            ch.append(lk)
+        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': ch,
               'sh': self.cell(g, g.shared), 'so': g.shared_owner, 'fz': self.cell(g, g.fieldz)}
         if g.shared is not None: st['sc'] = g.shared.controller
         if g.fieldz is not None: st['fc'] = g.fieldz.controller
@@ -108,6 +116,18 @@ class Recorder(list):
 
 
 _HOOKED = False
+VALUING_FRAMES = {'act_score', 'legal', 'can_act'}   # AI가 후보 가치를 재려고 효과를 가정해 보는 함수(그 안의 고르기는 실제가 아님)
+VALUING_PREFIX = ('v_', 'can_')
+
+
+def _valuing(depth=60):
+    """호출 스택에 가치 계산(가정) 함수가 있는가 — 그 안의 카드 고르기는 연출로 남기지 않는다(app/human.py evaluating 과 같은 판정)"""
+    f = sys._getframe(2)
+    while f is not None and depth:
+        n = f.f_code.co_name
+        if n in VALUING_FRAMES or n.startswith(VALUING_PREFIX): return True
+        f = f.f_back; depth -= 1
+    return False
 
 
 def install_hooks():
@@ -136,6 +156,21 @@ def install_hooks():
         return o_des(self, c, cause, battle)
 
     G.__init__, G.activate, G.attack, G.destroy = __init__, activate, attack, destroy
+
+    import blocks.lib as L   # 카드 효과가 고른 카드(코스트 · 대상 · 처리 때 고름) — 효과 화살표(발동 카드 → 고른 카드)
+    o_pick = L.pick_cards
+
+    def pick_cards(g, c, p, pool, n, k):
+        xs = o_pick(g, c, p, pool, n, k)
+        log = g.log
+        if isinstance(log, Recorder) and g is log.game and not _valuing():
+            to = [log.reg(x) for x in xs if x is not c]
+            if to:
+                f = {'t': 'pick', 'u': log.reg(c), 'to': to, 'p': p}
+                if k.get('targeted'): f['tg'] = 1
+                log.pending.append(f)
+        return xs
+    L.pick_cards = pick_cards
     _HOOKED = True
 
 

@@ -6,10 +6,17 @@ const SLOT = {x0: 160, dx: 224, y0: 318, dy: 304, w: 200, h: 280};
 const HAND_Y = [1750, 100], HAND_X = [96, 1568];
 const CH = 262, HAND_SCALE = 0.68;
 const PHASES = ['준비', '진행', '전투', '정비', '종료'];
-const BASE_DELAY = {act: 1000, res: 900, draw: 520, sys: 700, turn: 1100, round: 2200, end: 2400, side: 1600, decision: 420};
+// 1× 재생의 기록 줄 사이 시간(ms) · 카드 이동 연출 시간 — 사람이 따라가기 쉽게 예전(발동 1000 · 이동 380)의 약 1.6배 (사용자 지시 2026-10-29)
+const BASE_DELAY = {act: 1600, res: 1450, draw: 850, sys: 1100, turn: 1700, round: 3000, end: 3200, side: 2400, decision: 650};
+const MOVE_MS = 640, MOVE_MS_MAX = 1100;
+const TOKEN = {x: 1504, y: 926, d: 188};   // 매트의 「주인 토큰」 원(오른쪽 가운데) 중심 · 지름 — 공유 존 마커를 놓는 곳
+const TOKEN_DROP = 300;                    // 마커를 처음 놓을 때 주인 쪽에서 날아오는 거리
+const ARROW = {start: 80, end: 120, head: 64, bend: 0.16, bendMax: 150, min: 60};   // 화살표: 카드 중심에서 띄우는 길이 · 머리 크기 · 휘는 정도
+const SVGNS = 'http://www.w3.org/2000/svg';
 const COLOR = {'적색': '#c9403f', '녹색': '#3f9a5a', '청색': '#2f72b8', '황색': '#c99a2e', '자색': '#8d52c9', '백색': '#a9b0bd', '흑색': '#555b66'};
 const PC = ['var(--p1)', 'var(--p2)'];
 const ICON = {act: '▶', res: '↳', draw: '✋', sys: '✦', turn: '━', round: '█', end: '■', side: '⇄', decision: '·'};
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const slot = (c, r) => ({x: SLOT.x0 + SLOT.dx * c, y: SLOT.y0 + SLOT.dy * r});
 const Z = [
   {m: i => slot(1 + i, 3), s: i => slot(1 + i, 4), grave: slot(6, 3), ban: slot(0, 3), main: slot(6, 4), upper: slot(0, 4), sk: slot(4, 2)},
@@ -48,25 +55,28 @@ class Stage {
     this.board.style.width = this.MW + 'px'; this.board.style.height = this.MH + 'px';
     this.board.style.backgroundImage = `url(${this.url(this.A.mat)})`;
     document.documentElement.style.setProperty('--ratio', this.ratio);
-    this.reset(); this.buildStatic(); this.bind();
+    this.reset(); this.buildStatic(); this.bind(); this.setSpeed(this.speed);
     this.tfs = 26; this.board.style.setProperty('--tfs', this.tfs + 'px');
     this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(this.root);
     addEventListener('resize', () => this.fit());
   }
-  url(rel) { return '/cards/' + rel; }
+  url(rel) { return this.o.url ? this.o.url(rel) : '/cards/' + rel; }   // 단일 HTML 재생 파일은 이미지가 data URI(그대로)
   face(name) { const f = this.A.faces[name]; return f ? this.url(f) : null; }
   html() {
     return `<div class="stage"><div class="col colL"></div><div class="col colC"></div><div class="col colR"></div></div>
       <div class="stage-parts" hidden>
       <div class="pbar pb1" style="--pc:var(--p2)"></div><div class="pbar pb0" style="--pc:var(--p1)"></div>
       <div class="bcol"><div class="board-wrap"><div class="board">
-        <svg class="fxl" viewBox="0 0 ${this.MW || 1664} ${this.MH || 1904}"><line x1="0" y1="0" x2="0" y2="0" style="display:none"/></svg>
-        <div class="token"></div><div class="overlay"><div class="box"></div></div></div></div></div>
+        <svg class="fxl" viewBox="0 0 ${this.MW || 1664} ${this.MH || 1904}"><g class="arrows"></g></svg>
+        <div class="shz" style="left:${SHARED.x - SLOT.w / 2 - 12}px;top:${SHARED.y - SLOT.h / 2 - 12}px;width:${SLOT.w + 24}px;height:${SLOT.h + 24}px"><span class="shb"></span></div>
+        <div class="token" style="left:${TOKEN.x - TOKEN.d / 2}px;top:${TOKEN.y - TOKEN.d / 2}px;width:${TOKEN.d}px;height:${TOKEN.d}px">
+          <div class="coin"><div class="cf w"><b>선공</b><small>공유 존 마커</small></div><div class="cf k"><b>후공</b><small>공유 존 마커</small></div></div><div class="tl"></div></div>
+        <div class="overlay"><div class="box"></div></div></div></div></div>
       <div class="controls ctl">
         <button data-a="prevTurn" title="이전 턴 (Shift+←)">⏮</button><button data-a="prev" title="한 단계 뒤로 (←)">◀</button>
         <button data-a="play" class="primary" title="재생 / 정지 (Space)">▶ 재생</button><button data-a="next" title="한 단계 앞으로 (→)">▶|</button>
         <button data-a="nextTurn" title="다음 턴 (Shift+→)">⏭</button>
-        <select data-a="speed" title="속도"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+        <select data-a="speed" title="속도">${SPEEDS.map(v => `<option value="${v}"${v === 1 ? ' selected' : ''}>${v}×</option>`).join('')}</select>
         <div class="scrub"><input type="range" min="0" max="0" value="0" aria-label="재생 위치"><span class="pos"></span></div>
         <span class="rounds"></span><span class="extra"></span>
         <button data-a="reveal" class="on" title="패 · 뒷면 카드를 앞면으로 보기">패 공개</button>
@@ -74,17 +84,18 @@ class Stage {
       </div>
       <div class="dec"></div><div class="caption cap"></div>
       <div class="panel turn"><h2 class="sec">턴 · 단계</h2><div class="turninfo"></div><div class="phase"></div></div>
-      <div class="panel chainp"><h2 class="sec">체인</h2><div class="chain"></div></div>
+      <div class="panel chainp"><h2 class="sec">체인 <span class="cnt"></span><small>1번부터 쌓인 순서 · 처리는 아래에서 위로</small></h2><div class="chain"></div></div>
       <div class="panel detail"><h2 class="sec">카드</h2><div class="dbody"><div class="hint">보드의 카드나 묘지 · 제외 존을 누르면 여기에 크게 보입니다.</div></div></div>
-      <div class="panel logp"><h2 class="sec">기록</h2><div class="log nodec"></div></div></div>`;
+      <div class="panel logp"><h2 class="sec">기록</h2><div class="log nodec"></div>
+        <div class="legend">▶ 발동 · ↳ 체인 처리 · ⚔ 공격 · ✦ 결과 · ✋ 드로우 &nbsp;|&nbsp; 화살표 <i class="la atk"></i>공격 <i class="la tgt"></i>효과의 대상 <i class="la pick"></i>효과로 고른 카드</div></div></div>`;
   }
   arrange() {   // 넓은 화면 3열 · 중간 2열 · 좁은 화면 1열
     const W = innerWidth, mode = W >= 1360 ? 'wide' : W >= 1000 ? 'mid' : 'narrow';
     if (mode === this.mode) return; this.mode = mode;
     const q = s => this.host.querySelector(s);
     const parts = {pb1: q('.pb1'), pb0: q('.pb0'), bcol: q('.bcol'), ctl: q('.ctl'), dec: q('.dec'), cap: q('.cap'), turn: q('.turn'), chain: q('.chainp'), detail: q('.detail'), log: q('.logp')};
-    const L = {wide: [['pb1', 'turn', 'dec', 'cap', 'chain', 'pb0'], ['bcol', 'ctl'], ['detail', 'log']],
-               mid: [[], ['pb1', 'bcol', 'pb0', 'ctl'], ['dec', 'cap', 'turn', 'chain', 'detail', 'log']],
+    const L = {wide: [['pb1', 'turn', 'dec', 'cap', 'pb0'], ['bcol', 'ctl'], ['chain', 'detail', 'log']],   // 체인은 화면 오른쪽(사용자 지시 2026-10-29)
+               mid: [[], ['pb1', 'bcol', 'pb0', 'ctl'], ['dec', 'chain', 'cap', 'turn', 'detail', 'log']],
                narrow: [[], ['pb1', 'bcol', 'pb0', 'ctl', 'dec', 'cap', 'turn', 'chain', 'detail', 'log'], []]}[mode];
     ['.colL', '.colC', '.colR'].forEach((sel, k) => { const col = this.root.querySelector(sel); L[k].forEach(n => col.appendChild(parts[n])); });
     this.root.classList.toggle('narrow', mode === 'narrow');
@@ -93,7 +104,7 @@ class Stage {
     if (this.els) this.els.forEach(e => e.el.remove());
     this.F = []; this.S = []; this.cards = {}; this.pool = {}; this.names = ['P1', 'P2']; this.meta = {decks: ['', ''], rounds: []};
     this.els = new Map(); this.cur = 0; this.lastRendered = -1; this.selected = null; this.rows = []; this.curRow = null;
-    this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.reveal = [true, true]; this.showDec = false;
+    this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.tokOwner = null; this.reveal = [true, true]; this.showDec = false;
     this.live = false; this.mask = null; this.hl = new Set(); this.WINS = []; this.TURNS = [];
     if (this.logEl) this.logEl.innerHTML = '';
   }
@@ -255,7 +266,8 @@ class Stage {
     const L = st ? this.layout(st, fx) : new Map();
     this.board.classList.toggle('dimmed', dim);
     const fxMap = new Map();
-    for (const f of fx) fxMap.set(f.t === 'atk' ? f.a : f.u, f.t === 'act' ? 'fx-act' : f.t === 'res' ? 'fx-res' : f.t === 'des' ? 'fx-des' : 'fx-atk');
+    for (const f of fx) if (f.t !== 'pick') fxMap.set(f.t === 'atk' ? f.a : f.u, f.t === 'act' ? 'fx-act' : f.t === 'res' ? 'fx-res' : f.t === 'des' ? 'fx-des' : 'fx-atk');
+    const chainNo = this.chainNumbers(st, fx);
     for (const [uid, o] of L) {
       let e = this.els.get(uid);
       if (!e) { e = this.makeEl(uid); const h = this.pileHome(uid); e.el.style.transform = `translate(${h.x - CW / 2}px,${h.y - CH / 2}px)`; e.rot.style.transform = 'scale(.6)'; e.flip.classList.add('down'); void e.el.offsetWidth; }
@@ -279,6 +291,8 @@ class Stage {
         if (c.f === 0 && own) tags.push(['down', '뒷면', 0]);
         if (ctlTag) tags.push(['ctl', o.ctl != null ? `P${o.seat + 1}` : `P${o.seat + 1} 컨트롤`, -hh + tfs * .5, PC[o.seat]]);
       }
+      const cn = chainNo.get(uid);   // 체인에 올라 있는 카드: 카드 위에 체인 번호(오른쪽 체인 패널과 같은 번호)
+      if (cn && !(o.pile && !o.top)) tags.push(['chn', cn.map(n => `체인 ${n}`).join(' · '), -hh - tfs * .45]);
       const key = JSON.stringify(tags) + tfs;
       if (e.tagKey !== key) {
         e.tags.forEach(t => t.remove()); e.tags = [];
@@ -296,14 +310,7 @@ class Stage {
       for (const p of this.piles[seat]) { const n = st ? st.P[seat][p.k] : 0; p.d.classList.toggle('zero', !n); p.num.textContent = n; const layers = Math.min(4, 1 + Math.floor(n / 10)); p.imgs.forEach((im, j) => im.style.display = (3 - j) < layers ? '' : 'none'); }
       for (const z of this.zc[seat]) { const n = st ? st.P[seat][z.k].length : 0; z.c.classList.toggle('zero', !n); z.c.textContent = n; }
     }
-    const tok = this.q('.token');
-    if (st && st.so != null) { tok.className = 'token on'; tok.style.setProperty('--tc', PC[st.so]); tok.innerHTML = `P${st.so + 1}<small>공유 존 마커</small>`; } else { tok.className = 'token'; tok.innerHTML = ''; }
-    const line = this.q('.fxl line'); const atk = fx.find(f => f.t === 'atk');
-    if (atk && st && L.get(atk.a)) {
-      const a = L.get(atk.a), d = atk.d != null ? L.get(atk.d) : null;
-      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y); line.setAttribute('x2', d ? d.x : 832); line.setAttribute('y2', d ? d.y : HAND_Y[1 - atk.p]);
-      line.style.display = ''; line.style.animation = 'none'; void line.getBBox(); line.style.animation = '';
-    } else line.style.display = 'none';
+    this.drawToken(st, fr, animate); this.drawArrows(fx, st, L, i);
     const ov = this.q('.overlay'), box = this.q('.overlay .box');
     if (fr.k === 'round' || fr.k === 'end' || (dim && (fr.k === 'side' || fr.k === 'decision'))) {
       ov.classList.add('on');
@@ -316,6 +323,73 @@ class Stage {
     this.q('.scrub input').value = i; this.q('.pos').textContent = `${i + 1} / ${this.F.length}`;
     this.lastRendered = i;
     if (this.selected != null) this.showCard(this.selected);
+  }
+  // ── 공유 존 마커 · 화살표 ──
+  firstOf(st, r) {   // 그 라운드의 선공 자리 — 새 기록은 상태에 fp, 예전 기록은 매치 정보의 라운드 선공
+    if (st && st.fp != null) return st.fp;
+    const rr = (this.meta.rounds || [])[r - 1]; return rr && rr.first != null ? rr.first : 0;
+  }
+  drawToken(st, fr, animate) {
+    // 공유 존 마커(양면 — 그 라운드 선공 쪽이 백, 후공 쪽이 흑)를 매트의 주인 토큰 존에 놓고, 공유 존 칸에도 소유를 표시한다.
+    // 마커는 라운드에서 처음 공유 존에 카드를 놓을 때 놓이고, 공유 존이 비어도 남으며, 상대가 쓰면 뒤집힌다(engine.Game — 사용자 재정 2026-09-30)
+    const tok = this.q('.token'), shz = this.q('.shz'), own = st ? st.so : null;
+    if (own == null) { tok.classList.remove('on', 'black', 'flipping'); shz.classList.remove('on', 'black'); this.tokOwner = null; return; }
+    const white = own === this.firstOf(st, fr.r);
+    if (this.tokOwner == null) tok.style.setProperty('--from', `${own === 0 ? TOKEN_DROP : -TOKEN_DROP}px`);
+    else if (this.tokOwner !== own && animate) { tok.classList.remove('flipping'); void tok.offsetWidth; tok.classList.add('flipping'); }
+    this.tokOwner = own;
+    tok.classList.add('on'); tok.classList.toggle('black', !white);
+    tok.querySelector('.tl').innerHTML = `<span class="nm${own}">P${own + 1}</span> 소유 · ${esc(this.names[own])}`;
+    tok.title = `공유 존 마커 — ${white ? '백(선공 쪽)' : '흑(후공 쪽)'} · P${own + 1} ${this.names[own]} 소유`;
+    shz.classList.add('on'); shz.classList.toggle('black', !white);
+    shz.title = `공유 존 — P${own + 1} ${this.names[own]} 소유(마커 ${white ? '백' : '흑'})`;
+  }
+  chainNumbers(st, fx) {   // 카드 → 체인 번호들 (처리 중인 고리는 남은 체인 다음 번호)
+    const m = new Map(), add = (u, n) => m.set(u, (m.get(u) || []).concat(n));
+    const links = st ? st.ch : []; links.forEach((lk, k) => add(lk[0], k + 1));
+    const res = fx.find(f => f.t === 'res'); if (res) add(res.u, links.length + 1);
+    return m;
+  }
+  drawArrows(fx, st, L, i) {
+    // 방향이 있는 화살표: 공격(공격 몬스터 → 공격 대상 · 직접 공격은 상대 쪽), 효과의 대상(발동 · 처리 중인 카드 → 대상),
+    // 효과로 고른 카드(코스트 · 처리 때 고름). 고른 카드가 이 줄에서 옮겨졌으면 옮기기 전 자리(직전 상태)를 가리킨다
+    const g = this.q('.fxl .arrows'); g.innerHTML = '';
+    if (!st || !fx.some(f => f.t === 'atk' || f.t === 'pick' || (f.t === 'res' && f.to))) return;
+    const ps = i > 0 ? this.stateAt(i - 1) : null, PL = ps && ps !== st ? this.layout(ps, []) : null;
+    const at = (u, before) => { const a = L.get(u), b = PL && PL.get(u); return before ? (b || a) : (a || b); };
+    const out = [];
+    for (const f of fx) {
+      if (f.t === 'atk') {
+        const a = at(f.a, false); if (!a) continue;
+        const d = f.d != null ? at(f.d, true) : null;
+        out.push(['atk', a, d || {x: 832, y: HAND_Y[1 - f.p]}, d ? '' : '직접 공격']);
+      } else if (f.t === 'pick' || (f.t === 'res' && f.to)) {
+        const a = at(f.u, false); if (!a) continue;
+        for (const u of f.to) { const b = at(u, true); if (b) out.push([f.t === 'res' || f.tg ? 'tgt' : 'pick', a, b, '']); }
+      }
+    }
+    out.forEach(([kind, a, b, label], k) => this.arrow(g, kind, a, b, label, k));
+  }
+  arrow(g, kind, a, b, label, k) {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy); if (len < ARROW.min) return;
+    const ux = dx / len, uy = dy / len, s0 = Math.min(ARROW.start, len * .25), s1 = Math.min(ARROW.end, len * .3);
+    const x1 = a.x + ux * s0, y1 = a.y + uy * s0, tx = b.x - ux * s1, ty = b.y - uy * s1;
+    const bend = Math.min(ARROW.bendMax, len * ARROW.bend) * (k % 2 ? -1 : 1);   // 여러 개면 번갈아 휘어 겹치지 않게
+    const cx = (x1 + tx) / 2 - uy * bend, cy = (y1 + ty) / 2 + ux * bend;
+    const hl = Math.hypot(tx - cx, ty - cy) || 1, hx = (tx - cx) / hl, hy = (ty - cy) / hl, H = ARROW.head * (kind === 'atk' ? 1.2 : 1), W = H * .62;
+    const ex = tx - hx * H * .85, ey = ty - hy * H * .85;
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', `M${x1.toFixed(1)} ${y1.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`);
+    path.setAttribute('class', 'ar ' + kind);
+    const head = document.createElementNS(SVGNS, 'polygon');
+    head.setAttribute('points', [[tx, ty], [ex - hy * W / 2, ey + hx * W / 2], [ex + hy * W / 2, ey - hx * W / 2]].map(p => p.map(v => v.toFixed(1)).join(',')).join(' '));
+    head.setAttribute('class', 'ah ' + kind);
+    g.append(path, head);
+    path.style.setProperty('--len', Math.ceil(path.getTotalLength()) + 1);
+    if (label) {
+      const t = document.createElementNS(SVGNS, 'text'); t.setAttribute('x', tx.toFixed(1)); t.setAttribute('y', (ty + (b.y < a.y ? -30 : 70)).toFixed(1));
+      t.setAttribute('class', 'al ' + kind); t.textContent = label; g.append(t);
+    }
   }
   // ── 막대 · 턴 · 체인 · 캡션 ──
   nameHtml(s) { this.names.forEach((n, k) => { s = s.split(esc(n)).join(`<span class="nm${k}">${esc(n)}</span>`); }); return s; }
@@ -336,11 +410,22 @@ class Stage {
     this.q('.phase').innerHTML = PHASES.map(p => `<span class="${st && st.ph === p && st.t > 0 ? 'on' : ''}">${p}</span>`).join('');
   }
   drawChain(st, fx) {
-    const res = fx.find(f => f.t === 'res'); const links = st ? st.ch : []; let h = '';
-    if (res) { const ci = this.info(res.u); h += `<div class="lk res" data-u="${res.u}"><span class="chip p${res.p}">P${res.p + 1}</span>처리 중 · ${esc(ci ? ci.name : '?')} ${res.n ? res.n + '번' : '발동'}</div>`; }
-    for (let k = links.length - 1; k >= 0; k--) { const [u, n, p, neg] = links[k]; const ci = this.info(u); h += `<div class="lk${neg ? ' negd' : ''}" data-u="${u}"><b>${k + 1}</b><span class="chip p${p}">P${p + 1}</span>${esc(ci ? ci.name : '?')} ${n ? n + '번' : '발동'}${neg ? ' · 무효' : ''}</div>`; }
-    const box = this.q('.chain'); box.innerHTML = h || '<div class="empty">쌓인 체인 없음</div>';
+    // 체인 순서: 1번(먼저 발동)이 맨 위, 아래로 이어진다. 처리는 마지막 고리부터 — 처리 중인 고리는 남은 체인 아래에 금색으로
+    const res = fx.find(f => f.t === 'res'), act = fx.find(f => f.t === 'act'); const links = st ? st.ch : [];
+    const rows = links.map(([u, n, p, neg, to], k) => this.chainRow(k + 1, u, n, p, neg, to, act && act.u === u && k === links.length - 1 ? 'new' : ''));
+    if (res) rows.push(this.chainRow(links.length + 1, res.u, res.n, res.p, 0, res.to, 'res'));
+    const box = this.q('.chain'); box.innerHTML = rows.join('') || '<div class="empty">쌓인 체인 없음</div>';
+    this.q('.chainp .cnt').textContent = rows.length ? `${rows.length}` : '';
+    this.q('.chainp').classList.toggle('busy', rows.length > 0);
     box.querySelectorAll('.lk').forEach(x => x.addEventListener('click', () => this.select(+x.dataset.u)));
+  }
+  chainRow(no, u, n, p, neg, to, cls) {
+    const ci = this.info(u), name = ci ? ci.name : '?', src = ci && this.face(name);
+    const tg = (to || []).map(x => { const c = this.info(x); return c ? esc(c.name) : '?'; });
+    const state = cls === 'res' ? ' · 처리 중' : neg ? ' · 무효' : '';
+    return `<div class="lk ${cls}${neg ? ' negd' : ''}" data-u="${u}"><b class="no">${no}</b><span class="th">${src ? `<img src="${src}" alt="">` : ''}</span>`
+      + `<span class="tx"><span class="nm"><span class="chip p${p}">P${p + 1}</span>${esc(name)}</span><small>${n ? n + '번 효과' : '카드 발동'}${state}</small>`
+      + `${tg.length ? `<small class="to">→ 대상: ${tg.join(', ')}</small>` : ''}</span></div>`;
   }
   hidden(fr) {   // 실시간 대전 중 상대(AI)의 비공개 정보
     if (!this.mask) return false;
@@ -452,7 +537,7 @@ class Stage {
     this.playing = true; this.q('[data-a=play]').textContent = '⏸ 정지'; clearTimeout(this.timer); this.timer = setTimeout(() => this.tick(), 200 / this.speed);
   }
   stop() { this.playing = false; clearTimeout(this.timer); const b = this.q('[data-a=play]'); if (b) b.textContent = '▶ 재생'; }
-  setSpeed(v) { this.speed = v; this.q('[data-a=speed]').value = String(v); document.documentElement.style.setProperty('--dur', Math.round(Math.min(420, 380 / Math.sqrt(v))) + 'ms'); }
+  setSpeed(v) { this.speed = v; this.q('[data-a=speed]').value = String(v); document.documentElement.style.setProperty('--dur', Math.round(Math.min(MOVE_MS_MAX, MOVE_MS / Math.sqrt(v))) + 'ms'); }
   fit() {
     this.arrange();
     if (!this.root.offsetParent) return;

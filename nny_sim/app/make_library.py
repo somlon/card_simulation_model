@@ -2,8 +2,9 @@
 
   python3 make_library.py --sim <실행 폴더> --split <분할 표> --out <library> --all-pairs --matches 1 --seed 1 [--workers 4]
   python3 make_library.py --out <library> --from-json 기록.json [...]
+  python3 make_library.py --sim <실행 폴더> --split <분할 표> --out <새 library> --rerecord <있는 library> [--workers 4]   # 기록기를 바꾼 뒤 같은 매치를 다시 녹화
 """
-import argparse, json, os, sys, time
+import argparse, gzip, json, os, sys, time
 from concurrent.futures import ProcessPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +21,7 @@ def _record(args):
     import season as SE, session as SS
     decks = SE.load_decks()
     names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']
-    store = SS.Store(tmp)
+    store = SS.Store(os.path.join(tmp, str(os.getpid())))   # 작업자마다 따로(같은 임시 폴더의 색인 파일을 동시에 쓰지 않게)
     m = SS.LiveMatch(store, split, [decks[a], decks[b]], names, human=False, seed=seed, first=first, title=f'{names[0]} vs {names[1]}')
     m._run()
     rec = m.replay_dict(); rec['meta']['created'] = time.strftime('%Y-%m-%d')
@@ -34,6 +35,7 @@ def main(argv=None):
     ap.add_argument('--mirror', action='store_true', help='미러전도 넣기'); ap.add_argument('--matches', type=int, default=1)
     ap.add_argument('--seed', type=int, default=1); ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--from-json', nargs='*', default=[])
+    ap.add_argument('--rerecord', help='있는 library 의 매치를 같은 덱 · 시드 · 1라운드 선공으로 지금 기록기로 다시 녹화(순서 유지)')
     a = ap.parse_args(argv)
     out = os.path.abspath(a.out); os.makedirs(out, exist_ok=True)
     sys.path.insert(0, HERE)
@@ -41,16 +43,25 @@ def main(argv=None):
     for path in a.from_json:
         with open(path, encoding='utf-8') as f: x = json.load(f)
         recs += x if isinstance(x, list) else [x]
-    if a.all_pairs:
+    jobs = []
+    if a.all_pairs or a.rerecord:
         sim, split = os.path.abspath(a.sim), os.path.abspath(a.split)
         _setup(sim)
         import season as SE
-        names = sorted(SE.load_decks())
-        jobs = []; k = 0
-        for i, x in enumerate(names):
-            for y in names[i if a.mirror else i + 1:]:
-                for _ in range(a.matches):
-                    jobs.append((sim, split, x, y, a.seed + k, k % 2, os.path.join(out, '_tmp'))); k += 1
+        tmp = os.path.join(out, '_tmp')
+        if a.rerecord:
+            src = os.path.abspath(a.rerecord)
+            with open(os.path.join(src, 'index.json'), encoding='utf-8') as f: idx = json.load(f)
+            for rid in sorted(idx):
+                with gzip.open(os.path.join(src, rid + '.json.gz'), 'rt', encoding='utf-8') as f: m = json.load(f)['meta']
+                jobs.append((sim, split, m['decks'][0], m['decks'][1], m['seed'], m['first'], tmp))
+        if a.all_pairs:
+            names = sorted(SE.load_decks()); k = 0
+            for i, x in enumerate(names):
+                for y in names[i if a.mirror else i + 1:]:
+                    for _ in range(a.matches):
+                        jobs.append((sim, split, x, y, a.seed + k, k % 2, tmp)); k += 1
+    if jobs:
         with ProcessPoolExecutor(a.workers) as ex:
             for n, (rec, status, err) in enumerate(ex.map(_record, jobs), 1):
                 print(f'{n}/{len(jobs)} {rec["meta"]["title"]} — {status}' + (f' {err[-200:]}' if err else ''), flush=True)
