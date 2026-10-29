@@ -35,6 +35,7 @@
 | `analysis` | 시뮬레이션 실행 · 결과 분석 · 보고서 | `analysis/main` | `analysis/season-winrate` |
 | `docs` | 설명서 · 해설서 · README | `docs/main` | `docs/code-guide` |
 | `config` | 설정 · 훅 · 지침(CLAUDE.md 제외) | `config/main` | `config/session-hook` |
+| `app` | 게임 프로그램(Windows 앱 · 재생 화면) 코드 | `app/main` | `app/game-program` |
 | `exp` | 실험 · 임시 작업 | `exp/main` | `exp/rf-policy-trial` |
 
 - **계열 연결**: 작업 브랜치는 같은 계열의 기준 브랜치(`<계열>/main`)에서 분기하고,
@@ -109,3 +110,4 @@
 - 2026-09-29: R0(세션 시작 시 origin/default 규정 · 진척 자동 로드), R2 개정(작업별 이름 + 계열 기준 브랜치 연결), R4(workflow.md 확인 · 갱신) 추가
 - 2026-10-20: R5(자동 이어하기 루틴 — 클라우드 세션 · 매시 루틴 · 사용량 한도 뒤 재개 · 세션 압축 시 인계 · 자동 종료 · 승인 없이 실행), R6(하드 코딩 금지) 추가 — 사용자 지시
 - 2026-10-22: R7(세션 압축으로 새 세션을 열었으면 채팅창 출력 마지막에 새 세션을 열었다고 보고) 추가, R5 인계 절차에 ⑤ 추가 — 사용자 지시
+- 2026-10-29: R2에 `app` 계열(게임 프로그램 · 재생 화면 코드, 기준 `app/main` — `main` 에서 분기) 추가 — 사용자 지시
