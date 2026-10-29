@@ -10,10 +10,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 
+def default_user_dir():
+    """사용자 폴더(덱 · 재생 기록 · 학습 기록 · 설정). 프로그램 폴더에 userdata 가 있으면 그곳(휴대용),
+    없으면 Windows 는 %LOCALAPPDATA%\\NNY_Simulator — 새 버전을 받아도 학습 기록 · 덱이 남는다"""
+    portable = os.path.join(ROOT, 'userdata')
+    if os.path.isdir(portable) or sys.platform != 'win32' or not os.environ.get('LOCALAPPDATA'): return portable
+    return os.path.join(os.environ['LOCALAPPDATA'], 'NNY_Simulator')
+
+
 def paths_from(a):
     p = {'sim': a.sim or os.path.join(ROOT, 'sim'), 'split': a.split or os.path.join(ROOT, 'data', 'split'),
          'cards': a.cards or os.path.join(ROOT, 'data', 'cards'), 'library': a.library or os.path.join(ROOT, 'data', 'library'),
-         'user': a.user or os.path.join(ROOT, 'userdata'), 'static': os.path.join(HERE, 'static'),
+         'user': a.user or default_user_dir(), 'static': os.path.join(HERE, 'static'),
          'viewer': a.viewer or os.path.join(ROOT, 'viewer')}
     return {k: os.path.abspath(v) for k, v in p.items()}
 

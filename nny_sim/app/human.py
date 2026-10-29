@@ -198,8 +198,19 @@ ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '
 
 
 def card_label(g, who, x):
-    side = '자신' if g.side_of(x) == who else '상대'
-    return f'{side} {ZONE_LABEL.get(x.zone, x.zone)}: {x.name}'
+    """후보 카드 이름표 — 필드의 카드는 칸 번호까지(같은 이름 몬스터 둘을 구별), 패 · 덱 · 묘지는 이름만(같은 이름은 같은 선택)"""
+    s = g.side_of(x); side = '자신' if s == who else '상대'; z = ZONE_LABEL.get(x.zone, x.zone)
+    if x.zone in ('m', 's'):
+        row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
+        if x in row: z += f' {row.index(x) + 1}'
+    return f'{side} {z}: {x.name}' + ('' if x.faceup or s == who else ' (뒷면)')
+
+
+def uniq_cards(g, who, cards):
+    """이름표가 같은 후보는 하나만(같은 선택)"""
+    out = {}
+    for x in cards: out.setdefault(card_label(g, who, x), x)
+    return list(out.items())
 
 
 _HOOKED = False
@@ -219,8 +230,9 @@ def install_block_hooks():
         if not isinstance(ai, HumanAI) or evaluating() or n <= 0 or len(pool) <= n: return orig_pick(g, c, p, pool, n, k)
         out = []
         while pool and len(out) < n:
-            i = ai._ask(g, who, f'「{c.name}」 카드 고르기 {len(out) + 1}/{n}', [card_label(g, who, x) for x in pool])
-            out.append(pool.pop(i))
+            opts = uniq_cards(g, who, pool)
+            x = opts[0][1] if len(opts) == 1 else opts[ai._ask(g, who, f'「{c.name}」 카드 고르기 {len(out) + 1}/{n}', [lab for lab, _ in opts])][1]
+            out.append(x); pool.remove(x)
         return out
     L.pick_cards = pick_cards
 

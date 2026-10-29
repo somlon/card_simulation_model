@@ -67,14 +67,15 @@ class App:
     def boot(self):
         return {'version': VERSION, 'token_ok': True, 'decks': self.store.deck_list(),
                 'skills': sorted(n for n, c in POOL.items() if c['type'] == '스킬'), 'settings': self.store.settings(),
-                'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces']},
+                'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces'],
+                           'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
-        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'))
+        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'), last_push=self.store.last_push())
 
     # ── 요청 처리 ──
     def route(self, method, path, q, body):

@@ -34,13 +34,13 @@ def safe_name(s, default='덱'):
 class Store:
     """사용자 폴더: decks/*.deck · replays/<id>.json.gz + index.json · playlists.json · learning/human_games.jsonl · settings.json"""
 
-    DEFAULTS = {'speed': 1, 'reveal': True, 'learn': True, 'hints': False,
+    DEFAULTS = {'speed': 1, 'reveal': True, 'learn': True, 'hints': False, 'auto_push': False,
                 'git_url': 'https://github.com/somlon/card_simulation_model.git', 'git_base': 'data/main', 'git_branch': ''}
 
     def __init__(self, user_dir, library_dir=None):
         self.dir = user_dir; self.lib = library_dir
         for sub in ('decks', 'replays', 'learning', 'export'): os.makedirs(os.path.join(user_dir, sub), exist_ok=True)
-        self.lock = threading.Lock()
+        self.lock = threading.Lock(); self.push_lock = threading.Lock()
 
     # ── 설정 ──
     def settings(self):
@@ -182,6 +182,18 @@ class Store:
         out = os.path.join(self.dir, 'export', time.strftime('학습데이터_%Y%m%d-%H%M%S.jsonl'))
         shutil.copyfile(self.log_path, out); return out
 
+    def auto_push(self):
+        """대전이 끝날 때 자동으로 올리기(설정) — 인터넷 · git 이 없으면 실패를 기록만 하고, 다음 대전 때 쌓인 기록을 통째로 다시 올린다"""
+        if not self.push_lock.acquire(blocking=False): return
+        try:
+            r = self.git_push(); r = {k: v for k, v in r.items() if k != 'log'}; r['time'] = now()
+            self._write_json(os.path.join(self.dir, 'learning', 'last_push.json'), r)
+        finally: self.push_lock.release()
+
+    def last_push(self):
+        try: return json.load(open(os.path.join(self.dir, 'learning', 'last_push.json'), encoding='utf-8'))
+        except (OSError, ValueError): return None
+
     def git_push(self):
         """앱이 관리하는 얕은 clone(사용자 폴더/git)에 학습 기록을 넣고 커밋 · 푸시한다 — 인터넷과 git, GitHub 로그인이 필요"""
         s = self.settings()
@@ -272,6 +284,7 @@ class LiveMatch:
                                                        'human_won': (mw == 0) if mw is not None else None,
                                                        'rounds': [[r['winner'], r['reason']] for r in meta['rounds']]}, self.table.deltas)
                     self.learned = len(self.table.deltas)
+                    if self.store.settings().get('auto_push'): threading.Thread(target=self.store.auto_push, daemon=True).start()
                 if self.rec.frames: self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
             except Exception:
                 self.error = (self.error or '') + '\n저장 오류:\n' + traceback.format_exc()[-2000:]

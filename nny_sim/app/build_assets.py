@@ -15,7 +15,7 @@ def build(out, quality=AS.QUALITY):
     faces = {}
     for i, (name, im) in enumerate(sorted(AS.card_faces().items())):
         fn = f'c/{i}.webp'; im.save(os.path.join(out, fn), 'WEBP', quality=quality, method=6); faces[name] = fn
-    idx = {'ratio': ratio, 'mat_size': list(mat.size), 'faces': faces}
+    idx = {'ratio': ratio, 'mat_size': list(mat.size), 'mat': 'mat.webp', 'back': 'back.webp', 'faces': faces}
     with open(os.path.join(out, 'index.json'), 'w', encoding='utf-8') as f: json.dump(idx, f, ensure_ascii=False)
     return idx
 
