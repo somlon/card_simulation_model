@@ -27,6 +27,10 @@
   손실 = `C_TEACHER`·KL(교사 ‖ π) + `C_BASE`·KL(기본 모델 ‖ π) − `C_RESULT`·(라운드 승패 ±1)·log π(고른 후보), Adam · 기울기 노름 상한,
   매치 10개 중 1개꼴을 검증용으로 떼어 검증 손실이 가장 낮은 에포크의 가중치를 남긴다. 결과는 `learning/nn/model.npz`(이전 모델은 `backups/`).
   `tests/nn_grad_check.py`: 순전파 = NumpyActor, 역전파 = PyTorch 학습망 자동 미분, 손실 기울기 = 수치 미분.
+- **나누기**(「🧠 신경망 학습」 창 아래 — 학습 기록과 같은 두 방법): 「신경망 내보내기」 = 표본 전체 · 내 모델 · `manifest.json` 을
+  사용자 폴더 `export/신경망표본_<컴퓨터>_<시각>.zip` 하나로(GitHub 웹에서 저장소 `nny_sim/learned/drl/human_nn/` 에 올림) ·
+  「GitHub에 올리기」 = 앱 전용 clone 에 `nny_sim/learned/drl/human_nn/<컴퓨터>/` 로 넣어 `data/human-nn-<컴퓨터>` 브랜치에 푸시(`session.Store.git_upload`).
+  저장소에서는 `merge_nn.py` 가 여러 사람의 표본을 모아(같은 매치 = 같은 표본 파일 이름은 한 번) 기본 모델에서 다시 학습한다(아래).
 
 ## 학습 흐름 (사람 대전 → 저장소)
 
@@ -37,6 +41,9 @@
    인터넷이 없을 때는 실패만 기록하고, 다음에 쌓인 기록을 통째로 다시 올립니다. 「내보내기」한 파일을 GitHub 웹에서 올려도 됩니다.
 3. **저장소에서 합치기**: `merge_learning.py --policy <실행 폴더>/learned/policy.json.xz --logs <human_games 폴더>` —
    새 매치만 학습표에 더하고(`learned/human_games_merged.json` 에 합친 id), 그 표로 이어서 학습(`train_table.py`) · 리그 · 프로그램 빌드를 합니다.
+4. **신경망 표본 합치기**: `merge_nn.py --sim <실행 폴더> --inputs nny_sim/learned/drl/human_nn --list`(현황) ·
+   `… --out <실행 폴더>/learned/drl/human_v1/model_best.npz [--epochs 4]` — 내보낸 zip · 올린 폴더를 함께 읽어 프로그램 안 「신경망 학습」과 같은 학습기로
+   기본 모델(`--base`, 기본 base_v2)에서 다시 학습합니다. 평가(학습표 · 휴리스틱 AI 상대) 뒤 data 계열 브랜치에 올리고 `build_windows.py --nn-base` 로 배포본에 넣습니다.
 
 ## 개발 · 빌드
 
@@ -64,6 +71,7 @@ Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https
 | `static/` | 화면: `board.js`(보드 · 재생 부품 — 단일 HTML 재생 파일 `viewer/replay.py` 도 같은 파일을 넣어 씀) · `app.js`(네 화면) |
 | `make_library.py` · `build_assets.py` · `build_windows.py` · `win/` | 기본 재생 기록(`--rerecord` — 기록기를 바꾼 뒤 같은 매치 다시 녹화) · 카드 이미지 · Windows 배포본 |
 | `merge_learning.py` | 저장소 쪽: 사람 대전 학습 기록 → policy 표 |
+| `merge_nn.py` | 저장소 쪽: 사람 대전 신경망 표본(내보낸 zip · 올린 폴더) → 기본 모델 다시 학습 |
 | `nnai.py` · `nn_samples.py` · `nn_train.py` | 신경망 AI: 모델 · 학습 작업 / 사람 대전 표본 / numpy 로컬 학습기 |
 | `tests/` | `eq.py`(감싸기가 AI끼리 대전을 바꾸지 않는지 — 같은 시드 기록 비교, `all` 은 모든 덱 쌍) · `backend.py`(가짜 사람 대전 — 하위 선택 · 전략 덱 교체 요청 집계 · 학습 · 재생 저장, `PAIRS=all`) · `app_test.js`(화면 자동 시험, Playwright) |
 

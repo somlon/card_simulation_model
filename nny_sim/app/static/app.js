@@ -459,6 +459,17 @@ $('nn-reset').onclick = async () => {
   try { NN.st = await api('nn/reset', {}); BOOT.nn = NN.st; nnRender(); toast('기본 모델로 되돌렸습니다.'); } catch (e) { toast(e.message); }
 };
 $('nn-folder').onclick = async () => { const r = await api('open', {what: 'nn'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
+$('nn-export').onclick = async () => {
+  const r = await api('nn/export', {}).catch(e => ({ok: false, err: e.message}));
+  $('nn-share').textContent = r.ok ? `내보냄: ${r.path}\nGitHub 웹에서 저장소의 nny_sim/learned/drl/human_nn/ 폴더에 이 파일을 올려 주세요.` : (r.err || '아직 신경망 표본이 없습니다.');
+};
+$('nn-git').onclick = async () => {
+  $('nn-git').disabled = true; $('nn-share').textContent = 'GitHub에 올리는 중…';
+  try { const r = await api('nn/git', {}); $('nn-share').textContent = r.msg + (r.ok ? '' : (r.log ? '\n' + r.log.slice(-2).join('\n').slice(-600) : '')); }
+  catch (e) { $('nn-share').textContent = e.message; }
+  finally { $('nn-git').disabled = false; }
+};
+$('nn-exdir').onclick = async () => { const r = await api('open', {what: 'export'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
 nnAvail(); if (NN.st && NN.st.numpy && NN.st.numpy.ok === null) setTimeout(nnRefresh, 1500);   // numpy 확인이 끝나면 AI 종류 선택을 다시 정한다
 $('g-hints').onchange = () => api('settings', {hints: $('g-hints').checked}).catch(() => {});
 stages.watch.fit();
