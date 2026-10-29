@@ -179,6 +179,18 @@ svg.fxl line{stroke:var(--danger);stroke-width:12;stroke-linecap:round;stroke-da
 .decision .opt .t small{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .decision .opt .v{color:var(--gold);font-size:12px;font-variant-numeric:tabular-nums}
 .decision.wait{border-color:var(--line);box-shadow:none}
+.decision.side .fixed{display:flex;gap:6px;margin-bottom:6px}
+.decision.side .fixed .opt{flex:1;justify-content:center}
+.decision.side .fixed .opt.done{border-color:var(--gold);font-weight:800}
+.decision.side .err{color:#ff8a8a;font-size:12.5px;margin-bottom:6px}
+.decision .sw{background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.decision .sw summary{display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:pointer;list-style:none}
+.decision .sw summary::-webkit-details-marker{display:none}
+.decision .sw summary img{width:34px;border-radius:3px;flex:0 0 34px}
+.decision .sw summary .t{flex:1;min-width:0}
+.decision .sw summary .t small{display:block;color:var(--muted);font-size:11.5px}
+.decision .sw[open]{border-color:var(--gold)}
+.decision .sw .opts{padding:0 6px 6px 18px;max-height:none}
 /* 목록 · 표 */
 .cols{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
 @media (min-width:1100px){.cols.c2{grid-template-columns:480px minmax(0,1fr)}.cols.c3{grid-template-columns:300px minmax(0,1fr) 420px}}
