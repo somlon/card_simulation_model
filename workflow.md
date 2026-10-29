@@ -248,6 +248,9 @@
     - 2026-10-29 조사(위) · 세션 압축 → 새 세션에 인계(R5).
     - 2026-10-29 새 세션 session_018Feff9yF96AUnWiPkfo3s1 인계 받음 — 루틴 trig_01BWMyq8NMsCRhCCXhRntrtE 생성.
     - 2026-10-29 ① ② 완료 — `app/opening-split-mulligan` 97a5789 · **PR #90**(HumanAI choose_split · mulligan_split, 가짜 사람 11덱 오류 0 · 배분 25/25 적용 · 화면 오류 0). AI 재배분은 이미 동작(기본 기록 멀리건 287 중 171 다른 배분) — 엔진 무수정. 다음 ③.
+    - 2026-10-29 ③ 완료 — `app/chain-order-display` 40891c9 · **PR #91**(record.py 발동 중 고리를 상태에 — 엔진 무수정, 같은 시드 기록 동일). 새 기본 재생 기록 `exp/windows-app` 8e148d5 `release/library_v1.2/`(65매치, res 연출 빠짐 0/4,527 · 발동 프레임 고리 4,533/4,533),
+      브라우저 체인 3 → 2 → 1 「처리 중」 순서 확인 · 가짜 사람 11덱 오류 0 · 화면 1600 · 390px 오류 0. 점검 도구 `tests/chain_check.py`.
+      새 세션 몫 끝 — 루틴 trig_01BWMyq8NMsCRhCCXhRntrtE 끔. **남은 일: session_018Feff9p4FHuAiYB3fcz4ve 가 #90 · #91 을 신경망 브랜치에 합쳐 v1.2.x 빌드(--library = library_v1.2) · wine 시험 · 채팅창 전달.**
 
 - **【진행 중 — 2026-10-29】 앱 수정 5건 — 존 · 표시 형식 선택, 메뚜기여왕 · 아우렘 티라누스, 덱 편집 3장 · 전략 덱 스킬 태그 (사용자 지시 2026-10-29 「최신 버전의 앱에 반영해서 PR과 세션 채팅창에 업로드」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 사용자 지시 원문 요약: ① 사람 vs AI에서 몬스터 · 마법 카드를 놓을 존(그 카드가 놓일 영역 안에서)을 고르지 못함, 몬스터 소환 때 표시 형식(앞면 공격 · 앞면 수비)을 사람이 못 고름
