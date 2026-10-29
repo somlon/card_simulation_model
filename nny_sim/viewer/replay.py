@@ -13,6 +13,7 @@
 import argparse, datetime, json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+STATIC = os.path.join(os.path.dirname(HERE), 'app', 'static')   # board.js · app.css (게임 프로그램 화면과 공용)
 sys.path.insert(0, HERE)
 import record as REC   # noqa: E402
 import assets as AS    # noqa: E402
@@ -27,9 +28,12 @@ def build_html(recs, out):
     pairs = {tuple(r['meta']['decks']) for r in recs}
     title = f"매치 재생 — {m['names'][0]} vs {m['names'][1]}" if len(pairs) == 1 else f"매치 재생 — 대진 {len(pairs)}개 · {len(recs)}매치"
     def js(o): return json.dumps(o, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
-    with open(os.path.join(HERE, 'template.html'), encoding='utf-8') as f:
-        html = f.read()
-    html = html.replace('__TITLE__', title).replace('/*__DATA__*/', f'const REPLAYS={js(recs)};\nconst ASSETS={js(bundle)};', 1)
+    def read(*p):
+        with open(os.path.join(*p), encoding='utf-8') as f: return f.read()
+    html = read(HERE, 'template.html')
+    board, css = read(STATIC, 'board.js').replace('</script', '<\\/script'), read(STATIC, 'app.css')   # 게임 프로그램과 같은 보드 · 재생 부품
+    html = (html.replace('__TITLE__', title).replace('/*__CSS__*/', css, 1).replace('/*__BOARD__*/', board, 1)
+            .replace('/*__DATA__*/', f'const REPLAYS={js(recs)};\nconst ASSETS={js(bundle)};', 1))
     with open(out, 'w', encoding='utf-8') as f:
         f.write(html)
     have = sum(1 for n in names if n in bundle['faces'])

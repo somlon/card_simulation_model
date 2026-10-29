@@ -46,8 +46,8 @@ Windows 파이썬은 NuGet의 파이썬 재단 공식 패키지 [`python`](https
 | `human.py` | 사람 플레이어(HumanAI) — `LearnedAI.choose` 를 화면 입력으로. AI 운용 지침 거름망 없는 행동 목록, 블록 안 카드 고르기 · 서치 감싸기, 가치 계산(가정) 안에서는 묻지 않음 |
 | `session.py` | 대전 세션(엔진 스레드 + 기록기), AI vs AI 녹화 작업, 사용자 폴더(덱 · 재생 기록 · 재생 목록 · 학습 기록 · 설정 · git 올리기) |
 | `server.py` · `main.py` | 로컬 서버(토큰 필요) · 진입점(중복 실행 방지, 창 닫으면 자동 종료, Edge 앱 창) |
-| `static/` | 화면: `board.js`(보드 · 재생 부품) · `app.js`(네 화면) |
-| `make_library.py` · `build_assets.py` · `build_windows.py` · `win/` | 기본 재생 기록 · 카드 이미지 · Windows 배포본 |
+| `static/` | 화면: `board.js`(보드 · 재생 부품 — 단일 HTML 재생 파일 `viewer/replay.py` 도 같은 파일을 넣어 씀) · `app.js`(네 화면) |
+| `make_library.py` · `build_assets.py` · `build_windows.py` · `win/` | 기본 재생 기록(`--rerecord` — 기록기를 바꾼 뒤 같은 매치 다시 녹화) · 카드 이미지 · Windows 배포본 |
 | `merge_learning.py` | 저장소 쪽: 사람 대전 학습 기록 → policy 표 |
 | `tests/` | `eq.py`(감싸기가 AI끼리 대전을 바꾸지 않는지 — 같은 시드 기록 비교) · `backend.py`(가짜 사람 2매치 — 학습 · 재생 저장) · `app_test.js`(화면 자동 시험, Playwright) |
 
