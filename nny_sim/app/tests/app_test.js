@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
   await p.evaluate(() => { document.querySelector('#g-stage [data-a=speed]').value = '8'; document.querySelector('#g-stage [data-a=speed]').dispatchEvent(new Event('change')); });
   await p.click('#g-start');
   let shot = false, clicks = 0, sides = 0; const t0 = Date.now();
-  while (Date.now() - t0 < 240000) {
+  while (Date.now() - t0 < (+process.env.LIMIT || 240000)) {
     const st = await p.textContent('#g-status');
     if (st.includes('대전 끝')) break;
     const sw = await p.$$('#g-stage .decision.side details:not([open]) summary');   // 전략 덱 교체: 넣을 카드 하나를 펼친다
