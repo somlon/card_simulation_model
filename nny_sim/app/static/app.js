@@ -416,7 +416,10 @@ function nnRender() {
     <div class="muted" style="font-size:12px;margin-top:6px">학습에는 최소 ${st.min_samples}개가 필요합니다. 학습표 기록(「학습」 화면)과 따로 쌓입니다.</div>`;
   const base = st.base, loc = st.local;
   const ev = base && base.eval ? Object.entries(base.eval).map(([k, v]) => `${k === 'table' ? '학습표 AI' : k === 'heuristic' ? '휴리스틱 AI' : k} 상대 ${v.win}% ±${v.ci95}`).join(' · ') : '';
-  $('nn-model').innerHTML = !st.available ? '<div class="err">기본 신경망 모델이 없습니다(배포본을 확인하세요).</div>'
+  const npm = st.numpy || {};
+  $('nn-model').innerHTML = npm.ok === null ? `<div class="muted">${esc(npm.msg || 'numpy 확인 중…')}</div>`
+    : !npm.ok ? `<div class="err">이 컴퓨터에서 numpy를 불러올 수 없어 신경망 기능(표본 기록 · 신경망 AI · 학습)을 끕니다. 나머지 기능은 그대로 쓸 수 있습니다.</div><div class="muted" style="font-size:12px">${esc(npm.msg || '')}</div>`
+    : !st.available ? '<div class="err">기본 신경망 모델이 없습니다(배포본을 확인하세요).</div>'
     : `<div class="nnbig">${st.using === 'local' ? '내 모델' : '기본 모델'}<small>대전에 쓰는 모델</small></div>
        ${loc ? `<div class="muted" style="font-size:12px">내 모델: ${esc(loc.created || '')} 학습 · 매치 ${loc.matches ?? '–'} · 판단 ${loc.samples ?? '–'}</div>` : '<div class="muted" style="font-size:12px">아직 내 모델이 없습니다 — 기본 모델로 대전합니다.</div>'}
        <div class="muted" style="font-size:12px">기본 모델: 학습표를 교사로 모방 학습 + 자기 대국${ev ? ` (단판 평가 ${ev})` : ''}</div>`;
@@ -431,7 +434,7 @@ async function nnRefresh() {
   try { NN.st = await api('nn/status'); BOOT.nn = NN.st; } catch (e) { return; }
   nnRender();
   clearTimeout(NN.timer);
-  if (NN.st.job && NN.st.job.status === 'running') NN.timer = setTimeout(nnRefresh, 1000);
+  if ((NN.st.job && NN.st.job.status === 'running') || (NN.st.numpy && NN.st.numpy.ok === null)) NN.timer = setTimeout(nnRefresh, 1000);
 }
 $('nn-open').onclick = () => { $('nn-modal').hidden = false; nnRefresh(); };
 $('nn-close').onclick = () => { $('nn-modal').hidden = true; };
@@ -446,7 +449,7 @@ $('nn-reset').onclick = async () => {
   try { NN.st = await api('nn/reset', {}); BOOT.nn = NN.st; nnRender(); toast('기본 모델로 되돌렸습니다.'); } catch (e) { toast(e.message); }
 };
 $('nn-folder').onclick = async () => { const r = await api('open', {what: 'nn'}); toast(r.ok ? '폴더: ' + r.path : '폴더를 열 수 없습니다.'); };
-nnAvail();
+nnAvail(); if (NN.st && NN.st.numpy && NN.st.numpy.ok === null) setTimeout(nnRefresh, 1500);   // numpy 확인이 끝나면 AI 종류 선택을 다시 정한다
 $('g-hints').onchange = () => api('settings', {hints: $('g-hints').checked}).catch(() => {});
 stages.watch.fit();
 })();

@@ -6,7 +6,7 @@
 저장: 사용자 폴더 learning/nn/samples/<시각>_<번호>.npz (drl.buffer 묶음, 매치 1개) + index.json(매치별 표본 수 · 덱).
 """
 import json, os, time, uuid
-import numpy as np
+# numpy 는 쓸 때 불러온다 — numpy 를 못 불러오는 컴퓨터에서도 프로그램의 나머지는 돌아가게(nnai.Manager 가 따로 확인)
 
 TEACHER_TEMP = 0.03   # 교사 분포 온도 (drl.train 기본값 teacher_temp 와 같음)
 DIR = ('learning', 'nn', 'samples')
@@ -17,6 +17,7 @@ def samples_dir(user_dir):
 
 
 def teacher_probs(ai, table, g, p, decision, opts, scale):
+    import numpy as np
     from policy import prior_of
     me = g.p[p].skill.name; op = g.p[1 - p].skill.name
     base = f'{me} vs {op}|{decision}|'; b = ai.bucket(g, p)
@@ -64,6 +65,7 @@ class Tap:
 
     def save(self, user_dir, winner, meta):
         """매치 끝: 승패가 난 라운드의 표본만 저장 → (파일 이름, 표본 수). 표본이 없으면 (None, 0)"""
+        import numpy as np
         self.rec.end_match(winner)
         P = self.rec.packed().get('game')
         n = 0 if P is None else len(P['idx'])
@@ -107,6 +109,7 @@ def stats(user_dir):
 
 def load_all(path):
     """표본 폴더(또는 사용자 폴더의 표본 폴더) → (묶음, 표본별 매치 번호, 정보)"""
+    import numpy as np
     from drl import buffer as B
     d = path if os.path.basename(path) == DIR[-1] else samples_dir(path)
     names = sorted(n for n in os.listdir(d) if n.endswith('.npz')) if os.path.isdir(d) else []

@@ -237,9 +237,9 @@ class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리(0) 여부"""
 
     def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='',
-                 ai_kind='table', nn_model=None, nn_label=''):
+                 ai_kind='table', nn_model=None, nn_label='', nn_record=False):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names; self.human = human
-        self.ai_kind = ai_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_saved = 0   # P2(AI) 종류: 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base')
+        self.ai_kind = ai_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_record = nn_record; self.nn_saved = 0   # P2(AI) 종류: 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base')
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
         self.learn = learn and human; self.hints = hints; self.title = title
         self.bridge = Bridge(); self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
@@ -265,7 +265,7 @@ class LiveMatch:
             table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
             self.table = table; self.status = 'running'
             actor = NA.load_actor(self.nn_model) if self.ai_kind == 'nn' else None
-            if self.learn: tap = NS.Tap()   # 신경망 학습 표본(두 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포)
+            if self.learn and self.nn_record: tap = NS.Tap()   # 신경망 학습 표본(두 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포) — numpy 를 쓸 수 있을 때만
 
             def make_ai(d):
                 seat = d['_seat']

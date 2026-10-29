@@ -6,12 +6,27 @@
              지금까지 쌓인 사람 대전 표본 전체로 다시 학습한다(학습을 거듭해도 기본 모델에서 멀리 떠내려가지 않게). 이전 내 모델은 backups/ 에 보관.
 대국: AI 종류 「신경망 AI」 = drl.agent.DRLAI(학습표 AI의 후보 생성 · 하드 제약은 그대로, 고르기만 신경망). 내 모델이 있으면 내 모델, 없으면 기본 모델.
 """
-import json, os, shutil, threading, time, traceback
+import json, os, shutil, subprocess, sys, threading, time, traceback
 
 BASE_REL = ('learned', 'drl', 'base_v2', 'model_best.npz')
 NN_DIR = ('learning', 'nn')
 KEEP_BACKUPS = 3
 MIN_SAMPLES = 50      # 이보다 적으면 학습하지 않는다(한 판도 안 되는 자료로 모델을 바꾸지 않게)
+NUMPY_CHECK_TIMEOUT = 120   # numpy 확인(별도 프로세스) 제한 시간(초)
+
+
+def numpy_check():
+    """numpy 를 이 컴퓨터에서 불러올 수 있는가 — 별도 프로세스로 확인한다(불러오다 프로세스가 통째로 죽는 환경이 있어서: 예 wine 9.0 의 ucrtbase crealf 없음).
+    반환: (가능 여부, 안내 문구)"""
+    code = 'import numpy as np; print(np.__version__); x = np.ones((8, 8), np.float32); print(float((x @ x).sum()))'
+    try:
+        r = subprocess.run([sys.executable, '-I', '-c', code], capture_output=True, text=True, timeout=NUMPY_CHECK_TIMEOUT,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    except (OSError, subprocess.SubprocessError) as ex:
+        return False, f'numpy 확인 실패: {ex}'
+    if r.returncode != 0 or not r.stdout.strip():
+        return False, 'numpy 를 불러올 수 없음' + (f' — {(r.stderr or "").strip()[-300:]}' if r.stderr else f' (종료 코드 {r.returncode})')
+    return True, 'numpy ' + r.stdout.split()[0]
 
 
 def base_path(sim, override=None):
@@ -57,6 +72,18 @@ class Manager:
     def __init__(self, sim, user_dir, base=None):
         self.sim = sim; self.user = user_dir; self.base = base_path(sim, base)
         self.job = None; self.lock = threading.Lock()
+        self.np_ok = None; self.np_msg = 'numpy 확인 중…'   # None = 확인 중
+        threading.Thread(target=self._check, daemon=True).start()
+
+    def _check(self):
+        self.np_ok, self.np_msg = numpy_check()
+
+    def ready(self):
+        """신경망 기능(표본 기록 · 신경망 AI · 학습)을 쓸 수 있는가 — 확인이 끝나기 전이면 기다린다"""
+        for _ in range(NUMPY_CHECK_TIMEOUT * 10):
+            if self.np_ok is not None: break
+            time.sleep(0.1)
+        return bool(self.np_ok) and os.path.exists(self.base)
 
     def current_path(self):
         p = local_path(self.user)
@@ -65,7 +92,9 @@ class Manager:
     def status(self):
         import nn_samples as NS
         base = self.base
-        return {'available': os.path.exists(base), 'base': model_info(base), 'local': model_info(local_path(self.user)),
+        ok = bool(self.np_ok) and os.path.exists(base)
+        return {'available': ok, 'numpy': {'ok': self.np_ok, 'msg': self.np_msg}, 'base_exists': os.path.exists(base),
+                'base': model_info(base) if ok else None, 'local': model_info(local_path(self.user)) if ok else None,
                 'using': 'local' if os.path.exists(local_path(self.user)) else 'base', 'samples': NS.stats(self.user),
                 'job': self.job_info(), 'min_samples': MIN_SAMPLES}
 
@@ -81,7 +110,7 @@ class Manager:
         import nn_train as NT
         with self.lock:
             if self.busy(): raise ValueError('이미 학습 중입니다')
-            if not os.path.exists(self.base): raise ValueError('기본 신경망 모델이 없습니다')
+            if not self.ready(): raise ValueError('신경망 기능을 쓸 수 없습니다: ' + (self.np_msg if not self.np_ok else '기본 신경망 모델이 없습니다'))
             self.job = {'status': 'running', 'progress': 0.0, 'msg': '표본 불러오는 중…', 'started': time.strftime('%Y-%m-%d %H:%M:%S'),
                         'epochs': int(epochs or NT.EPOCHS), 'stop': threading.Event()}
         threading.Thread(target=self._run, daemon=True).start()

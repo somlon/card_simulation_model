@@ -51,12 +51,13 @@ class App:
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
         ai_kind = j.get('ai_kind', 'table'); nn_model = None; nn_label = ''
         if ai_kind == 'nn':
+            if not self.nn.ready(): raise ValueError('신경망 AI를 쓸 수 없습니다: ' + self.nn.np_msg)
             nn_model = self.nn.current_path()
-            if not os.path.exists(nn_model): raise ValueError('신경망 모델이 없습니다')
             nn_label = 'local' if nn_model == NA.local_path(self.store.dir) else 'base'
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=(mode == 'human'), seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
-                                 ai_kind=ai_kind, nn_model=nn_model, nn_label=nn_label).start()
+                                 ai_kind=ai_kind, nn_model=nn_model, nn_label=nn_label,
+                                 nn_record=mode == 'human' and self.nn.ready()).start()
         return {'id': self.live.id, 'names': names, 'title': title}
 
     def start_record(self, j):
