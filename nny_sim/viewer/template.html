@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<!-- 단일 HTML 재생 파일 껍데기. 보드 · 재생 부품과 스타일은 게임 프로그램과 같은 nny_sim/app/static/board.js · app.css 를 replay.py 가 그대로 넣는다 -->
+<style>
+/*__CSS__*/
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;padding:10px 16px 0;max-width:1700px;margin:0 auto}
+header.top h1{font-size:18px;margin:0;font-weight:800}
+header.top .meta{color:var(--muted);font-size:12.5px}
+header.top select{margin-left:auto;max-width:min(520px,100%)}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 id="title"></h1>
+  <span class="meta" id="meta"></span>
+  <select id="matchSel" hidden aria-label="매치 고르기"></select>
+</header>
+<main><div id="stage"></div></main>
+<script>
+/*__DATA__*/
+</script>
+<script>
+/*__BOARD__*/
+</script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id), esc = NNY.esc;
+const stage = new NNY.Stage($('stage'), {assets: ASSETS, pool: {}, url: rel => rel});   // 이미지는 파일 안의 data URI
+document.addEventListener('keydown', e => stage.key(e));
+const aiName = ai => ai === 'table' ? '학습표 AI' : ai === 'heuristic' ? '휴리스틱 AI' : ai;
+function result(M, names) {
+  if (M.stalled) return '1000턴 안전장치로 중단';
+  const w = [0, 1].map(s => M.rounds.filter(r => r.winner === s).length);
+  return M.winner == null ? `무승부 (${w[0]}–${w[1]})` : `${names[M.winner]} 승 (${w[0]}–${w[1]})`;
+}
+function load(k) {
+  const R = REPLAYS[k], M = R.meta, N = M.names;
+  stage.stop(); stage.load(R);
+  $('title').textContent = `${N[0]} vs ${N[1]}`;
+  $('meta').textContent = `Bo3 매치 · 시드 ${M.seed} · 양쪽 ${aiName(M.ai)} · 결과: ${result(M, N)}${R.built ? ' · 생성 ' + R.built : ''}`;
+  stage.fit();
+}
+const sel = $('matchSel');
+if (REPLAYS.length > 1) {
+  sel.innerHTML = REPLAYS.map((r, k) => `<option value="${k}">매치 ${k + 1} · ${esc(r.meta.names[0])} vs ${esc(r.meta.names[1])} · 시드 ${r.meta.seed} · ${esc(result(r.meta, r.meta.names))}</option>`).join('');
+  sel.hidden = false; sel.onchange = e => load(+e.target.value);
+}
+load(0);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+#include <winver.h>
+1 ICON "app.ico"
+1 VERSIONINFO
+FILEVERSION __VER_COMMA__
+PRODUCTVERSION __VER_COMMA__
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041204B0"
+    BEGIN
+      VALUE "FileDescription", "NNY Simulator (New Neo Yugioh card game simulator)"
+      VALUE "ProductName", "NNY Simulator"
+      VALUE "FileVersion", "__VER__"
+      VALUE "ProductVersion", "__VER__"
+      VALUE "OriginalFilename", "NNY_Simulator.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0412, 1200
+  END
+END
