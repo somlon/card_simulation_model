@@ -229,7 +229,7 @@
 
 ## 진행 중
 
-- **【진행 중 — 2026-10-30】 세트 카드 정보 감춤 · 학습 데이터 판단 단위 정리 · 공유 존 2칸 (사용자 지시 2026-10-30 「1. 대전에서 세트 카드의 정보가 보이는 걸 안보이게 2. 학습시킬 데이터를 … 판단 단위로 데이터를 빼고 고를 수 있게 3. 공유존을 두 칸으로 늘리고 각 플레이어의 2,4번 몬스터 존을 제거 … 공유 존 위치는 현재의 스킬 카드 존, 스킬 카드 존은 P1 시점 기준 1,5번 몬스터 존 위쪽, 원래 공유존 위치에는 필드 카드 존 / PR 올리고 .ZIP 업로드」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
+- **【완료 — 2026-10-30, 후속 사용자 확인】 세트 카드 정보 감춤 · 학습 데이터 판단 단위 정리 · 공유 존 2칸 (사용자 지시 2026-10-30 「1. 대전에서 세트 카드의 정보가 보이는 걸 안보이게 2. 학습시킬 데이터를 … 판단 단위로 데이터를 빼고 고를 수 있게 3. 공유존을 두 칸으로 늘리고 각 플레이어의 2,4번 몬스터 존을 제거 … 공유 존 위치는 현재의 스킬 카드 존, 스킬 카드 존은 P1 시점 기준 1,5번 몬스터 존 위쪽, 원래 공유존 위치에는 필드 카드 존 / PR 올리고 .ZIP 업로드」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「세트 카드 감춤 · 판단 단위 정리 · 공유 존 2칸 자동 이어하기(매시)」(trig_016wacR5jEQBEjHV4xjvEy8N, 매시 31분).
   - 계획: ① `app/hide-set-cards`(실시간 대전 화면 · 기록 줄에서 상대 세트 카드 이름 감춤) ② `app/decision-curation`(excluded.json 에 매치별 판단 번호 — 학습표 갱신 · 신경망 표본, 화면에서 판단 단위로 빼기)
     ③ `model/shared-zones` + `app/shared-zones`(엔진: 몬스터 존 1 · 3 · 5만, 공유 존 2칸(칸마다 마커), 화면 배치 · 매트) → 시험 · PR · v1.3.2 zip.
@@ -242,6 +242,11 @@
       기본 재생 기록 다시 녹화(make_library --rerecord) → 통합 · v1.3.2 빌드 · PR.
     - 2026-10-30 `app/shared-zones` 3c5ff14(board.js 배치 · 마커 칸마다 · record sh 목록 · human 공유 존 1 · 2 · 매트 v2 field_mat_v2.png + make_mat_v2.py, 앱 시험 · 화면 오류 0).
       통합 `claude/vibrant-euler-jekich`(hide-set-cards · decision-curation · shared-zones 병합 + VERSION 1.3.2 · 읽어보기). 기본 재생 기록 다시 녹화 중(/home/user/appsim/library132, 새 엔진). 다음: PR · 빌드 · zip.
+    - 2026-10-30 **완료** — PR **#110** model/shared-zones · **#111** app/shared-zones · **#112** app/hide-set-cards · **#113** app/decision-curation.
+      기본 재생 기록 다시 녹화(새 규칙, 65매치 done) `exp/windows-app` release/library_v1.3.2. **v1.3.2** 배포본 `exp/windows-app` 900a6ba(102.6MB, SHA-256 6b2f50f9…599b) · 채팅창 전달 ·
+      wine 시험(3매치 정상, 상태 몬스터 존 3 · 공유 존 목록). 루틴 trig_016wacR5jEQBEjHV4xjvEy8N 끔.
+      후속: 머지 #110 → #111 · #112 · #113(사용자 — #111 과 #112 는 human.py card_label 겹침, 통합 브랜치에서 해결한 형태 참고), 아직 열린 #105 · #106,
+      데이터버그 패키지 프로그램 「6장」 조건(자리 5칸으로 불가 — 사용자 결정), 실제 Windows 확인.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 행운의 도적 코스트 · 기적의 영웅 [신속] · 희생의 성녀 · 효과 처리 후 화면 갱신 (사용자 지시 2026-10-30 4건 + 「효과가 처리된 상황에서 화면 전환도 즉각적으로」(앞 4건 뒤에), 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「행운의 도적 · 기적의 영웅 · 희생의 성녀 · 화면 갱신 자동 이어하기(매시)」(trig_01HNZWzYAkLnKr7yXtFayEP1, 매시 52분).
