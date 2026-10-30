@@ -97,4 +97,41 @@ n0 = len(bot.asked); bot.answers = ['번성충-주기매미']
 x = hu.breeding_pick(g, 0, cands)
 check('번식지: 고른 카드', x.name == '번성충-주기매미', str(bot.asked[n0:]))
 
+# ⑥ 공격 — 상대 필드에 같은 이름 몬스터가 여러 장이면 어느 카드를 공격할지 고른다(사용자 지시 2026-10-30)
+g, hu, bot = game('투기장의 규칙', '세제', [])
+weak = sorted((n for n, d in Impl.pool.items() if d['type'] == '몬스터' and 1 <= int(d.get('level') or 0) <= 4), key=lambda n: int(Impl.pool[n].get('atk') or 0))[0]
+strong = max((n for n, d in Impl.pool.items() if d['type'] == '몬스터' and int(d.get('level') or 0) <= 4), key=lambda n: int(Impl.pool[n].get('atk') or 0))
+att = put(g, strong, 0, 'm', 0); att.summon_turn = 1; att.pos = 'atk'
+t1 = put(g, weak, 1, 'm', 0); t2 = put(g, weak, 1, 'm', 2)
+for t in (t1, t2): t.pos = 'atk'; t.summon_turn = 1
+g.phase = '전투'
+labs_seen = {}   # 첫 「공격」 질문의 후보 — 상대 몬스터 존 3 쪽을 고른다(뒤 질문은 「공격 종료」)
+
+class Pick(Script):
+    def ask(self, req):
+        if req['decision'] == '공격' and not labs_seen:
+            labs_seen['opts'] = req['opts']
+            return next(i for i, o in enumerate(req['opts']) if '상대 몬스터 존 3' in o.get('sub', ''))
+        return 0
+hu.bridge = Pick([])
+hu.battle_phase(g, 0)
+subs = [o.get('sub', '') for o in labs_seen.get('opts', [])]
+check('공격: 같은 이름 대상이 따로 나온다', sum(1 for x in subs if '상대 몬스터 존' in x) == 2, str(subs))   # 빛낼 카드(u)는 기록기가 있는 실제 대전에서만
+check('공격: 고른 칸의 카드를 공격', t2.zone == 'grave' and t1.zone == 'm', f'({weak} 존1 {t1.zone} · 존3 {t2.zone})')
+
+# ⑦ 행동 — 자신 필드의 같은 이름 몬스터는 표시 형식 변경 후보도 따로
+g, hu, bot = game('투기장의 규칙', '세제', [])
+a1 = put(g, weak, 0, 'm', 0); a2 = put(g, weak, 0, 'm', 1)
+for a in (a1, a2): a.pos = 'atk'; a.summon_turn = 1
+seen = {}
+
+class First(Script):
+    def ask(self, req):
+        if req['decision'].endswith('행동') and not seen: seen['opts'] = req['opts']
+        return 0
+hu.bridge = First([])
+hu.main_phase(g, 0, '정비')
+pos = [o for o in seen.get('opts', []) if o['label'].startswith('수비 표시로:')]
+check('행동: 같은 이름 몬스터의 표시 형식 변경이 따로 나온다', len(pos) == 2 and pos[0].get('sub') != pos[1].get('sub'), str([(o['label'], o.get('sub')) for o in pos]))
+
 print('결과:', '통과' if ok else '실패'); sys.exit(0 if ok else 1)
