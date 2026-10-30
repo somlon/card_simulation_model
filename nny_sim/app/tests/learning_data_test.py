@@ -50,7 +50,7 @@ if NN:
           and list(idx.values())[0]['source'] == 'ai' and list(idx.values())[0]['match'] == ai_recs[0]['match'])
 
 # ② AI끼리 녹화(학습 데이터로 남기기) — 휴리스틱 vs 학습표 / 남기지 않기
-job = app.route('POST', '/api/record', {}, {'pairs': [['o:데이터버그 패키지 프로그램', 'o:소원의 분수']], 'matches': 1, 'ai0_kind': 'heuristic', 'ai_kind': 'table', 'learn': True})
+job = app.route('POST', '/api/record', {}, {'pairs': [['o:호박옥 - 봉인의 계약', 'o:소원의 분수']], 'matches': 1, 'ai0_kind': 'heuristic', 'ai_kind': 'table', 'learn': True})
 t0 = time.time()
 while app.jobs[job['id']].status == 'running' and time.time() - t0 < 600: time.sleep(0.5)
 job2 = app.route('POST', '/api/record', {}, {'pairs': [['o:세제', 'o:희생제']], 'matches': 1})

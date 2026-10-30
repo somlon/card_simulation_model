@@ -12,7 +12,7 @@ app = server.App({'sim': SIM, 'split': SPLIT, 'cards': CARDS, 'library': LIB, 'u
                   'viewer': os.path.join(os.path.dirname(APP), 'viewer')})
 rng = random.Random(9); asked = stale = syncs = 0
 key = lambda st: json.dumps(st, sort_keys=True, ensure_ascii=False)
-for da, db, seed in [('데이터버그 패키지 프로그램', '던전마스터 셔플!', 3), ('소원의 분수', '세제', 4)]:
+for da, db, seed in [('호박옥 - 몽식의 계약', '던전마스터 셔플!', 3), ('소원의 분수', '세제', 4)]:
     r = app.start_match({'mode': 'human', 'deck': 'o:' + da, 'ai_deck': 'o:' + db, 'first': 'me', 'seed': seed, 'learn': False}); lid = r['id']
     f = s = c = 0; t0 = time.time(); S = []
     while time.time() - t0 < 400:
