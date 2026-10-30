@@ -11,7 +11,7 @@ import sys, threading
 
 import policy as P
 from ai import HeuristicAI
-from cards import act_score
+from cards import act_score, value
 
 # 수의 가치를 계산하는 함수 — 이 안에서 불린 고르기는 「가정」이므로 사람에게 묻지 않고 AI와 같은 기본 방식으로 고른다
 # (블록 가치 v_search 가 「이 효과라면 무엇을 서치할까」를 pick_search 로 가정한다 — blocks/lib.py)
@@ -114,6 +114,49 @@ class HumanAI(P.LearnedAI):
     def cont_apply(self, g, p, src, num, why=''):
         idx = self._ask(g, p, f'「{src.name}」 {num}번 [지속]을 지금 적용할까요? ({why})', ['적용', '적용 안 함'])
         return idx == 0
+
+    # ── 제물(상급) 일반소환: ai.py의 pick_tributes(가치 낮은 순 자동 선택)를 쓰지 않고, 릴리스할 몬스터를 사람이 직접 고른다.
+    # 후보 · 필요 매수는 엔진 헬퍼(g.release_cands · g.tributes_needed)를 읽기 전용으로만 쓴다 — 룰 재구현 없음.
+    def extra_summon_options(self, g, p):
+        """상급(제물) 일반소환 후보 — ai.py HeuristicAI.extra_summon_options와 같은 소환 가능 조건이지만, 제물은 여기서 정하지 않는다
+        (ts=None으로 두고 do_extra에서 pick_release_tributes로 사람에게 물어 정한다). AI만의 운용 지침(손해면 제외하는 VETO ·
+        번성충은 결착 시에만)은 main_phase의 다른 후보들과 같이 사람에게는 적용하지 않는다"""
+        out = []
+        if g.phase != '진행' or not g.can_normal(p): return out
+        for c in g.p[p].hand:
+            if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
+            if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
+            if not g.can_normal(p, c): continue
+            n = g.tributes_needed(c.level)
+            if n == 0: continue   # 무제물 소환은 main_phase의 「소환:」 후보
+            cands = g.release_cands(p)
+            if len(cands) < n or (not g.free_m(p) and not any(t.zone == 'm' for t in cands)): continue
+            out.append((f'소환:{c.name}', 20 + g.atk(c) / 100, ('summon', c, None, None)))
+        return out
+
+    def pick_release_tributes(self, g, p, c):
+        """「{c.name}」 일반소환의 제물로 릴리스할 몬스터를 사람에게 n장(g.tributes_needed) 1장씩 순서대로 묻는다
+        (g.release_cands로 구한 후보에서 — 매번 choose()를 거치므로 다른 사람 판단과 같은 학습표 흐름(trace)에 남는다).
+        후보가 모자라게 되면(동시 효과 등으로 줄어든 경우) None — 소환 취소"""
+        n = g.tributes_needed(c.level)
+        if n == 0: return ()
+        pool = list(g.release_cands(p)); chosen = []
+        for i in range(n):
+            if len(pool) < n - i: return None
+            opts = [(card_label(g, p, x), -value(g, x) * 10, x) for x in pool]
+            pick = self.choose(g, p, f'{c.name} 제물로 릴리스할 몬스터 ({i + 1}/{n})', opts)
+            if pick is None: return None
+            chosen.append(pick); pool.remove(pick)
+        if not g.free_m(p) and not any(t.zone == 'm' for t in chosen): return None
+        return tuple(chosen)
+
+    def do_extra(self, g, p, pay):
+        kind, c, ts, pos = pay
+        if kind == 'summon' and ts is None:
+            ts = self.pick_release_tributes(g, p, c)
+            if ts is None: return
+            pay = (kind, c, ts, pos)
+        HeuristicAI.do_extra(self, g, p, pay)
 
     # ── 행동 목록: LearnedAI 와 같은 후보 · 실행이되, AI 운용 지침으로 빼는 후보는 빼지 않는다 ──
     # (AI만의 거름망: 손해로 보는 후보(VETO) 제외, 번성충 일반소환은 결착 때만, 결착 가능하면 자동 공격 — policy.LearnedAI 참고)
