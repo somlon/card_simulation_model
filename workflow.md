@@ -229,7 +229,7 @@
 
 ## 진행 중
 
-- **【진행 중 — 2026-10-30】 AI 종류 자리별 대전 · AI끼리 대전 학습 데이터 · 학습하는 휴리스틱 · 학습 데이터 정리 · 사람 데이터 가중치 (사용자 지시 2026-10-30 7개 항목 — 「위 내용 해결하고 PR하고 응용 프로그램 및 구동에 필요한 파일들을 세션 채팅창에 .zip 파일로 업로드」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
+- **【완료 — 2026-10-30, 후속 사용자 확인】 AI 종류 자리별 대전 · AI끼리 대전 학습 데이터 · 학습하는 휴리스틱 · 학습 데이터 정리 · 사람 데이터 가중치 (사용자 지시 2026-10-30 7개 항목 — 「위 내용 해결하고 PR하고 응용 프로그램 및 구동에 필요한 파일들을 세션 채팅창에 .zip 파일로 업로드」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 원문 요약: ① 다른 종류의 AI끼리 대전 가능? ② 신경망 AI 판단 기준? ③ AI끼리 대전 데이터가 내보내기 · GitHub 반영에 잡히지 않음 → 잡히게
     ④ 휴리스틱 AI도 학습으로 발전 가능? 가능하면 다른 모델과 같은 기능 ⑤ 학습할 데이터를 사용자가 정제(유용한 데이터만) — AI 3종별 답변 · 가능하면 추가
     ⑥ 사람 vs AI 데이터를 AI vs AI 데이터보다 높은 가중치로(모든 모델) ⑦ AI가 패스(아무것도 안 함)를 고를 수 있나? 아니면 가능하게.
@@ -271,6 +271,12 @@
       시험: learning_data_test 16개 · heuristic_test 9개 · human_choice_test 8개 통과, 화면 시험 오류 0, 가중 손실 수치 미분 일치. 실행 폴더: /home/user/run130(model/table-weights + data) · /home/user/appsim(v1.2.2 data + sim 사본).
     - 2026-10-30 남은 일 2 완료 — `app/heuristic-learning` 5b84ddd 푸시: session.LearningHeuristicAI(전술 = HeuristicAI 규칙, 전략 = 시작 패 배분 · 재배분 · 멀리건 · 드로우 덱 · 선후공 · 번식지 학습표),
       heuristic_test 10개 통과, 같은 시드 120매치(상대 학습표 AI) 매치 승률 58.3% → 60.8%(같은 승자 97). 다음: 3 v1.3.0 빌드.
+    - 2026-10-30 **완료** — 남은 일 3 · 4 · 5: v1.3.0 빌드 = 배포 통합 `claude/vibrant-euler-jekich` 708ff76(995fdf1 app/heuristic-learning 병합 + 읽어보기) + 엔진 run130(`model/table-weights` 6fb94be) + data/main + base_v2 + library_v1.2.1,
+      `exp/windows-app` 690ac17 release/NNY_Simulator_v1.3.0_win64.zip(102.6MB, SHA-256 834fb80f…469d) · 채팅창 전달.
+      wine(LC_ALL=C.UTF-8, `script` 가상 터미널로 python.exe 실행 — 출력 파일로 돌리면 init_sys_streams 오류): 그대로 빌드 = 신경망만 꺼지고 AI끼리 관전 · 나 vs 휴리스틱 · 녹화 · 정리 · 내보내기 정상 /
+      shim 사본 = 휴리스틱 vs 신경망 관전 · 신경망 학습(사람 119 · AI끼리 221 표본) · 신경망 내보내기 정상.
+      PR **#100** model/table-weights → model/main · **#101** app/ai-kinds-per-seat · **#102** app/learning-data · **#103** app/heuristic-learning → app/main(#98 → #99 위에 쌓임 — 머지 순서 #100, #98 → #99 → #101 → #102 → #103).
+      답변 보고(① ② ④ ⑤ ⑦) · 루틴 trig_01UKnHS2qLQm6DfakznXU8pe 끔. 후속: PR 머지(사용자), 실제 Windows 확인.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 사람 공격 대상 — 같은 이름 카드 구별 · 휴리스틱 AI 를 .exe 에서 (사용자 지시 2026-10-30 「사람 vs AI에서 사람이 공격 선언할 때 상대 필드의 같은 이름의 카드가 여러 장 있을 때 어느 카드를 공격할지 선택 가능한지 확인하고 선택권이 없다면 선택 가능하게 수정해 / 휴리스틱 모델의 AI도 .exe 파일에서 동작할 수 있게 추가해줘」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 매시 루틴 「공격 대상 · 휴리스틱 AI 자동 이어하기(매시)」(trig_01KJxkGJV7CnjkGJCjzzkqMq, 이 세션, 매시 19분) — 2026-10-30 끔.
