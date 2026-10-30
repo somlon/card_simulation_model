@@ -111,6 +111,18 @@ class HumanAI(P.LearnedAI):
                         [f'메인 덱 ({len(pl.main)}장)', f'상급 덱 ({len(pl.upper)}장)'])
         return ('main', 'upper')[idx]
 
+    def pick_tribute_set(self, g, p, c, n):
+        """제물 일반소환: 릴리스할 몬스터 n장을 사람이 직접 고른다 — 1장씩 n번 물어서 조합을 만든다
+        (ai.py HeuristicAI.pick_tributes 는 가치가 낮은 순으로 AI가 자동으로 고른다 — 사람은 직접 고름)"""
+        chosen = []; remaining = list(g.release_cands(p))
+        for i in range(n):
+            if not remaining: return None
+            idx = self._ask(g, p, f'{c.name} 제물 {i + 1}/{n} — 릴리스할 몬스터', [f'{x}' for x in remaining])
+            chosen.append(remaining.pop(idx))
+        ts = tuple(chosen)
+        if not g.free_m(p) and not any(t.zone == 'm' for t in ts): return None
+        return ts
+
     def cont_apply(self, g, p, src, num, why=''):
         idx = self._ask(g, p, f'「{src.name}」 {num}번 [지속]을 지금 적용할까요? ({why})', ['적용', '적용 안 함'])
         return idx == 0
@@ -168,6 +180,19 @@ class HumanAI(P.LearnedAI):
                 if not g.act(p, c, e): failed.add((c.uid, e.num))
             elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
+
+    def do_extra(self, g, p, pay):
+        """HeuristicAI.do_extra 와 같되, 제물 일반소환(kind == 'summon')은 AI가 자동으로 고른 제물 대신
+        사람이 pick_tribute_set 으로 직접 골라 g.normal_summon 을 그대로 호출한다(룰 불가침 — 엔진은 안 건드림)"""
+        kind, c, ts, pos = pay
+        if kind == 'summon':
+            if ts:
+                chosen = self.pick_tribute_set(g, p, c, len(ts))
+                if chosen is None:
+                    g.L(f'{g.pname(p)} {c} 제물 소환 취소 (제물 선택 불가)', 'sys'); return
+                ts = chosen
+            g.normal_summon(c, p, ts, pos); g.after_action(p)
+        else: g.change_position(c, p); g.triggers()
 
     def battle_phase(self, g, p):
         for _ in range(MAX_ATTACKS):
