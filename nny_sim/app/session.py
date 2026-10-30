@@ -13,6 +13,7 @@ import deck as D
 import match as M
 import policy as P
 import season as SE
+from ai import HeuristicAI
 from cards import POOL
 from engine import StalledGame
 
@@ -150,7 +151,8 @@ class Store:
         m = rec['meta']
         return {'title': m.get('title') or ' vs '.join(m['names']), 'names': m['names'], 'decks': m['decks'], 'winner': m.get('winner'),
                 'kind': m.get('kind', 'ai'), 'created': m.get('created', ''), 'seed': m.get('seed'), 'frames': len(rec['frames']),
-                'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done')}
+                'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done'),
+                'ai': m.get('ai', 'table'), **({'ai2': m['ai2']} if m.get('ai2') else {})}
 
     def save_replay(self, rec, base=None, rid=None):
         base = base or os.path.join(self.dir, 'replays')
@@ -256,13 +258,24 @@ class Store:
             return {'ok': False, 'msg': f'git 실행 오류: {ex}', 'log': log}
 
 
+AI_KINDS = ('table', 'nn', 'heuristic')   # AI 대전 · 녹화에서 고를 수 있는 AI 종류
+
+
+class FixedHeuristicAI(HeuristicAI):
+    """휴리스틱 AI(ai.HeuristicAI — 학습표 없이 덱 지침 · 카드 우선순위로 고름). 학습하지 않는다: 번식지 판단표(ai.BREEDING)도 갱신하지 않는다
+    (match_sim 의 휴리스틱 설정과 같음). 전략 덱 교체는 다른 AI와 같은 규칙(match.side_swap)"""
+    def end_game(self, g, p, winner): self.decisions = []
+
+
 class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리(0) 여부"""
 
     def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='',
-                 ai_kind='table', nn_model=None, nn_label='', nn_record=False):
+                 ai_kind='table', nn_model=None, nn_label='', nn_record=False, ai0_kind='table'):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names; self.human = human
-        self.ai_kind = ai_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_record = nn_record; self.nn_saved = 0   # P2(AI) 종류: 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base')
+        # AI 종류(AI_KINDS): ai_kind = P2(AI) 자리 — 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base') | 'heuristic' 휴리스틱 AI,
+        # ai0_kind = 사람이 없을 때 P1 자리(녹화 · 관전 — 'table' | 'heuristic')
+        self.ai_kind = ai_kind; self.ai0_kind = ai0_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_record = nn_record; self.nn_saved = 0
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
         self.learn = learn and human; self.hints = hints; self.title = title
         self.bridge = Bridge(); self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
@@ -281,8 +294,9 @@ class LiveMatch:
     def _run(self):
         REC.install_hooks()
         meta = {'decks': [d['스킬'] for d in self.decks], 'names': self.names, 'seed': self.seed, 'first': self.first,
-                'ai': 'table', 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
+                'ai': 'table' if self.human else self.ai0_kind, 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
         if self.ai_kind == 'nn': meta['ai2'] = 'nn:' + (self.nn_label or 'model')
+        elif self.ai_kind != meta['ai']: meta['ai2'] = self.ai_kind
         rounds = []; mw = None; tap = None
         try:
             table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
@@ -291,11 +305,12 @@ class LiveMatch:
             if self.learn and self.nn_record: tap = NS.Tap()   # 신경망 학습 표본(두 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포) — numpy 를 쓸 수 있을 때만
 
             def make_ai(d):
-                seat = d['_seat']
+                seat = d['_seat']; kind = self.ai_kind if seat == 1 else self.ai0_kind
                 if self.human and seat == 0: ai = HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
                 elif actor is not None and seat == 1: ai = NA.make_ai(d['스킬'], actor, table)
+                elif kind == 'heuristic': ai = FixedHeuristicAI(d['스킬'])
                 else: ai = P.LearnedAI(d['스킬'], learn=self.learn, table=table)
-                return tap.attach(ai, seat, table) if tap else ai
+                return tap.attach(ai, seat, table) if tap and hasattr(ai, 'choose') else ai   # 휴리스틱 AI 자리는 학습표 판단이 없어 표본을 남기지 않는다
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
                 if self.human and i == 0: return human_side(self.bridge, decks, i, wins, len(rnds) + 1, log)
@@ -402,8 +417,8 @@ def human_side(bridge, decks, i, wins, rnd, log):
 class RecordJob:
     """AI vs AI 매치 여러 개를 차례로 녹화(사용자 재생 기록에 저장)"""
 
-    def __init__(self, store, split_dir, pairs, matches=1, seed=None):
-        self.store = store; self.split = split_dir; self.pairs = pairs; self.n = matches
+    def __init__(self, store, split_dir, pairs, matches=1, seed=None, ai_kind='table'):
+        self.store = store; self.split = split_dir; self.pairs = pairs; self.n = matches; self.ai_kind = ai_kind   # 양쪽 자리 같은 AI('table' · 'heuristic')
         self.seed = random.randrange(2 ** 31) if seed is None else seed
         self.done = []; self.total = len(pairs) * matches; self.status = 'running'; self.current = None; self.stop = False
         self.id = uuid.uuid4().hex[:8]
@@ -415,7 +430,7 @@ class RecordJob:
             for j in range(self.n):
                 if self.stop: break
                 m = LiveMatch(self.store, self.split, [da, db], names, human=False, seed=self.seed + k, first=k % 2,
-                              title=f'{names[0]} vs {names[1]}')
+                              title=f'{names[0]} vs {names[1]}', ai_kind=self.ai_kind, ai0_kind=self.ai_kind)
                 self.current = m; m._run(); k += 1
                 self.done.append({'replay_id': m.replay_id, 'status': m.status, 'winner': m.result and m.result.get('winner')})
         self.status = 'stopped' if self.stop else 'done'; self.current = None
