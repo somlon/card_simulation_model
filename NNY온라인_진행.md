@@ -21,17 +21,17 @@
 
 ## 다음 회차 지시
 
-⑧ 무다운로드 배포의 자동 롤백이 이번 회차에 끝남(바로 아래 완료 기록의 최신 항목 참고) — **다음 할 일**:
+⑧ 무다운로드 배포가 이번 회차로 완전히 끝남(업데이트 패널 — 바로 아래 완료 기록의 최신 항목 참고) —
+**다음 할 일**:
 
 1. **호스트 확인 필요(사용자 결정 대기에도 있음, 여전히 유효)**: 기보 자동 수집은 기본 꺼짐
    (`push_games: false`) — 장인준이 실제 서버 설정 탭의 「기보(재생+메모)도 자동으로 수집에 올리기」를
    켜야 `online/data-games` 에 쌓이기 시작한다. 켜기 전까지 1순위(수정 고리)는 계속 "해당 없음"
    (이번 회차도 README.md 뿐임을 확인함).
-2. **⑧ 무다운로드 배포 남은 조각 — 업데이트 패널**: bat 쪽 `git pull --ff-only` + 문법 오류 시 자동 롤백은
-   이번 회차로 끝났다. 남은 건 화면 쪽 "업데이트 패널"(현재 커밋/버전이 뭔지, 최신인지 보여주는 배지 —
-   `/api/boot`·`/api/heartbeat` 가 이미 매 20초 재사용되는 패턴이니 `online` 필드처럼 `git rev-parse
-   --short HEAD` 값을 하나 끼워 보내고 화면에 작게 표시하면 될 듯, 새 네트워크 호출 불필요). 끝나면 ⑧ 완료.
-3. 그 다음은 화면 테마 3종(화이트/블랙/뉴네오) 또는 인게임 메신저 — 아직 손 안 댐.
+2. **다음 과제 — 화면 테마 3종(화이트/블랙/뉴네오) 또는 인게임 메신저**: 둘 다 아직 손 안 댐,
+   스펙상 둘 다 ③~④(로비·관전) 즈음으로 지정돼 있고 ③④는 이미 끝났으니 지금부터 범위 안 — 테마
+   3종을 먼저 권함(사용자가 매 회차 더 자주 보는 쪽, 메신저보다 상태 공유 폭이 좁아 한 회차 분량에
+   더 맞음). 설정에 전환 토글, 기본은 ③ 뉴네오. 룰 레이어 불가침은 그대로.
 
 **이번 회차가 ④를 구현하며 새로 고친 것(다음에 손댈 사람이 알아야 함)**: 관전 화면 연결 자체는
 `stages.play.startLive(names, meta, 'spectate')`(board.js에 새로 추가한 seat 값 — 기존 0·1·null
@@ -96,6 +96,27 @@ pending·seat·key 는 절대 없음) 를 새로 추가해 관전자가 "지금 
   켜야 시작된다("다음 회차 지시" 1번 참고). 기본값을 바꾸고 싶으면 알려줄 것.
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1⑧ 업데이트 패널 — ⑧ 무다운로드 배포 마지막 조각, 이걸로 ⑧ 완료.
+  `nny_sim/app/server.py`에 `commit_rev()`(git rev-parse --short HEAD, 서버 켤 때 1회만 읽어
+  `self.commit`에 저장 — 요청마다 git 프로세스 안 띄움) 추가, `/api/boot`·`/api/heartbeat` 응답에
+  `commit` 필드로 끼워 넣음(기존 `online` 필드와 같은 재사용 패턴, 새 네트워크 호출 없음). `app.js`의
+  `#ver` 배지가 `showVer(commit)`으로 "v1.1.0 (해시)" 를 보여주고(hover 로 설명), boot 때 한 번 +
+  heartbeat 때마다(서버가 업데이트로 재시작됐으면 바뀐 해시가 바로 반영되도록) 갱신. 엔진·룰 레이어
+  전혀 안 건드림(app/server.py·static/app.js만).
+  재현 테스트 `nny_sim/test_online_update_panel.py` 신규(3개): boot·heartbeat 응답의 commit 이
+  실제 `S.commit_rev()`와 같은지 · 둘이 서로 같은지(캐시 확인) · git 이 없을 때(subprocess.run 을
+  FileNotFoundError 로 흉내) `commit_rev()`가 죽지 않고 None 을 돌리는지 — 전부 통과.
+  `python -m py_compile app/server.py test_online_update_panel.py` · `node --check app/static/app.js` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate test_online_clients test_online_update_panel -v`(50/51 —
+  scipy 미설치 1개는 이전 회차와 동일하게 무관) 전부 실행 확인. 서버 기동(더미 cards·user 폴더) 후
+  `/api/ping`(200) → `/api/boot`(commit = 현재 HEAD 짧은 해시) → `/api/heartbeat`(같은 commit)
+  수동 스모크로 실제 확인. 커밋 `380bbf3`.
+  **같이 확인한 것**: 1순위(수정 고리) — `online/data-games`에 아직 README.md 뿐, 기보 없음 → 해당
+  없음. 2순위(디스코드) — "루틴 확인 필요" 절의 사용자 결정 대기가 여전히 안 풀려 이번 회차도 토큰
+  미사용(REST 호출·출력 둘 다 안 함), 지난 회차 판단과 동일하게 유지. 3순위(재정질문) — `재정질문/`
+  여전히 README.md 뿐, 답변 없음 → 해당 없음.
 
 - 2026-10-30 (루틴): 기능 v1⑧ 무다운로드 배포 — 자동 롤백 조각. `시작_온라인서버.bat`에 이미 있던
   `git pull --ff-only`(지난 "다음 회차 지시"가 "없음"이라고 적었던 건 착오 — 부트스트랩 때부터 있었다,
