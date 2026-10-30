@@ -33,7 +33,7 @@ class SolunaFieldLimitTest(unittest.TestCase):
         # 돌아올 자리가 없으면 그대로 제외 존에 남는다 (예전: 묘지로)
         g = make('솔루나 아츠', '소원의 분수')
         for _ in range(5): on_field(g, '솔루나 시아 - 코로나 이그니스', 0)
-        x = card(g, '솔루나 시아', 1, None); g.shared = x; x.zone = 'shared'; x.controller = 1
+        x = card(g, '솔루나 시아', 1, None); g.shareds[0] = x; x.zone = 'shared'; x.controller = 1
         b = banished(g, '솔루나 시엘', 0)
         n = len(g.log); g.play_turn()
         self.assertEqual(b.zone, 'banish'); self.assertNotIn(b, g.p[0].grave)

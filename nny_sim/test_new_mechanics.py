@@ -315,7 +315,7 @@ class BanishReturn(unittest.TestCase):
         g = make('솔루나 아츠', '세제'); c = self._banished_ciel(g)
         for _ in range(5): on_field(g, '솔루나 시아', 0)
         s = card(g, '솔루나 시아', 1, None); g.place_monster(s, 1)   # 상대가 공유 존까지 채운 상태
-        if s.zone != 'shared': g._remove(s); g.shared = s; s.zone = 'shared'; s.controller = 1
+        if s.zone != 'shared': g._remove(s); g.shareds[0] = s; s.zone = 'shared'; s.controller = 1
         g.play_turn()
         self.assertEqual(c.zone, 'banish'); self.assertIn(c, g.p[0].banish); self.assertNotIn(c, g.p[0].grave)
 

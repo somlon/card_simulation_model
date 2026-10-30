@@ -45,7 +45,7 @@ def put(g, name, owner, zone):
 
 
 def mon(g, name, owner, pos='atk'):
-    c = put(g, name, owner, None); g.place_monster(c, owner, pos, allow_shared=False); return c
+    c = put(g, name, owner, None); g.place_monster(c, owner, pos); return c
 
 
 def spell(g, name, owner, faceup=True):
@@ -416,10 +416,11 @@ class SpellTest(unittest.TestCase):
 class SkillTest(unittest.TestCase):
     def test_package_program_extra_normal_with_six(self):
         g = make()
-        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE, D.LITTLE): mon(g, n, 0)
+        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE, D.LITTLE): mon(g, n, 0)   # 몬스터 존 3 + 공유 존 2 = 자리 5칸이 모두 찬다
         sk = g.p[0].skill
-        self.assertFalse(g.legal(0, sk, eff(sk, 1)))
-        x = put(g, D.CATER, 0, None); g.shared = x; x.zone = 'shared'; x.controller = 0; g.shared_owner = 0
+        self.assertEqual(len(g.monsters(0)), 5); self.assertFalse(g.can_place(None, 0))
+        self.assertFalse(g.legal(0, sk, eff(sk, 1)))   # 「6장」은 자리 5칸(사용자 지시 2026-10-30)으로는 채울 수 없다 — 조건 판정 자체는 아래(6장을 직접 놓아)
+        x = put(g, D.CATER, 0, None); x.zone = 'shared'; x.controller = 0; g.shareds.append(x)
         self.assertTrue(g.legal(0, sk, eff(sk, 1)))
         g.p[0].normal_summons = 0
         self.assertFalse(g.can_normal(0))
@@ -430,15 +431,14 @@ class SkillTest(unittest.TestCase):
 
     def test_shared_zone_hook_for_sixth_monster(self):
         g = make()
-        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE, D.LITTLE): mon(g, n, 0)
+        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE): mon(g, n, 0)   # 몬스터 존 3 + 공유 존 1
         x = put(g, D.CATER, 0, 'hand')
         sk = g.p[0].skill
-        self.assertIsNone(sk.wants_shared(g, 0, x))                     # 패에 제물 소환할 몬스터 없음
+        self.assertIsNone(sk.wants_shared(g, 0, x))                     # 6장이 될 수 없다(자리 5칸 — 사용자 지시 2026-10-30)
         put(g, D.HERC, 0, 'hand')
-        self.assertTrue(sk.wants_shared(g, 0, x))
-        self.assertTrue(g.p[0].ai.use_shared(g, 0, x, full=True))
+        self.assertIsNone(sk.wants_shared(g, 0, x))
         g.special_summon(x, 0)
-        self.assertEqual(x.zone, 'shared')
+        self.assertEqual(x.zone, 'shared')                              # 몬스터 존이 차면 남은 공유 존 칸으로
 
 
 if __name__ == '__main__':

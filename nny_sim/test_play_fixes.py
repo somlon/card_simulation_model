@@ -54,15 +54,15 @@ class ZoneTest(unittest.TestCase):
 
     def test_picker_chooses_monster_slot_and_shared_zone(self):
         sk = DECKS['투기장의 규칙']['스킬']
-        g = make('투기장의 규칙', '세제', [Picker(sk, 3), HeuristicAI(DECKS['세제']['스킬'])])
+        g = make('투기장의 규칙', '세제', [Picker(sk, 2), HeuristicAI(DECKS['세제']['스킬'])])
         m = next(c for c in g.p[0].hand + g.p[0].main if c.is_monster())
         g._remove(m); g.place_monster(m, 0)
-        self.assertIs(g.p[0].m[3], m)
-        self.assertEqual(g.p[0].ai.asked[-1], ('monster', [0, 1, 2, 3, 4, 'shared']))   # 빈 공유 존도 후보
-        g.p[0].ai.want = 'shared'
+        self.assertIs(g.p[0].m[2], m)
+        self.assertEqual(g.p[0].ai.asked[-1], ('monster', [0, 1, 2, 'shared0', 'shared1']))   # 몬스터 존 3칸 + 빈 공유 존 2칸(사용자 지시 2026-10-30)
+        g.p[0].ai.want = 'shared1'
         m2 = next(c for c in g.p[0].hand + g.p[0].main if c.is_monster() and c is not m)
         g._remove(m2); g.place_monster(m2, 0)
-        self.assertIs(g.shared, m2); self.assertEqual(g.shared_owner, 0)
+        self.assertIs(g.shareds[1], m2); self.assertEqual(g.shared_owners, [None, 0])   # 마커는 칸마다
 
     def test_picker_chooses_spell_slot(self):
         sk = DECKS['투기장의 규칙']['스킬']
@@ -92,7 +92,7 @@ class TyrannusTest(unittest.TestCase):
         g = make('호박옥 - 몽식의 계약', '세제')
         t = card(g, by_code('AMBR-001'), 0, 'm', 0); t.faceup = True; t.counters['봉인'] = 3
         e4 = eff(t, 4)
-        self.assertFalse(any(g.p[1].m) or any(g.p[1].s) or g.shared or g.fieldz)
+        self.assertFalse(any(g.p[1].m) or any(g.p[1].s) or any(g.shareds) or g.fieldz)
         self.assertTrue(g.legal(0, t, e4), '봉인 카운터가 있으면 상대 필드가 비어도 발동할 수 있다')
         grave1 = len(g.p[1].grave)
         self.assertTrue(g.activate(0, t, e4)); g.resolve_chain()

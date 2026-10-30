@@ -364,7 +364,7 @@ class HeuristicAI:
            (데이터버그 패키지 프로그램 「「데이터버그」 몬스터 6장」, 2026-10-12 추가 — 훅이 없는 스킬은 그대로)"""
         if not full: return False
         sk = g.p[p].skill; hook = getattr(sk, 'wants_shared', None) if sk is not None else None
-        if g.shared_owner is not None and g.shared_owner != p: why = '마커가 상대 소유(상대 페널티)'
+        if any(g.shared_owners[i] not in (None, p) for i in g.free_shared()): why = '마커가 상대 소유(상대 페널티)'
         elif self.lethal_damage(g, p, c) >= g.p[1 - p].hp: why = '이번 턴 결착에 필요'
         elif hook is not None and hook(g, p, c): why = hook(g, p, c)
         else: return False

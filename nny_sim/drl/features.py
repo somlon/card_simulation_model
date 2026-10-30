@@ -33,8 +33,7 @@ def _hidden(c, viewer):
 def _mon_slots(g, side_p, viewer, reveal):
     ids = np.zeros(S.N_SLOT, np.int32); f = np.zeros((S.N_SLOT, S.F_MON), np.float32)
     mons = [c for c in g.p[side_p].m if c]
-    if g.shared is not None and g.shared.controller == side_p:
-        mons.append(g.shared)
+    mons += [x for x in g.shareds if x is not None and x.controller == side_p]   # 공유 존 2칸(사용자 지시 2026-10-30)
     for k, c in enumerate(mons[:S.N_SLOT]):
         hide = _hidden(c, viewer) and not reveal
         ids[k] = S.UNK if hide else S.cid(c.name)
@@ -68,14 +67,15 @@ def global_feats(g, p, dt, dsub):
     me, op = g.p[p], g.p[1 - p]
     mm, om = g.monsters(p), g.monsters(1 - p)
     top = g.chain[-1].player == p if g.chain else False
-    so = g.shared_owner
+    occ = [x for x in g.shareds if x is not None]; own = g.shared_owners
     f = _onehot(len(S.DECISION_TYPES), dt) + _onehot(S.N_DSUB, dsub) + _onehot(len(S.PHASES), _PH.get(g.phase))
     f += [min(g.turn, 30) / 10.0, g.turn == 1, g.turn_player == p, g.first == p, len(g.chain) / 4.0, top, bool(g.locked)]
     f += [me.hp / HP, op.hp / HP, (me.hp - op.hp) / HP]
     f += [len(me.hand) / 7.0, len(op.hand) / 7.0, len(me.main) / 30.0, len(me.upper) / 15.0, len(op.main) / 30.0,
           len(op.upper) / 15.0, len(me.grave) / 20.0, len(op.grave) / 20.0, len(me.banish) / 10.0, len(op.banish) / 10.0]
     f += [me.normal_summons, len(g.free_m(p)) / 5.0, len(g.free_s(p)) / 5.0, len(g.free_m(1 - p)) / 5.0, len(g.free_s(1 - p)) / 5.0]
-    f += [g.shared is not None, g.shared is not None and g.shared.controller == p, so == p, so == 1 - p, so is None]
+    # 공유 존 특징 5칸(학습한 모델과 같은 모양 — 칸이 둘이 되어 「어느 칸이든」으로): 차 있음 · 내가 쓰는 칸 · 내 마커 · 상대 마커 · 마커 없음
+    f += [bool(occ), any(x.controller == p for x in occ), p in own, (1 - p) in own, all(o is None for o in own)]
     f += [g.fieldz is not None, g.fieldz is not None and g.fieldz.controller == p]
     f += [g.no_attack.get(p) == g.turn, g.no_attack.get(1 - p) == g.turn, g.no_damage.get(p, -1) >= g.turn, g.no_damage.get(1 - p, -1) >= g.turn]
     f += _onehot(len(S.SKILLS), S.SKILL_IX.get(me.skill.name) if me.skill else None)

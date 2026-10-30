@@ -5,7 +5,8 @@
 import random, itertools
 from dataclasses import dataclass, field
 
-MZ = 5; SZ = 5
+# 존 수 (사용자 지시 2026-10-30): 몬스터 존 3칸(예전 1 · 3 · 5번 자리 — 2 · 4번 존 제거) · 마법 존 5칸 · 공유 존 2칸(칸마다 마커, §10 규칙을 칸마다 적용)
+MZ = 3; SZ = 5; SHZ = 2
 START_HP = 5000
 # 라운드는 규칙의 종료 조건(HP 0 · 덱아웃 · 특수승리, §11-1)으로만 끝난다. 턴 상한 · HP 판정은 없다 (사용자 재정 2026-09-30).
 # 아래 값은 무한 진행을 막는 안전장치일 뿐 승패를 판정하지 않는다 — 넘으면 오류(StalledGame)로 중단한다.
@@ -120,7 +121,7 @@ class Game:
     def __init__(self, decks, ais, first, rng, log, card_impl):
         self.rng = rng; self.log = log; self.impl = card_impl
         self.p = [Player(i, decks[i]['이름'], decks[i]['스킬'], ais[i]) for i in range(2)]
-        self.shared = None; self.shared_owner = None
+        self.shareds = [None] * SHZ; self.shared_owners = [None] * SHZ   # 공유 존 칸마다 카드 · 마커 주인(마커는 칸이 비어도 남는다)
         self.fieldz = None
         self.turn = 0; self.turn_player = first; self.first = first; self.phase = '준비'
         self.chain = []; self.events = []; self.floating = []; self.src = None; self.no_attack = {}; self.no_damage = {}
@@ -140,8 +141,10 @@ class Game:
     def opp(self, p): return 1 - p
     def monsters(self, p, faceup_only=False):
         out = [c for c in self.p[p].m if c]
-        if self.shared and self.shared.controller == p: out.append(self.shared)
+        out += [x for x in self.shareds if x is not None and x.controller == p]
         return [c for c in out if c.faceup or not faceup_only]
+    def free_shared(self): return [i for i in range(SHZ) if self.shareds[i] is None]
+    def shared_index(self, c): return self.shareds.index(c)
     def spells(self, p):
         out = [c for c in self.p[p].s if c]
         if self.fieldz and self.fieldz.controller == p: out.append(self.fieldz)
@@ -425,7 +428,7 @@ class Game:
             for pl in self.p:
                 for c in pl.main + pl.upper + pl.hand + pl.grave + pl.banish + [x for x in pl.m + pl.s if x] + ([pl.skill] if pl.skill else []):
                     if c.uid not in self._hook_uids: self._ix_add(c)
-        for c in (self.shared, self.fieldz, self.p[0].skill, self.p[1].skill):
+        for c in (*self.shareds, self.fieldz, self.p[0].skill, self.p[1].skill):
             if c is not None and c.uid not in self._hook_uids: self._ix_add(c)
         return self._hook_ix
     def ix_note(self, c):
@@ -457,7 +460,7 @@ class Game:
         z = c.zone
         if z == 'm': pl.m[pl.m.index(c)] = None
         elif z == 's': pl.s[pl.s.index(c)] = None
-        elif z == 'shared': self.shared = None   # 마커는 공유 존이 비어도 남는다 (사용자 재정 2026-09-30)
+        elif z == 'shared': self.shareds[self.shareds.index(c)] = None   # 마커는 공유 존이 비어도 남는다 (사용자 재정 2026-09-30)
         elif z == 'fieldz': self.fieldz = None
         elif z in ('hand', 'grave', 'banish', 'main', 'upper'):
             for pl_ in (self.p[c.owner], self.p[1 - c.owner]):   # 상대 패에 들어간 카드(월영암수 등)도 찾는다
@@ -506,7 +509,7 @@ class Game:
 
     def pick_zone(self, p, c, kind, opts):
         """놓을 존 고르기: 플레이어(AI)가 choose_zone(g, p, c, kind, opts)을 가지면 그것이 고른다(사람 자리 — 화면에서 고름).
-        없으면 첫 빈칸(지금까지의 엔진 동작 — AI는 존 번호를 고르지 않는다). opts: 빈 존 번호, 몬스터는 빈 공유 존 'shared' 포함"""
+        없으면 첫 빈칸(지금까지의 엔진 동작 — AI는 존 번호를 고르지 않는다). opts: 빈 존 번호, 몬스터는 빈 공유 존 'shared0' · 'shared1' 포함"""
         f = getattr(self.p[p].ai, 'choose_zone', None)
         return f(self, p, c, kind, opts) if f is not None and len(opts) > 1 else opts[0]
 
@@ -514,25 +517,29 @@ class Game:
         """자신의 몬스터 존 또는 공유 존에 놓는다. 공유 존이 비어 있으면 몬스터 존이 차 있지 않아도 고를 수 있다 (§10-2).
         놓을 존을 직접 고르는 플레이어(choose_zone — 사람 자리)는 빈 몬스터 존과 빈 공유 존 중에서 고른다(Game.pick_zone)"""
         self.ix_note(c)
-        fr = self.free_m(p)
+        fr = self.free_m(p); fs = self.free_shared() if allow_shared else []
         if getattr(self.p[p].ai, 'choose_zone', None) is not None:
-            opts = fr + (['shared'] if allow_shared and self.shared is None else [])
+            opts = fr + [f'shared{i}' for i in fs]
             if not opts: return False
             z = self.pick_zone(p, c, 'monster', opts)
-            to_shared = z == 'shared'; slot = None if to_shared else z
+            to_shared = isinstance(z, str); slot = int(z[len('shared'):]) if to_shared else z
         else:
-            to_shared = allow_shared and self.shared is None and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
+            to_shared = bool(fs) and (not fr or self.p[p].ai.use_shared(self, p, c, full=False))
             if not fr and not to_shared: return False
-            slot = None if to_shared else fr[0]
+            slot = self.shared_slot(p, fs) if to_shared else fr[0]
         c.controller = p; c.pos = pos; c.faceup = faceup
         if not to_shared:
             self.p[p].m[slot] = c; c.zone = 'm'; return True
-        # 공유 존 마커 (사용자 재정 2026-09-30): 라운드에서 처음 놓으면 놓은 플레이어의 마커를 올린다(뒤집힘 아님).
-        # 그 뒤에는 공유 존이 비어도 마커가 남고, 치워진 공유 존에 상대가 자신의 카드를 놓으면 뒤집힌다 (§10-3 a)
-        self.shared = c; c.zone = 'shared'
-        old = self.shared_owner; self.shared_owner = p
+        # 공유 존 마커 (사용자 재정 2026-09-30, 칸마다): 라운드에서 그 칸에 처음 놓으면 놓은 플레이어의 마커를 올린다(뒤집힘 아님).
+        # 그 뒤에는 칸이 비어도 마커가 남고, 치워진 칸에 상대가 자신의 카드를 놓으면 뒤집힌다 (§10-3 a)
+        self.shareds[slot] = c; c.zone = 'shared'
+        old = self.shared_owners[slot]; self.shared_owners[slot] = p
         if old is not None and old != p: self.flip_marker(old)
         return True
+
+    def shared_slot(self, p, fs):
+        """존을 고르지 않는 플레이어(AI)가 쓸 빈 공유 존 칸: 마커가 상대 것인 칸(놓으면 뒤집혀 상대 페널티) → 마커 없는 칸 → 자신 마커 칸"""
+        return min(fs, key=lambda i: (self.shared_owners[i] != 1 - p, self.shared_owners[i] is not None, i))
 
     def flip_marker(self, old):
         """공유 존 마커 뒤집힘: 기존 주인에게 정본 0-5의 1~3을 모두 적용 (§10-4). 규칙 처리이므로 효과 내성에 막히지 않는다"""
@@ -661,7 +668,7 @@ class Game:
         fr = self.free_m(p)
         if not fr: return False
         if self.field_limited(c, p, use=True): self.L(f'{c} — {self.pname(p)} 필드에 같은 종류가 이미 있어 컨트롤을 옮길 수 없음', 'sys'); return False
-        if c.zone == 'shared': self.shared = None
+        if c.zone == 'shared': self.shareds[self.shareds.index(c)] = None
         else: self.p[c.controller].m[self.p[c.controller].m.index(c)] = None
         self.p[p].m[self.pick_zone(p, c, 'monster', fr)] = c; c.zone = 'm'; c.controller = p
         return True
@@ -703,9 +710,10 @@ class Game:
         return True
 
     def can_place(self, c, p):
-        """놓을 자리가 있는가. 공유 존은 언제든 고를 수 있으나(§10-2), 몬스터 존이 가득 찼을 때 공유 존을 쓸지는 AI가 판단"""
-        if self.free_m(p): return True
-        return self.shared is None and self.p[p].ai.use_shared(self, p, c, full=True)
+        """놓을 자리가 있는가(규칙): 빈 몬스터 존 또는 빈 공유 존 칸(§10-2). 몬스터 존이 3칸뿐이라(사용자 지시 2026-10-30) 공유 존은
+        보통의 자리다 — 예전처럼 AI 지침(use_shared)으로 판정하면 몬스터 존이 찼을 때 코스트로 자리를 비우는 소환 절차(더 바이러스)까지 막혔다.
+        실제로 놓을 때 몬스터 존을 먼저 쓰고 공유 존 칸은 Game.shared_slot 순서(place_monster)"""
+        return bool(self.free_m(p)) or bool(self.free_shared())
 
     def def_allowed(self, p):
         """p의 몬스터가 수비 표시로 존재할 수 있는가 (격투가의 투기장 1번 등 [지속] 규칙)"""
@@ -1594,7 +1602,7 @@ class Game:
                     c.flags.pop('return_from_banish')
                     # 돌아갈 몬스터 존 · 공유 존이 없거나 필드에 나올 수 없으면(솔루나 아츠 1번 등 — Game.field_limited) 그대로 제외 존에 남는다
                     # (사용자 답변 2026-10-20 — 예전에는 묘지로 보냈다)
-                    if (not self.free_m(c.owner) and self.shared is not None) or self.field_limited(c, c.owner, use=True):
+                    if (not self.free_m(c.owner) and not self.free_shared()) or self.field_limited(c, c.owner, use=True):
                         self.L(f'{c} 제외에서 복귀할 수 없음 — 제외 존에 남음', 'sys'); continue
                     self.L(f'{c} 제외에서 복귀', 'sys')
                     x.banish.remove(c); c.zone = None; self.place_monster(c, c.owner)

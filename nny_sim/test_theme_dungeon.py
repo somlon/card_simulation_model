@@ -239,7 +239,7 @@ class UpperTest(unittest.TestCase):
         on_field(g, INFERNO, 0)
         g.state_check()
         self.assertEqual(big.zone, 'grave'); self.assertEqual(wall.zone, 'grave')   # 공격력 2000 이상 · 수비력 2000 이상
-        self.assertEqual(small.zone, 'm'); self.assertEqual(fd.zone, 'm'); self.assertEqual(mine.zone, 'm')
+        self.assertTrue(all(g.on_field(x) for x in (small, fd, mine)))   # 몬스터 존 3칸 — 넘치면 공유 존(사용자 지시 2026-10-30)
 
     def test_hell_mourner_guard_and_burn(self):
         g = make()
