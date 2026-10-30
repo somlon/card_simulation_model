@@ -268,7 +268,18 @@ $('lobby-join').onclick = async () => {
   catch (e) { lobbyRole = null; toast(e.message); }
 };
 $('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
-$('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
+function stopSpectating() {   // 로비 "나가기"는 방(room) 멤버십만 바꾸는 서버 호출이라(room_leave) 관전 중 매치 화면은 원래 그대로 따라간다 —
+  // 관전자가 로비를 나가면 보던 화면도 같이 끊는다(참가자의 매치는 abort 로 따로 그만두는 거라 건드리지 않음).
+  clearTimeout(G.poll); G.poll = null;
+  G.done = true; G.id = null; G.pending = null; G.spectating = false;
+  const st = stages.play; st.ended = true; st.endLive();
+  decBox().innerHTML = ''; $('g-pvpinfo').textContent = '';
+  $('g-status').textContent = '관전 종료(로비에서 나감)';
+}
+$('lobby-leave').onclick = async () => {
+  lobbyRole = null; showRoom(await api('room/leave', {}));
+  if (G.spectating && !G.done) stopSpectating();
+};
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
 
 // ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
