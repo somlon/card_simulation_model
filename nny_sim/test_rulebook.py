@@ -53,11 +53,11 @@ class EngineRulingTest(unittest.TestCase):
     def test_shared_zone_control_change_moves_to_monster_zone(self):
         # 설계도 확정: 공유 존의 몬스터 컨트롤이 넘어가면 마커는 그대로, 새 컨트롤러의 몬스터 존으로 옮긴다
         g = make('세제', '세제')
-        m = card(g, '세리 - 릭토르', 1, None); g.shared = None
-        g.shared = m; m.zone = 'shared'; m.controller = 1; g.shared_owner = 1
+        m = card(g, '세리 - 릭토르', 1, None)
+        g.shareds[0] = m; m.zone = 'shared'; m.controller = 1; g.shared_owners[0] = 1
         self.assertTrue(g.change_control(m, 0))
-        self.assertEqual((m.zone, m.controller, g.shared_owner), ('m', 0, 1))
-        self.assertIsNone(g.shared)
+        self.assertEqual((m.zone, m.controller, g.shared_owners[0]), ('m', 0, 1))
+        self.assertIsNone(g.shareds[0])
 
     def test_control_change_needs_free_monster_zone(self):
         g = make('세제', '세제')
