@@ -72,12 +72,13 @@ class HumanAI(P.LearnedAI):
 
     # ── 놓을 존 · 소환 표시 형식 (사람이 직접) ──
     def choose_zone(self, g, p, c, kind, opts):
-        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'shared'(빈 공유 존) / 빈 마법 존 번호.
+        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'shared0' · 'shared1'(빈 공유 존 칸) / 빈 마법 존 번호.
         화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)"""
         if len(opts) == 1 or evaluating(): return opts[0]
         name = {'monster': '몬스터', 'spell': '마법'}[kind]
-        labels = ['공유 존' if z == 'shared' else f'{name} 존 {z + 1}' for z in opts]
-        zones = [{'seat': p, 'zone': 'shared' if z == 'shared' else ('m' if kind == 'monster' else 's'), 'i': None if z == 'shared' else z} for z in opts]
+        sh = lambda z: isinstance(z, str) and z.startswith('shared')
+        labels = [f'공유 존 {int(z[6:]) + 1}' if sh(z) else f'{name} 존 {z + 1}' for z in opts]
+        zones = [{'seat': p, 'zone': 'shared', 'i': int(z[6:])} if sh(z) else {'seat': p, 'zone': 'm' if kind == 'monster' else 's', 'i': z} for z in opts]
         return opts[self._ask(g, p, f'놓을 존:{c.name}', labels, extra={'zones': zones, 'card': c.name})]
 
     def choose_summon_pos(self, g, p, c, how):
@@ -307,6 +308,7 @@ def slot_label(g, who, x):
     if x.zone in ('m', 's'):
         row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
         if x in row: z += f' {row.index(x) + 1}'
+    elif x.zone == 'shared' and x in g.shareds: z += f' {g.shared_index(x) + 1}'   # 공유 존 2칸
     pos = ' (뒷면)' if not x.faceup else ' (수비)' if x.is_monster() and getattr(x, 'pos', 'atk') == 'def' else ''
     return f'{side} {z}{pos}'
 
@@ -324,6 +326,7 @@ def card_label(g, who, x):
     if x.zone in ('m', 's'):
         row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
         if x in row: z += f' {row.index(x) + 1}'
+    elif x.zone == 'shared' and x in g.shareds: z += f' {g.shared_index(x) + 1}'   # 공유 존 2칸
     return f'{side} {z}: {x.name}' + ('' if x.faceup or s == who else ' (뒷면)')
 
 
