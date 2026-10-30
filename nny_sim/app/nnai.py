@@ -165,8 +165,14 @@ class Manager:
     def share_files(self, host):
         """나눌 파일 → [(묶음 안 경로, 원본 경로 또는 내용 bytes)] — 표본 · 표본 목록(사용자가 뺀 매치 제외) · 내 모델(있으면)"""
         import nn_samples as NS
-        d = NS.samples_dir(self.user); names, idx = NS.kept_files(self.user)
-        out = [(f'{NS.DIR[-1]}/{n}', os.path.join(d, n)) for n in sorted(names)]
+        import learndata as LD
+        d = NS.samples_dir(self.user); names, idx = NS.kept_files(self.user); ex = LD.read_excluded(self.user)
+        out = []
+        for n in sorted(names):
+            drop = ex.dropped(LD.sample_key(n, idx[n]), 'n')
+            if not drop: out.append((f'{NS.DIR[-1]}/{n}', os.path.join(d, n))); continue
+            out.append((f'{NS.DIR[-1]}/{n}', NS.filtered_npz(os.path.join(d, n), drop)))   # 사용자가 뺀 판단은 나누지 않는다
+            if idx[n].get('decs'): idx[n] = dict(idx[n], decs=[x for i, x in enumerate(idx[n]['decs']) if i not in drop])
         if names:
             out.append((f'{NS.DIR[-1]}/index.json', json.dumps({n: idx[n] for n in sorted(names)}, ensure_ascii=False, indent=1).encode('utf-8')))
         if os.path.exists(local_path(self.user)): out.append(('model.npz', local_path(self.user)))

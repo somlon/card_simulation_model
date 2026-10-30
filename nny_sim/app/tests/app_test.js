@@ -49,6 +49,16 @@ const { chromium } = require('playwright');
     curation.out = (await p.textContent('#l-stats')).includes('뺀 매치');
     await p.click('#c-list input[data-key]'); await p.waitForTimeout(800);
     curation.back = !(await p.textContent('#l-stats')).includes('뺀 매치');
+    // 판단 단위: 첫 매치의 판단 목록을 열고 판단 하나를 뺐다가 다시 넣는다
+    await p.click('#c-list button[data-dkey]'); await p.waitForTimeout(800);
+    curation.decisions = await p.$$eval('#c-detail input[data-k]', xs => xs.length);
+    if (curation.decisions) {
+      await p.click('#c-detail input[data-k]'); await p.waitForTimeout(800);
+      curation.partOut = (await p.textContent('#l-stats')).includes('뺀 판단');
+      await p.screenshot({ path: `win_decisions_${W}.png` });
+      await p.click('#c-detail input[data-k]'); await p.waitForTimeout(800);
+      curation.partBack = !(await p.textContent('#l-stats')).includes('뺀 판단');
+    }
   }
   console.log(JSON.stringify({ clicks, sides, splits, sideRows: [...sideRows], status, curation, errs: errs.slice(0, 10) }));
   await b.close();
