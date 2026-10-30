@@ -3,12 +3,13 @@
 배포본(Windows)에는 PyTorch가 없다(수백 MB). 대국용 추론(drl.model.NumpyActor)과 같은 구조의 순전파를 다시 쓰고
 역전파를 손으로 구현했다(tests/nn_grad_check.py 가 PyTorch 학습망 drl/nets.Actor 의 기울기와 대조).
 
-학습 자료: 사람 대전에서 기록한 판단 표본(nn_samples.py — 두 자리 모두, 그 라운드 승패, 로컬 학습표의 교사 분포).
+학습 자료: 학습을 켠 대전에서 기록한 판단 표본(nn_samples.py — 학습표 판단이 있는 자리 모두, 그 라운드 승패, 로컬 학습표의 교사 분포).
+표본 가중치 s_i(nn_samples 'sw' — 출처별: 사람 대전 learndata.HUMAN_WEIGHT · AI끼리 AI_WEIGHT): 손실 = Σ s_i·L_i / Σ s_i.
 손실(표본 i, 후보 j, 고른 후보 a, π = softmax(로짓)):
   L_i = C_TEACHER · KL(t_i ‖ π_i)        로컬 학습표(사람 대전 기록이 반영된 표)를 따라가게
       + C_BASE    · KL(b_i ‖ π_i)        기본 모델(b = 학습 전 모델의 분포)에서 너무 멀어지지 않게(망각 방지)
       − C_RESULT  · r_i · log π_i[a]     이긴 라운드의 선택은 늘리고 진 라운드의 선택은 줄인다(r = ±1)
-로짓 기울기 = C_TEACHER·(π − t) + C_BASE·(π − b) + C_RESULT·r·(π − 원핫(a)).
+로짓 기울기 = s_i / Σ s · (C_TEACHER·(π − t) + C_BASE·(π − b) + C_RESULT·r·(π − 원핫(a))).
 검증: 매치 단위로 일부를 떼어 두고, 에포크마다 검증 손실이 가장 낮았던 가중치를 남긴다.
 전략 덱 교체 배우(side_*)는 바꾸지 않는다(사람 대전 표본에 없음).
 """
@@ -59,7 +60,8 @@ def batch(P, ix=None):
     b = {'n': len(cl), 'g': f('g'), 'bag_ids': i('bag_ids'), 'bag_len': i('bag_len'),
          'mon_id': i('mon_id'), 'mon_f': f('mon_f'), 'spl_id': i('spl_id'), 'spl_f': f('spl_f'), 'dcard': i('dcard'),
          'cand_ids': i('cand_ids'), 'cand_num': f('cand_num'), 'cand_len': cl, 'cand_seg': np.repeat(np.arange(len(cl)), cl),
-         'pick': _starts(cl) + i('idx'), 'tp': f('tp'), 'has_tp': np.asarray(P['has_tp'], bool), 'reward': f('reward')}
+         'pick': _starts(cl) + i('idx'), 'tp': f('tp'), 'has_tp': np.asarray(P['has_tp'], bool), 'reward': f('reward'),
+         'sw': f('sw') if 'sw' in P else np.ones(len(cl), np.float32)}   # 표본 가중치(출처별) — 없으면(예전 묶음) 모두 1
     return b
 
 
@@ -142,8 +144,9 @@ def loss_grad(logit, b, base_p):
     kl_t = np.bincount(seg, has * t * (np.log(np.maximum(t, tiny)) - lp), minlength=n)
     kl_b = np.bincount(seg, base_p * (np.log(np.maximum(base_p, tiny)) - lp), minlength=n)
     pg = -b['reward'] * lp[b['pick']]
-    loss = (C_TEACHER * kl_t + C_BASE * kl_b + C_RESULT * pg).mean()
-    dlogit = (C_TEACHER * has * (p - t) + C_BASE * (p - base_p) + C_RESULT * r * (p - onehot)) / n
+    sw = b['sw'].astype(np.float64); wn = sw / sw.sum()   # 표본 가중치(출처별)를 합 1로 — 가중치가 모두 같으면 평균과 같다
+    loss = float(((C_TEACHER * kl_t + C_BASE * kl_b + C_RESULT * pg) * wn).sum())
+    dlogit = (C_TEACHER * has * (p - t) + C_BASE * (p - base_p) + C_RESULT * r * (p - onehot)) * wn[seg]
     top = np.maximum.reduceat(lp, _starts(b['cand_len']))
     model_top = lp >= top[seg] - 1e-6
     t_top = t >= np.maximum.reduceat(t, _starts(b['cand_len']))[seg] - 1e-9

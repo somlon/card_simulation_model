@@ -13,7 +13,7 @@ import argparse, compileall, glob, json, os, shutil, subprocess, sys, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NNY = os.path.dirname(HERE)
-APP_FILES = ['main.py', 'server.py', 'session.py', 'human.py', 'tables.py', 'nnai.py', 'nn_samples.py', 'nn_train.py']
+APP_FILES = ['main.py', 'server.py', 'session.py', 'human.py', 'tables.py', 'learndata.py', 'nnai.py', 'nn_samples.py', 'nn_train.py']
 DRL_FILES = ['__init__.py', 'agent.py', 'buffer.py', 'features.py', 'model.py', 'schema.py', 'side.py']   # drl/ 중 numpy만 쓰는 것(nets · learner · train 은 PyTorch)
 NN_BASE_REL = ('learned', 'drl', 'base_v2', 'model_best.npz')   # nnai.BASE_REL 과 같은 자리
 # 런타임에서 뺄 것(파이썬 표준 배포본 중 이 프로그램이 쓰지 않는 것)

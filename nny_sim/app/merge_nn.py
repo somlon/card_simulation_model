@@ -1,9 +1,10 @@
-"""사람 대전 신경망 표본을 모아 기본 신경망을 다시 학습한다 — 게임 프로그램의 「신경망 내보내기」 zip · 「GitHub에 올리기」 폴더를 읽는다.
+"""게임 프로그램의 신경망 표본(사람 대전 · AI끼리)을 모아 기본 신경망을 다시 학습한다 — 「신경망 내보내기」 zip · 「GitHub에 올리기」 폴더를 읽는다.
 
   python3 merge_nn.py --sim <실행 폴더> --inputs nny_sim/learned/drl/human_nn [다른 폴더 · zip ...] --list
   python3 merge_nn.py --sim <실행 폴더> --inputs nny_sim/learned/drl/human_nn --out <실행 폴더>/learned/drl/human_v1/model_best.npz [--epochs 4]
 
 - 출처: 폴더(하위 폴더 포함 — <컴퓨터>/samples/*.npz, 올린 zip) · zip 파일. 같은 매치(표본 파일 이름)는 한 번만 쓴다(nn_samples.load_sources).
+- 표본 가중치: samples/index.json 의 매치 출처로 사람 대전 HUMAN_WEIGHT · AI끼리 AI_WEIGHT(app/learndata.py — 프로그램과 같음, 출처 없는 예전 표본은 사람 대전).
 - 학습: 프로그램 안 「신경망 학습」과 같은 학습기(nn_train.train — 교사 KL + 기본 모델 KL + 라운드 승패 가중, numpy)로
   --base(기본: <실행 폴더>/learned/drl/base_v2/model_best.npz)에서 시작해 모은 표본 전체로 학습한다.
 - 결과 모델을 배포본의 기본 모델로 쓰려면 평가(학습표 · 휴리스틱 AI 상대) 뒤 data 계열 브랜치에 올리고 build_windows.py --nn-base 로 넣는다.
@@ -46,7 +47,8 @@ def main(argv=None):
         print(f'  {os.path.relpath(f)} — {m.get("host")} · {m.get("created")} · 매치 {m.get("matches")} · 표본 {m.get("samples")}'
               + (' · 내 모델 있음' if m.get('local_model') else ''))
     P, matches, info = NS.load_sources(srcs)
-    print(f'표본 파일(매치) {info["files"]}개 · 판단 {info["samples"]}개 · 겹쳐서 뺀 파일 {info["duplicates"]}개')
+    print(f'표본 파일(매치) {info["files"]}개 · 판단 {info["samples"]}개 · 겹쳐서 뺀 파일 {info["duplicates"]}개 — 출처별 '
+          + ', '.join(f'{k} 매치 {v["files"]} · 판단 {v["samples"]}' for k, v in sorted(info['by_source'].items())))
     if P is None: return 1
     if a.list: return 0
     if info['samples'] < NA.MIN_SAMPLES:

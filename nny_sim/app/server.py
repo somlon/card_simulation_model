@@ -8,9 +8,8 @@ from cards import POOL
 
 import session as SS
 import nnai as NA
-import tables as T
 
-VERSION = '1.2.2'
+VERSION = '1.3.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
@@ -54,8 +53,12 @@ class App:
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=(mode == 'human'), seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
                                  ai_kind=ai_kind, ai0_kind=ai0_kind, nn_model=nn_model, nn_label=nn_label,
-                                 nn_record=mode == 'human' and self.nn.ready()).start()
+                                 nn_record=self.nn_record(bool(j.get('learn', s['learn'])))).start()
         return {'id': self.live.id, 'names': names, 'title': title}
+
+    def nn_record(self, learn):
+        """학습을 켠 대전(나 vs AI · AI끼리)에서 신경망 표본도 남길 수 있는가 — numpy · 기본 모델이 있을 때"""
+        return learn and self.nn.ready()
 
     def nn_choice(self, *kinds):
         """자리별 AI 종류 확인 → (신경망 모델 파일, 'local' · 'base') — 신경망 AI 자리가 없으면 (None, '')"""
@@ -76,9 +79,10 @@ class App:
         if not pairs: raise ValueError('대진이 없습니다')
         ai_kind = j.get('ai_kind', 'table'); ai0_kind = j.get('ai0_kind', ai_kind)
         nn_model, nn_label = self.nn_choice(ai_kind, ai0_kind)
+        learn = bool(j.get('learn', False))
         job = SS.RecordJob(self.store, self.p['split'], pairs, matches=max(1, min(20, int(j.get('matches', 1)))),
                            seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind, ai0_kind=ai0_kind,
-                           nn_model=nn_model, nn_label=nn_label)
+                           nn_model=nn_model, nn_label=nn_label, learn=learn, nn_record=self.nn_record(learn))
         self.jobs[job.id] = job
         return job.info()
 
@@ -92,8 +96,9 @@ class App:
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES}
 
     def learning(self):
-        st = T.log_stats(self.store.log_path)
-        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'), last_push=self.store.last_push())
+        import learndata as LD
+        return dict(self.store.learning_stats(), path=self.store.log_path, ai_path=self.store.ai_log_path, export_dir=os.path.join(self.store.dir, 'export'),
+                    last_push=self.store.last_push(), weights={'human': LD.HUMAN_WEIGHT, 'ai': LD.AI_WEIGHT})
 
     # ── 요청 처리 ──
     def route(self, method, path, q, body):
@@ -130,6 +135,10 @@ class App:
             if j: j.stop = True
             return {'ok': bool(j)}
         if path == '/api/learning': return self.learning()
+        if path == '/api/learning/items': return self.store.learning_items()
+        if path == '/api/learning/exclude':
+            if self.nn.busy(): raise ValueError('신경망 학습 중에는 학습 데이터를 바꿀 수 없습니다')
+            return {'ok': True, 'excluded': self.store.set_excluded(body.get('keys', []), bool(body.get('excluded', True)))}
         if path == '/api/nn/status': return self.nn.status()
         if path == '/api/nn/train': return self.nn.start(body.get('epochs'))
         if path == '/api/nn/stop': return self.nn.stop()

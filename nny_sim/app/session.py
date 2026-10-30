@@ -3,9 +3,10 @@
 LiveMatch: 엔진 스레드에서 Bo3 매치 1개를 돌리며 기록기(viewer/record.py Recorder)로 기록 줄마다 보드 상태를 남긴다.
   - 사람 vs AI: 사람 자리는 HumanAI(판단을 화면에서 받음). 학습을 켜면 AI · 사람의 판단 기록이 라운드마다 대전 표에 반영되고,
     매치가 끝나면 그 갱신을 학습 기록(jsonl)에 덧붙인다 — 다음 대전부터 그대로 쓰인다(프로그램 안에서는 즉시 반영).
-  - AI vs AI: 관전 · 녹화용. 학습하지 않는다(match_sim 과 같음).
+  - AI vs AI: 관전 · 녹화. 학습을 켜면 사람 대전과 같이 학습표 AI 자리의 판단이 대전 표에 반영되고 학습 기록(ai_games.jsonl) · 신경망 표본에 남는다
+    (출처 'ai' — 사람 대전보다 낮은 가중치, learndata).
   매치가 끝나면(그만둔 경우도) 재생 기록으로 저장한다.
-Store: 사용자 폴더의 파일들.
+Store: 사용자 폴더의 파일들. 학습 데이터(학습표 기록 · 신경망 표본)는 매치 단위로 사용자가 빼거나 다시 넣을 수 있다(learndata 제외 목록).
 """
 import gzip, json, os, random, re, shutil, subprocess, threading, time, traceback, uuid
 
@@ -19,6 +20,7 @@ from engine import StalledGame
 
 import record as REC
 import tables as T
+import learndata as LD
 import nnai as NA
 import nn_samples as NS
 from human import Abort, Bridge, HumanAI
@@ -29,7 +31,7 @@ SAFE = re.compile(r'[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _\-().!]+')
 def now(): return time.strftime('%Y-%m-%d %H:%M:%S')
 
 
-GIT_LEARN_DIR = 'nny_sim/learned/human_games'          # 학습 기록을 올리는 저장소 폴더(merge_learning.py 가 읽음)
+GIT_LEARN_DIR = 'nny_sim/learned/human_games'          # 학습 기록을 올리는 저장소 폴더(merge_learning.py 가 읽음 — 사람 대전 · AI끼리 합친 기록, 줄마다 출처)
 GIT_LEARN_BRANCH = 'data/human-games-{host}'
 GIT_NN_BRANCH = 'data/human-nn-{host}'                  # 신경망 표본(nnai.SHARE_REL 폴더 — merge_nn.py 가 읽음)
 
@@ -40,7 +42,8 @@ def safe_name(s, default='덱'):
 
 
 class Store:
-    """사용자 폴더: decks/*.deck · replays/<id>.json.gz + index.json · playlists.json · learning/human_games.jsonl · settings.json"""
+    """사용자 폴더: decks/*.deck · replays/<id>.json.gz + index.json · playlists.json · settings.json ·
+    learning/human_games.jsonl(사람 대전) · learning/ai_games.jsonl(AI끼리) · learning/excluded.json(사용자가 뺀 매치)"""
 
     DEFAULTS = {'speed': 1, 'reveal': True, 'learn': True, 'hints': False, 'auto_push': False,
                 'git_url': 'https://github.com/somlon/card_simulation_model.git', 'git_base': 'data/main', 'git_branch': ''}
@@ -182,14 +185,73 @@ class Store:
         clean = [{'name': str(p.get('name') or '재생 목록')[:60], 'items': [str(x) for x in p.get('items', [])][:500]} for p in pls][:100]
         self._write_json(os.path.join(self.dir, 'playlists.json'), clean); return clean
 
-    # ── 학습 기록 ──
+    # ── 학습 기록 ── (출처 · 가중치 · 제외: learndata)
     @property
     def log_path(self): return os.path.join(self.dir, 'learning', 'human_games.jsonl')
 
+    @property
+    def ai_log_path(self): return os.path.join(self.dir, 'learning', 'ai_games.jsonl')
+
+    @property
+    def log_paths(self): return [self.log_path, self.ai_log_path]
+
+    def excluded(self): return LD.read_excluded(self.dir)
+
+    def learning_records(self, include_excluded=False):
+        """두 학습 기록 파일의 매치 기록(줄마다 출처 'source') — 사용자가 뺀 매치는 빼고"""
+        ex = set() if include_excluded else self.excluded()
+        return [dict(r, source=LD.record_source(r)) for path in self.log_paths for r in T.read_log(path) if LD.record_key(r) not in ex]
+
+    @staticmethod
+    def write_records(path, recs):
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            for r in recs: f.write(json.dumps(r, ensure_ascii=False, separators=(',', ':')) + '\n')
+        os.replace(tmp, path)
+
+    def learning_stats(self):
+        """학습표 기록 통계 — 전체 · 출처별(사용자가 뺀 매치 제외)"""
+        ex = self.excluded()
+        by = {src: T.log_stats(path, ex) for src, path in (('human', self.log_path), ('ai', self.ai_log_path))}
+        tot = {'matches': sum(v['matches'] for v in by.values()), 'updates': sum(v['updates'] for v in by.values()),
+               'size': sum(v['size'] for v in by.values())}
+        return dict(tot, by_source=by, by_matchup=by['human']['by_matchup'], excluded=len(ex))
+
     def export_learning(self):
-        if not os.path.exists(self.log_path): return None
+        """사람 대전 · AI끼리 학습 기록을 합친 파일 하나(줄마다 출처) — 사용자가 뺀 매치는 넣지 않는다"""
+        recs = self.learning_records()
+        if not recs: return None
         out = os.path.join(self.dir, 'export', time.strftime('학습데이터_%Y%m%d-%H%M%S.jsonl'))
-        shutil.copyfile(self.log_path, out); return out
+        self.write_records(out, recs); return out
+
+    def learning_items(self):
+        """학습 데이터 정리 목록 — 매치마다 학습표 기록 · 신경망 표본을 매치 키(learndata)로 묶는다. 최근 것이 앞"""
+        ex = self.excluded(); items = {}
+
+        def item(key, src, meta):
+            it = items.get(key)
+            if it is None:
+                it = items[key] = {'key': key, 'source': src, 'label': LD.SOURCE_LABEL.get(src, src), 'weight': LD.weight_of(src),
+                                   'time': '', 'decks': meta.get('decks', []), 'ai_kinds': meta.get('ai_kinds'), 'winner': meta.get('winner'),
+                                   'human_won': meta.get('human_won'), 'status': meta.get('status'), 'updates': 0, 'samples': 0, 'excluded': key in ex}
+            return it
+        for path in self.log_paths:
+            for r in T.read_log(path):
+                src = LD.record_source(r); it = item(LD.record_key(r), src, r)
+                it['updates'] += len(r.get('updates', ())); it['time'] = max(it['time'], (r.get('time') or '').replace('T', ' ')[:16])
+        for name, meta in NS.read_index(self.dir).items():
+            if not os.path.exists(os.path.join(NS.samples_dir(self.dir), name)): continue
+            it = item(LD.sample_key(name, meta), LD.sample_source(meta), meta)
+            it['samples'] += meta.get('samples', 0); it['time'] = max(it['time'], meta.get('time') or '')
+        return sorted(items.values(), key=lambda it: it['time'], reverse=True)
+
+    def set_excluded(self, keys, excluded):
+        """매치 키들을 학습 데이터에서 빼거나(excluded=True) 다시 넣는다 → 제외 매치 수"""
+        with self.lock:
+            ex = self.excluded(); keys = {str(k) for k in keys}
+            ex = (ex | keys) if excluded else (ex - keys)
+            LD.write_excluded(self.dir, ex)
+        return len(ex)
 
     def auto_push(self):
         """대전이 끝날 때 자동으로 올리기(설정) — 인터넷 · git 이 없으면 실패를 기록만 하고, 다음 대전 때 쌓인 기록을 통째로 다시 올린다"""
@@ -207,20 +269,22 @@ class Store:
         return safe_name(os.environ.get('COMPUTERNAME') or os.environ.get('HOSTNAME') or 'pc', 'pc')
 
     def git_push(self):
-        """학습 기록(human_games.jsonl)을 저장소 nny_sim/learned/human_games/<컴퓨터>.jsonl 로 — 브랜치는 설정 또는 data/human-games-<컴퓨터>"""
-        if not os.path.exists(self.log_path): return {'ok': False, 'msg': '아직 학습 기록이 없습니다.'}
-        st = T.log_stats(self.log_path)
+        """학습 기록(사람 대전 · AI끼리 합친 것, 줄마다 출처 — 사용자가 뺀 매치 제외)을 저장소 nny_sim/learned/human_games/<컴퓨터>.jsonl 로
+        — 브랜치는 설정 또는 data/human-games-<컴퓨터>"""
+        recs = self.learning_records()
+        if not recs: return {'ok': False, 'msg': '아직 학습 기록이 없습니다(또는 모두 학습 데이터에서 뺐습니다).'}
+        n = {src: sum(1 for r in recs if r['source'] == src) for src in LD.SOURCE_LABEL}
         return self.git_upload(GIT_LEARN_DIR, self.settings()['git_branch'] or GIT_LEARN_BRANCH,
-                               lambda dst, host: shutil.copyfile(self.log_path, os.path.join(dst, f'{host}.jsonl')),
-                               lambda host: f'사람 대전 학습 기록: {host} — 매치 {st["matches"]}개 · 갱신 {st["updates"]}개')
+                               lambda dst, host: self.write_records(os.path.join(dst, f'{host}.jsonl'), recs),
+                               lambda host: f'학습 기록: {host} — 사람 대전 {n["human"]}매치 · AI끼리 {n["ai"]}매치 · 갱신 {sum(len(r.get("updates", ())) for r in recs)}개')
 
     def git_push_nn(self, nn):
         """신경망 표본 · 내 모델(nnai.Manager.place_share)을 저장소 nny_sim/learned/drl/human_nn/<컴퓨터>/ 로 — 브랜치 data/human-nn-<컴퓨터>"""
         import nn_samples as NS
         st = NS.stats(self.dir)
-        if not st['matches']: return {'ok': False, 'msg': '아직 신경망 표본이 없습니다 — 「AI 학습」을 켜고 나 vs AI 대전을 해 주세요.'}
+        if not st['matches']: return {'ok': False, 'msg': '아직 신경망 표본이 없습니다 — 「AI 학습」을 켜고 대전(나 vs AI · AI끼리)을 해 주세요.'}
         return self.git_upload('/'.join(NA.SHARE_REL), GIT_NN_BRANCH, lambda dst, host: nn.place_share(os.path.join(dst, host), host),
-                               lambda host: f'사람 대전 신경망 표본: {host} — 매치 {st["matches"]}개 · 표본 {st["samples"]}개')
+                               lambda host: f'신경망 표본: {host} — 매치 {st["matches"]}개 · 표본 {st["samples"]}개')
 
     def git_upload(self, sub, branch, place, message):
         """앱이 관리하는 얕은 clone(사용자 폴더/git/repo, sparse)의 sub 폴더에 place(폴더, 컴퓨터 이름)로 파일을 넣고 커밋 · 푸시한다
@@ -270,14 +334,15 @@ class FixedHeuristicAI(HeuristicAI):
 class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리(0) 여부"""
 
-    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='',
+    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=False, hints=False, title='',
                  ai_kind='table', nn_model=None, nn_label='', nn_record=False, ai0_kind='table'):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names; self.human = human
         # AI 종류(AI_KINDS): ai_kind = P2(AI) 자리 — 'table' 학습표 AI | 'nn' 신경망 AI(nn_model 파일, nn_label 'local' · 'base') | 'heuristic' 휴리스틱 AI,
         # ai0_kind = 사람이 없을 때 P1 자리(녹화 · 관전 — AI_KINDS 중 하나, 신경망이면 P2와 같은 모델)
         self.ai_kind = ai_kind; self.ai0_kind = ai0_kind; self.nn_model = nn_model; self.nn_label = nn_label; self.nn_record = nn_record; self.nn_saved = 0
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
-        self.learn = learn and human; self.hints = hints; self.title = title
+        self.learn = learn; self.hints = hints; self.title = title   # 학습: 사람 대전 · AI끼리 모두(출처별 가중치 — learndata)
+        self.match_uid = uuid.uuid4().hex   # 매치 키 — 이 매치의 학습표 기록과 신경망 표본이 같은 키(학습 데이터 정리에서 함께 빼고 넣음)
         self.bridge = Bridge(); self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -300,11 +365,12 @@ class LiveMatch:
         if tag(self.ai_kind) != meta['ai']: meta['ai2'] = tag(self.ai_kind)
         rounds = []; mw = None; tap = None
         try:
-            table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
+            table = T.matchup_table(self.split, self.skills(), logs=self.store.log_paths, exclude=self.store.excluded())
+            table.live_w = LD.weight_of('human' if self.human else 'ai')   # 이 대전에서 바로 배우는 갱신도 기록을 다시 적용할 때와 같은 가중치
             self.table = table; self.status = 'running'
             kinds = [None if self.human else self.ai0_kind, self.ai_kind]   # 자리별 AI 종류(사람 자리는 None)
             actor = NA.load_actor(self.nn_model) if 'nn' in kinds else None
-            if self.learn and self.nn_record: tap = NS.Tap()   # 신경망 학습 표본(두 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포) — numpy 를 쓸 수 있을 때만
+            if self.learn and self.nn_record: tap = NS.Tap()   # 신경망 학습 표본(학습표 판단이 있는 자리의 판단 · 라운드 승패 · 로컬 학습표 교사 분포) — numpy 를 쓸 수 있을 때만
 
             def make_ai(d):
                 seat = d['_seat']; kind = kinds[seat]
@@ -329,18 +395,24 @@ class LiveMatch:
             meta.update(winner=mw, status=self.status, rounds=[{'first': r['first'], 'winner': r['winner'], 'reason': r['reason'], 'turns': r['turns']} for r in rounds])
             self.result = meta
             try:
+                info = self.learn_info(meta, mw)
                 if self.learn and getattr(self, 'table', None) is not None and self.table.deltas:
-                    T.append_log(self.store.log_path, {'decks': meta['decks'], 'human_seat': 0, 'seed': self.seed, 'status': self.status,
-                                                       'human_won': (mw == 0) if mw is not None else None,
-                                                       'rounds': [[r['winner'], r['reason']] for r in meta['rounds']]}, self.table.deltas)
+                    T.append_log(self.store.log_path if self.human else self.store.ai_log_path,
+                                 dict(info, rounds=[[r['winner'], r['reason']] for r in meta['rounds']]), self.table.deltas)
                     self.learned = len(self.table.deltas)
                     if self.store.settings().get('auto_push'): threading.Thread(target=self.store.auto_push, daemon=True).start()
                 if tap is not None:
-                    _, self.nn_saved = tap.save(self.store.dir, mw, {'decks': meta['decks'], 'human_seat': 0, 'ai2': meta.get('ai2', 'table'),
-                                                                      'seed': self.seed, 'status': self.status})
+                    _, self.nn_saved = tap.save(self.store.dir, mw, info)
                 if self.rec.frames: self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
             except Exception:
                 self.error = (self.error or '') + '\n저장 오류:\n' + traceback.format_exc()[-2000:]
+
+    def learn_info(self, meta, mw):
+        """학습표 기록 · 신경망 표본에 같이 남기는 매치 정보 — 출처(learndata) · 매치 키 · 자리별 AI 종류 · 덱 · 승자"""
+        info = {'source': 'human' if self.human else 'ai', 'match': self.match_uid, 'decks': meta['decks'], 'seed': self.seed, 'status': self.status,
+                'winner': mw, 'ai_kinds': ['human' if self.human else meta['ai'], meta.get('ai2', meta['ai'])]}
+        if self.human: info.update(human_seat=0, human_won=(mw == 0) if mw is not None else None)
+        return info
 
     def replay_dict(self):
         pool = {}
@@ -419,8 +491,10 @@ def human_side(bridge, decks, i, wins, rnd, log):
 class RecordJob:
     """AI vs AI 매치 여러 개를 차례로 녹화(사용자 재생 기록에 저장)"""
 
-    def __init__(self, store, split_dir, pairs, matches=1, seed=None, ai_kind='table', ai0_kind=None, nn_model=None, nn_label=''):
+    def __init__(self, store, split_dir, pairs, matches=1, seed=None, ai_kind='table', ai0_kind=None, nn_model=None, nn_label='',
+                 learn=False, nn_record=False):
         self.store = store; self.split = split_dir; self.pairs = pairs; self.n = matches
+        self.learn = learn; self.nn_record = nn_record   # 녹화한 매치를 학습 데이터로 남기기(출처 'ai')
         self.ai_kind = ai_kind; self.ai0_kind = ai0_kind or ai_kind; self.nn_model = nn_model; self.nn_label = nn_label   # P2 · P1 자리 AI 종류(AI_KINDS)
         self.seed = random.randrange(2 ** 31) if seed is None else seed
         self.done = []; self.total = len(pairs) * matches; self.status = 'running'; self.current = None; self.stop = False
@@ -433,9 +507,10 @@ class RecordJob:
             for j in range(self.n):
                 if self.stop: break
                 m = LiveMatch(self.store, self.split, [da, db], names, human=False, seed=self.seed + k, first=k % 2,
-                              title=f'{names[0]} vs {names[1]}', ai_kind=self.ai_kind, ai0_kind=self.ai0_kind, nn_model=self.nn_model, nn_label=self.nn_label)
+                              title=f'{names[0]} vs {names[1]}', ai_kind=self.ai_kind, ai0_kind=self.ai0_kind, nn_model=self.nn_model, nn_label=self.nn_label,
+                              learn=self.learn, nn_record=self.nn_record)
                 self.current = m; m._run(); k += 1
-                self.done.append({'replay_id': m.replay_id, 'status': m.status, 'winner': m.result and m.result.get('winner')})
+                self.done.append({'replay_id': m.replay_id, 'status': m.status, 'winner': m.result and m.result.get('winner'), 'learned': m.learned, 'nn_saved': m.nn_saved})
         self.status = 'stopped' if self.stop else 'done'; self.current = None
 
     def info(self):
