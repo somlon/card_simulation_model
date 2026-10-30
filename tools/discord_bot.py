@@ -84,12 +84,18 @@ def ask_claude(q):
 
 
 def 질문접수(author, text):
-    """자유 질문 — 즉답 가능하면 Claude, 아니면 접수 안내. (접수 기록은 게이트웨이 on_message 에서)"""
+    """자유 질문 — 즉답 가능하면 Claude, 아니면 접수 + 다음 루틴까지 남은 시간 안내."""
     ans = ask_claude(text)
     if ans:
         return '💬 ' + ans
-    return ('📨 질문 접수! 지금은 즉답용 Claude 키가 안 붙어 있어서, 매 회차(최대 1시간) 도는 '
-            'Claude 루틴이 이 채널에 답을 달아줘요. 즉답을 켜려면 인준이 봇에 API 키를 넣으면 돼요.')
+    now = time.localtime()
+    mins = (7 - now.tm_min) % 60  # 다음 :07(매시 7분 루틴)까지 남은 분
+    if mins == 0:
+        mins = 60
+    eta = time.strftime('%H:%M', time.localtime(time.time() + mins * 60))
+    return (f'📨 질문 접수! Claude 루틴이 **매시 7분**에 디스코드를 확인하고 이 채널에 답을 달아줘요.\n'
+            f'→ 다음 확인까지 약 **{mins}분** (대략 {eta}경). 루틴이 다른 작업 중이면 그다음 회차(최대 1시간)로 밀릴 수 있어요.\n'
+            f'(즉답을 켜려면 인준이 봇에 Claude API 키를 넣으면 돼요.)')
 
 
 intents = discord.Intents.default()
