@@ -34,13 +34,13 @@ def safe_name(s, default='덱'):
 class Store:
     """사용자 폴더: decks/*.deck · replays/<id>.json.gz + index.json · playlists.json · learning/human_games.jsonl · settings.json"""
 
-    DEFAULTS = {'speed': 1, 'reveal': True, 'learn': True, 'hints': False, 'auto_push': False,
+    DEFAULTS = {'speed': 1, 'reveal': True, 'learn': True, 'hints': False, 'auto_push': False, 'push_games': False,
                 'git_url': 'https://github.com/somlon/card_simulation_model.git', 'git_base': 'data/main', 'git_branch': ''}
 
     def __init__(self, user_dir, library_dir=None):
         self.dir = user_dir; self.lib = library_dir
         for sub in ('decks', 'replays', 'learning', 'export'): os.makedirs(os.path.join(user_dir, sub), exist_ok=True)
-        self.lock = threading.Lock(); self.push_lock = threading.Lock()
+        self.lock = threading.Lock(); self.push_lock = threading.Lock(); self.game_push_lock = threading.Lock()
 
     # ── 설정 ──
     def settings(self):
@@ -184,6 +184,7 @@ class Store:
                 with gzip.open(path, 'wt', encoding='utf-8') as f: json.dump(rec, f, ensure_ascii=False, separators=(',', ':'))
                 idx = self._index(base); meta = idx.get(key)
                 if meta is not None: meta['memos'] = len(have); self._write_json(self._index_path(base), idx)
+                if self.settings().get('push_games'): threading.Thread(target=self.push_game, args=(rid,), daemon=True).start()
         return {'ok': True, 'added': added, 'total': len(have)}
 
     def delete_replay(self, rid):
@@ -262,6 +263,77 @@ class Store:
         except (OSError, subprocess.SubprocessError) as ex:
             return {'ok': False, 'msg': f'git 실행 오류: {ex}', 'log': log}
 
+    def last_game_push(self):
+        try: return json.load(open(os.path.join(self.dir, 'learning', 'last_game_push.json'), encoding='utf-8'))
+        except (OSError, ValueError): return None
+
+    def push_game(self, rid):
+        """기능 v1⑥ 기보 수집 — 매치가 끝날 때(메모 없이도)와 메모가 새로 붙을 때마다 online/data-games 에 올린다.
+        git_push와 같은 모양(얕은 clone · 실패는 조용히 기록만, 다음 기회에 다시 통째로 시도) — 하마치만 있고 인터넷이
+        끊긴 경우에도 매치 자체가 막히면 안 되므로 호출하는 쪽에서 항상 스레드로 띄운다."""
+        if not self.game_push_lock.acquire(blocking=False): return
+        try:
+            r = self._push_game(rid); r = {k: v for k, v in r.items() if k != 'log'}; r['time'] = now(); r['rid'] = rid
+            self._write_json(os.path.join(self.dir, 'learning', 'last_game_push.json'), r)
+        finally: self.game_push_lock.release()
+
+    def _push_game(self, rid):
+        git = shutil.which('git')
+        if not git: return {'ok': False, 'msg': 'git 이 설치되어 있지 않습니다.'}
+        src, _, key = rid.partition(':')
+        if src != 'u': return {'ok': False, 'msg': '내 기록만 올릴 수 있습니다.'}
+        key = safe_name(key, '')
+        path = os.path.join(self.dir, 'replays', key + '.json.gz')
+        if not key or not os.path.isfile(path): return {'ok': False, 'msg': '기록을 찾을 수 없습니다.'}
+        with gzip.open(path, 'rt', encoding='utf-8') as f: rec = json.load(f)
+        s = self.settings(); branch = 'online/data-games'
+        repo = os.path.join(self.dir, 'git', 'games'); host = safe_name(os.environ.get('COMPUTERNAME') or os.environ.get('HOSTNAME') or 'pc', 'pc')
+        log = []
+
+        def run(*args, cwd=None):
+            r = subprocess.run([git, *args], cwd=cwd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
+            log.append(f'$ git {" ".join(args)}\n{r.stdout}{r.stderr}'.strip())
+            return r.returncode == 0, r.stdout.strip()
+
+        try:
+            if not os.path.isdir(os.path.join(repo, '.git')):
+                os.makedirs(os.path.dirname(repo), exist_ok=True)
+                ok, _ = run('clone', '--depth', '1', '--filter=blob:none', '--no-checkout', '-b', branch, s['git_url'], repo)
+                if not ok: return {'ok': False, 'msg': 'clone 실패 — 인터넷 연결 · 저장소 주소 · 권한을 확인하세요.', 'log': log}
+                run('sparse-checkout', 'set', 'games', 'index.json', cwd=repo)
+            ok, _ = run('fetch', '--depth', '1', 'origin', branch, cwd=repo)
+            if ok: run('checkout', '-B', branch, 'FETCH_HEAD', cwd=repo)
+            else: run('checkout', '-B', branch, cwd=repo)
+            os.makedirs(os.path.join(repo, 'games'), exist_ok=True)
+            shutil.copyfile(path, os.path.join(repo, 'games', key + '.json.gz'))
+            idx_path = os.path.join(repo, 'index.json')
+            try: idx = json.load(open(idx_path, encoding='utf-8'))
+            except (OSError, ValueError): idx = {}
+            meta = self.replay_meta(rec); meta['host'] = host
+            prev = idx.get(key) or {}
+            meta['commit'] = prev.get('commit'); meta['processed'] = prev.get('processed', False)
+            if idx.get(key) == meta: return {'ok': True, 'msg': '이미 최신입니다.', 'branch': branch, 'log': log}
+            idx[key] = meta
+            self._write_json(idx_path, idx)
+            run('add', '-A', 'games', 'index.json', cwd=repo)
+            ok, _ = run('-c', 'user.name=NNY Simulator', '-c', 'user.email=nny-simulator@localhost', 'commit', '-m',
+                        f'기보 수집: {host} — {meta["title"]} (메모 {meta["memos"]}개)', cwd=repo)
+            if not ok: return {'ok': True, 'msg': '올릴 내용 없음(이미 최신)', 'branch': branch, 'log': log}
+            if not run('push', '-u', 'origin', f'HEAD:{branch}', cwd=repo)[0]:
+                return {'ok': False, 'msg': 'push 실패 — 인터넷 연결 · GitHub 로그인(권한)을 확인하세요.', 'log': log}
+            # 1순위(수정 고리)가 기보 메타의 커밋 해시로 재현하므로, 방금 올라간 실제 해시를 다시 적어 둔다(두 번째 커밋 — 자기 자신을
+            # 가리키는 해시는 같은 커밋에 미리 넣을 수 없어 한 번 올린 뒤 알아낸 해시를 뒤따르는 커밋에 적는다).
+            ok, h = run('rev-parse', 'HEAD', cwd=repo)
+            if ok and h and idx[key].get('commit') != h:
+                idx[key]['commit'] = h; self._write_json(idx_path, idx)
+                run('add', '-A', 'index.json', cwd=repo)
+                if run('-c', 'user.name=NNY Simulator', '-c', 'user.email=nny-simulator@localhost', 'commit', '-m',
+                       f'기보 수집 — 커밋 해시 기록: {key} ({h[:8]})', cwd=repo)[0]:
+                    run('push', '-u', 'origin', f'HEAD:{branch}', cwd=repo)
+            return {'ok': True, 'msg': f'GitHub 브랜치 {branch} 에 올렸습니다.', 'branch': branch, 'log': log}
+        except (OSError, subprocess.SubprocessError) as ex:
+            return {'ok': False, 'msg': f'git 실행 오류: {ex}', 'log': log}
+
 
 class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리 여부 — bool(좌석0만) 또는 (좌석0, 좌석1) 튜플(사람vs사람).
@@ -322,7 +394,10 @@ class LiveMatch:
                                                        'rounds': [[r['winner'], r['reason']] for r in meta['rounds']]}, self.table.deltas)
                     self.learned = len(self.table.deltas)
                     if self.store.settings().get('auto_push'): threading.Thread(target=self.store.auto_push, daemon=True).start()
-                if self.rec.frames: self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
+                if self.rec.frames:
+                    self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
+                    if self.store.settings().get('push_games'):
+                        threading.Thread(target=self.store.push_game, args=(self.replay_id,), daemon=True).start()
             except Exception:
                 self.error = (self.error or '') + '\n저장 오류:\n' + traceback.format_exc()[-2000:]
 

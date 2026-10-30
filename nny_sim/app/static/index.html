@@ -178,6 +178,9 @@
           <label class="chk" title="인터넷과 git이 있을 때만 동작합니다. 실패하면 다음 대전 때 쌓인 기록을 다시 올립니다"><input type="checkbox" id="l-auto"> 대전이 끝날 때마다 자동으로 올리기</label></div>
         <div class="muted" id="l-last" style="margin-top:6px"></div>
         <pre class="muted" id="l-gitlog" style="white-space:pre-wrap;font-size:12px;max-height:240px;overflow:auto"></pre>
+        <label class="chk" style="margin-top:10px" title="대전이 끝나거나 룰미스 메모가 붙을 때마다 재생 기록을 online/data-games 브랜치에 올립니다 — 수정 고리(1순위)가 이 기보로 재현합니다. 인터넷 · git 필요, 실패하면 다음 기회에 다시 올림">
+          <input type="checkbox" id="l-pushgames"> 기보(재생+메모)도 자동으로 수집에 올리기</label>
+        <div class="muted" id="l-gamepush" style="margin-top:4px"></div>
       </div>
     </div>
   </section>

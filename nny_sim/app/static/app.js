@@ -461,11 +461,14 @@ async function refreshLearning() {
     ${rows ? `<table class="t" style="margin-top:8px"><tr><th>대전(내 덱 vs AI 덱)</th><th>매치</th><th>내 승</th><th>판단 기록</th></tr>${rows}</table>` : '<div class="hint" style="margin-top:8px">아직 학습한 대전이 없습니다. AI 대전에서 「AI 학습」을 켜고 두어 보세요.</div>'}`;
   $('l-url').value = s.git_url || ''; $('l-base').value = s.git_base || ''; $('l-branch').value = s.git_branch || ''; $('l-auto').checked = !!s.auto_push;
   const lp = L.last_push; $('l-last').textContent = lp ? `마지막 자동 올리기(${lp.time}): ${lp.ok ? '성공' : '실패'} — ${lp.msg}` : '';
+  $('l-pushgames').checked = !!s.push_games;
+  const gp = L.last_game_push; $('l-gamepush').textContent = gp ? `마지막 기보 수집(${gp.time}): ${gp.ok ? '성공' : '실패'} — ${gp.msg}` : '';
 }
 $('l-export').onclick = async () => { const r = await api('learning/export', {}); $('l-exported').textContent = r.ok ? '내보냄: ' + r.path : '아직 학습 기록이 없습니다.'; };
 $('l-open').onclick = async () => { const r = await api('open', {what: 'export'}); if (!r.ok) toast('폴더를 열 수 없습니다.'); else toast('폴더: ' + r.path); };
 $('l-savegit').onclick = async () => { BOOT.settings = await api('settings', {git_url: $('l-url').value.trim(), git_base: $('l-base').value.trim(), git_branch: $('l-branch').value.trim(), auto_push: $('l-auto').checked}); toast('저장했습니다.'); };
 $('l-auto').onchange = async () => { BOOT.settings = await api('settings', {auto_push: $('l-auto').checked}); toast($('l-auto').checked ? '대전이 끝날 때마다 GitHub에 올립니다(인터넷 · git 필요).' : '자동 올리기를 껐습니다.'); };
+$('l-pushgames').onchange = async () => { BOOT.settings = await api('settings', {push_games: $('l-pushgames').checked}); toast($('l-pushgames').checked ? '대전이 끝나거나 메모가 붙을 때마다 기보를 online/data-games 에 올립니다.' : '기보 자동 수집을 껐습니다.'); };
 $('l-git').onclick = async () => {
   $('l-gitlog').textContent = '올리는 중…(인터넷이 필요합니다)';
   await api('settings', {git_url: $('l-url').value.trim(), git_base: $('l-base').value.trim(), git_branch: $('l-branch').value.trim()});

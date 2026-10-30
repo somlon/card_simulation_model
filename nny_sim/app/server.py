@@ -197,7 +197,8 @@ class App:
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
-        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'), last_push=self.store.last_push())
+        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'),
+                    last_push=self.store.last_push(), last_game_push=self.store.last_game_push())
 
     # ── 요청 처리 ──
     def route(self, method, path, q, body, ip=None):
