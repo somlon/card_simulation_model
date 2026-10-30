@@ -169,7 +169,7 @@ $('g-mode').onchange = () => {
   $('g-oplabel').textContent = mode === 'pvp' ? 'P2 덱(상대)' : mode === 'human' ? 'AI 덱' : 'P2 덱';
   $('g-learn').disabled = mode !== 'human'; $('g-hints').disabled = mode !== 'human';
 };
-const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null};
+const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null, spectating: false};
 let lobbyRole = null, viaLobby = false;  // 로비(방) 참가 상태 — 매치 시작(로비) 로 시작했으면 상대가 매치 ID·키를 몰라도 스스로 들어온다
 const decBox = () => $('g-stage').querySelector('.dec');
 $('g-start').onclick = async () => {
@@ -179,7 +179,7 @@ $('g-start').onclick = async () => {
     const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'human' ? [true, false] : [false, false];
     const r = await api('match/start', {humans, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
                                         learn: $('g-learn').checked, hints: $('g-hints').checked});
-    G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1];
+    G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1]; G.spectating = false;
     G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
@@ -200,7 +200,7 @@ $('g-join').onclick = async () => {
   if (G.id && !G.done && !confirm('진행 중인 대전을 그만두고 참가할까요?')) return;
   try {
     const r = await api('match/join', {id, key});
-    G.id = id; G.pending = null; G.done = false; G.human = true; G.seat = r.seat; G.key = r.key;
+    G.id = id; G.pending = null; G.done = false; G.human = true; G.seat = r.seat; G.key = r.key; G.spectating = false;
     stages.play.ended = false;
     stages.play.startLive(r.names, {decks: ['', '']}, G.seat);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
@@ -220,12 +220,22 @@ function showRoom(r) {
 }
 function checkMyMatch(m) {
   if (!m || G.id === m.id) return;   // 이미 이 매치에 있으면(내가 시작한 쪽이거나 이미 들어온 뒤) 다시 건드리지 않음
-  G.id = m.id; G.pending = null; G.done = false; G.human = true; G.seat = m.seat; G.key = m.key;
+  G.id = m.id; G.pending = null; G.done = false; G.human = true; G.seat = m.seat; G.key = m.key; G.spectating = false;
   stages.play.ended = false;
   stages.play.startLive(m.names, {decks: ['', '']}, G.seat);
   stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
   $('g-pvpinfo').textContent = '';
   $('g-status').textContent = `참가함(로비): ${m.title} · 내 좌석 ${m.seat}`;
+  clearTimeout(G.poll); pollLive();
+}
+function checkSpectate(li) {   // 관전(④): 로비에서 「관전」을 누른 뒤 매치가 떠 있으면(/api/boot·heartbeat 의 live_info) 양쪽 패를 가린 채 따라붙는다
+  if (lobbyRole !== 'spectator' || !li || G.id === li.id) return;
+  G.id = li.id; G.pending = null; G.done = false; G.human = false; G.seat = null; G.key = null; G.spectating = true;
+  stages.play.ended = false;
+  stages.play.startLive(li.names, {decks: ['', '']}, 'spectate');
+  stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = true;
+  $('g-pvpinfo').textContent = '';
+  $('g-status').textContent = `관전 중: ${li.title}`;
   clearTimeout(G.poll); pollLive();
 }
 $('lobby-join').onclick = async () => {
@@ -235,9 +245,9 @@ $('lobby-join').onclick = async () => {
 $('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
 $('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
-function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showRoom(r.room); checkMyMatch(r.my_match); }).catch(() => {}); }
+function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); }).catch(() => {}); }
 setInterval(beat, 20000); beat();
-showRoom(BOOT.room); checkMyMatch(BOOT.my_match);
+showRoom(BOOT.room); checkMyMatch(BOOT.my_match); checkSpectate(BOOT.live_info);
 
 async function pollLive() {
   if (!G.id) return;
@@ -245,6 +255,7 @@ async function pollLive() {
   try {
     let path = `match/poll?id=${G.id}&f=${st.F.length}&s=${st.S.length}&c=${Object.keys(st.cards).length}`;
     if (G.seat != null) path += `&seat=${G.seat}&key=${encodeURIComponent(G.key || '')}`;
+    else if (G.spectating) path += '&spectate=1';
     const d = await api(path);
     if (d.status === 'none') return;
     st.appendLive(d);

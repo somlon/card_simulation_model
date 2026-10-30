@@ -66,12 +66,18 @@ class App:
         ips = set(self._users().values())
         return ips or None
 
+    def live_info(self):
+        """관전(④) 진입용 — 지금 매치가 떠 있다면 누구나(관전자) 알 수 있는 기본 정보만. pending · seat · key 는 절대 안 준다
+        (좌석별 비공개 정보는 /api/match/poll 에 spectate=1 로만 접근 — 그쪽이 늘 pending=None)."""
+        if not self.live or self.live.status not in ('starting', 'running'): return None
+        return {'id': self.live.id, 'names': self.live.names, 'title': self.live.title}
+
     def heartbeat(self, ip):
         self.last_beat = time.time()
         if ip:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
-        return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip)}
+        return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info()}
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -187,7 +193,7 @@ class App:
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
-                'room': self.room_status(), 'my_match': self.my_match(ip)}
+                'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info()}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
@@ -217,7 +223,7 @@ class App:
         if path == '/api/match/poll':
             if not self.live or self.live.id != g('id'): return {'status': 'none'}
             seat = g('seat'); seat = int(seat) if seat not in (None, '') else None
-            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)))
+            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=bool(g('spectate')))
         if path == '/api/match/answer':
             ok = bool(self.live) and self.live.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
             return {'ok': ok}

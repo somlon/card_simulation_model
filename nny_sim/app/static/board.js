@@ -114,10 +114,13 @@ class Stage {
     this.F = rec.frames; this.S = rec.states; this.cards = rec.cards; this.pool = rec.pool || {}; this.meta = rec.meta; this.names = rec.meta.names;
     this.afterData(true); this.go(0, false);
   }
-  startLive(names, meta, seat) {   // seat: 이 화면이 보는 사람 자리(0·1) — 사람vs사람이면 그 자리만 공개하고 반대 자리를 가린다. null 이면 전부 공개(AI vs AI 관전)
+  startLive(names, meta, seat) {   // seat: 이 화면이 보는 사람 자리(0·1) — 사람vs사람이면 그 자리만 공개하고 반대 자리를 가린다.
+    // null 이면 전부 공개(AI vs AI 관전) · 'spectate' 면 양쪽 다 가림(사람이 낀 매치를 제3자가 관전)
     this.reset(); this.live = true; this.names = names; this.meta = Object.assign({decks: ['', ''], rounds: []}, meta);
-    this.mask = seat === 0 || seat === 1; this.hideSeat = this.mask ? 1 - seat : null;
-    if (this.mask) this.reveal = [seat === 0, seat === 1];
+    const spectate = seat === 'spectate';
+    this.mask = seat === 0 || seat === 1 || spectate;
+    this.hideSeat = seat === 0 ? [1] : seat === 1 ? [0] : spectate ? [0, 1] : null;
+    if (this.mask) this.reveal = spectate ? [false, false] : [seat === 0, seat === 1];
     this.q('[data-a=reveal]').classList.toggle('on', this.reveal[1]);
     this.afterData(true); this.renderEmpty();
   }
@@ -428,13 +431,15 @@ class Stage {
       + `<span class="tx"><span class="nm"><span class="chip p${p}">P${p + 1}</span>${esc(name)}</span><small>${n ? n + '번 효과' : '카드 발동'}${state}</small>`
       + `${tg.length ? `<small class="to">→ 대상: ${tg.join(', ')}</small>` : ''}</span></div>`;
   }
-  hidden(fr) {   // 실시간 대전 중 반대 자리(AI 또는 사람vs사람의 상대)의 비공개 정보
-    if (this.hideSeat == null) return false;
-    if (fr.k === 'decision') return fr.d ? fr.d.p === this.hideSeat || fr.m.startsWith(`판단[${this.names[this.hideSeat]}]`) : fr.m.startsWith(`판단[${this.names[this.hideSeat]}]`);
+  hidden(fr) {   // 실시간 대전 중 가린 자리(AI · 사람vs사람의 상대 · 관전이면 양쪽 다)의 비공개 정보
+    if (!this.hideSeat || !this.hideSeat.length) return false;
+    if (fr.k === 'decision') return fr.d ? this.hideSeat.includes(fr.d.p) || this.hideSeat.some(s => fr.m.startsWith(`판단[${this.names[s]}]`))
+                                          : this.hideSeat.some(s => fr.m.startsWith(`판단[${this.names[s]}]`));
     return false;
   }
   maskMsg(fr, m) {
-    if (this.hideSeat == null || !m.startsWith(this.names[this.hideSeat])) return m;
+    if (!this.hideSeat || !this.hideSeat.length) return m;
+    if (!this.hideSeat.some(s => m.startsWith(this.names[s]))) return m;
     if (/드로우|시작 패|멀리건|세트$/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
     return m;
   }
@@ -449,7 +454,10 @@ class Stage {
   frameIcon(fr) { return (fr.fx || []).some(f => f.t === 'atk') ? '⚔' : (ICON[fr.k] || '·'); }
   drawCaption(i) {
     const fr = this.F[i]; let main = `${this.frameIcon(fr)} ${this.nameHtml(esc(this.shortMsg(fr)))}`, sub = '', eff = '';
-    if (this.hidden(fr)) main = `· ${esc(this.names[1])} 생각 중…`;
+    if (this.hidden(fr)) {
+      const who = fr.d && fr.d.p != null ? this.names[fr.d.p] : this.hideSeat.length === 1 ? this.names[this.hideSeat[0]] : (fr.m.match(/^판단\[(.+?)\]/) || [])[1] || '상대';
+      main = `· ${esc(who)} 생각 중…`;
+    }
     const act = (fr.fx || []).find(f => f.t === 'act' || f.t === 'res');
     if (act) { const ci = this.info(act.u); const t = ci && effText(ci.pool, act.n); if (t) eff = esc(t); }
     if (fr.k === 'decision' && !this.hidden(fr)) sub = this.optsLine(fr.d);

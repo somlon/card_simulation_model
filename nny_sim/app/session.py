@@ -302,15 +302,18 @@ class LiveMatch:
                 'cards': {str(u): v for u, v in self.rec.cards.items()}, 'pool': pool,
                 'states': list(self.rec.states), 'frames': self.rec.export_frames()}
 
-    def poll(self, seat=None, key=None, f_from=0, s_from=0, c_from=0):
+    def poll(self, seat=None, key=None, f_from=0, s_from=0, c_from=0, spectate=False):
         rec = self.rec
         frames = rec.export_frames(f_from); states = rec.states[s_from:]
         cards = list(rec.cards.items())[c_from:]
-        human_seats = [i for i, h in enumerate(self.humans) if h]
-        if seat is None and len(human_seats) == 1: seat = human_seats[0]   # 사람 자리가 하나뿐이면(기존 사람vsAI) 키 없이도 그 자리
         pending = None
-        if seat is not None and self.humans[seat] and (len(human_seats) == 1 or key == self.keys[seat]):
-            pending = self.bridges[seat].pending
+        if not spectate:   # spectate=True: 관전 화면의 명시적 요청 — 사람 자리가 하나뿐인 매치(기존 사람vsAI)라도 자동 귀속하지 않는다
+            human_seats = [i for i, h in enumerate(self.humans) if h]
+            if seat is None and len(human_seats) == 1: seat = human_seats[0]   # 사람 자리가 하나뿐이면(기존 사람vsAI) 키 없이도 그 자리
+            if seat is not None and self.humans[seat] and (len(human_seats) == 1 or key == self.keys[seat]):
+                pending = self.bridges[seat].pending
+        else:
+            seat = None
         return {'id': self.id, 'status': self.status, 'frames': frames, 'f_from': f_from, 'states': states, 's_from': s_from,
                 'cards': {str(u): v for u, v in cards}, 'c_from': c_from, 'pending': pending, 'seat': seat,
                 'result': self.result if self.status not in ('starting', 'running') else None, 'error': self.error,

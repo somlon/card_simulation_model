@@ -45,10 +45,11 @@ class PvpSmokeTest(unittest.TestCase):
         self.assertGreaterEqual(len(ids), 2)
         return ids[0], ids[1]
 
-    def poll(self, mid, seat=None, key=None):
+    def poll(self, mid, seat=None, key=None, spectate=False):
         q = f'?id={mid}'
         if seat is not None: q += f'&seat={seat}'
         if key is not None: q += f'&key={key}'
+        if spectate: q += '&spectate=1'
         return req(self.base, self.token, 'GET', '/api/match/poll' + q)
 
     def test_pvp_seat_routing_and_spectator(self):
@@ -114,6 +115,25 @@ class PvpSmokeTest(unittest.TestCase):
             else:
                 time.sleep(0.02)
         self.assertTrue(got, '사람vsAI 기존 방식(좌석 · 키 없이)이 끊겼다')
+        self.app.live.abort()
+
+    def test_spectate_flag_hides_pending_even_for_solo_human(self):
+        """관전(④) — 사람vsAI(좌석 하나)라도 spectate=1 로 명시한 요청은 기존 '사람 자리 하나면 자동 귀속' 지름길을
+        타지 않고 pending · seat 를 절대 보여주지 않아야 한다(제3자 관전이 그 한 명의 판단 패널을 가로채면 안 됨)."""
+        d1, d2 = self.decks()
+        st, start = req(self.base, self.token, 'POST', '/api/match/start', {'deck': d1, 'ai_deck': d2, 'mode': 'human', 'learn': False})
+        self.assertEqual(st, 200, start)
+        mid = start['id']
+        saw_pending_legacy = False
+        for _ in range(200):
+            _, legacy = self.poll(mid)                       # 기존 방식(좌석·키 없음, spectate 없음) — 그 한 명 취급(호환)
+            _, spec = self.poll(mid, spectate=True)           # 관전 화면(spectate=1) — 아무리 사람 자리가 하나뿐이어도 안 보임
+            self.assertIsNone(spec['pending'], '관전(spectate=1)인데 사람vsAI 판단 패널이 보였다')
+            self.assertIsNone(spec['seat'], '관전(spectate=1)인데 좌석이 귀속됐다')
+            if legacy['pending']: saw_pending_legacy = True; break   # 확인됐으면 더 돌 필요 없음(응답하지 않으면 매치가 끝나지 않음)
+            if legacy['status'] not in ('starting', 'running'): break
+            time.sleep(0.02)
+        self.assertTrue(saw_pending_legacy, '기존 방식(사람vsAI, spectate 없이)에 판단 패널이 한 번도 안 보여 확인할 수 없었다')
         self.app.live.abort()
 
 
