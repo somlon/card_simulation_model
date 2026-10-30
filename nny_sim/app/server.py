@@ -38,6 +38,18 @@ def hamachi_ip():
     return None
 
 
+def commit_rev():
+    """업데이트 패널 — 지금 돌고 있는 코드의 git 짧은 커밋 해시. .bat 의 `git pull --ff-only` 가
+    받아오는 그 값과 같아서, 화면에서 버전 옆에 보여주면 최신인지 눈으로 바로 비교할 수 있다.
+    git 이 없거나(.git 없는 배포본) 실패하면 None — 배지가 버전만 보여주고 조용히 끝난다."""
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        out = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True, timeout=5, cwd=here)
+        return out.stdout.strip() or None if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 class App:
     def __init__(self, paths):
         self.p = paths
@@ -46,6 +58,7 @@ class App:
         self.store = SS.Store(paths['user'], paths.get('library'))
         self.users_path = os.path.join(paths['user'], 'online_users.json')  # tools/discord_bot.py 의 /유저등록 이 쓰는 그 파일(같은 경로)
         self.token = secrets.token_hex(16)
+        self.commit = commit_rev()  # 업데이트 패널(⑧) — 서버 켤 때 한 번만 읽음(git 호출 반복 안 함)
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
         self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
         self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 2
@@ -77,7 +90,8 @@ class App:
         if ip:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
-        return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info()}
+        return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip),
+                'live_info': self.live_info(), 'commit': self.commit}
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -193,7 +207,7 @@ class App:
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
-                'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info()}
+                'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)

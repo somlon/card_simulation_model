@@ -18,7 +18,12 @@ function toast(msg, ms = 3200) {
 }
 
 let BOOT = await api('boot'); const POOL = await api('pool');
-$('ver').textContent = 'v' + BOOT.version;
+function showVer(commit) {
+  const el = $('ver'); if (!el) return;
+  el.textContent = 'v' + BOOT.version + (commit ? ' (' + commit + ')' : '');
+  el.title = commit ? '지금 켜져 있는 코드의 커밋 — 업데이트 뒤 서버를 다시 켜면 바뀜' : '';
+}
+showVer(BOOT.commit);
 const assets = BOOT.assets;
 const faceUrl = name => assets.faces[name] ? '/cards/' + assets.faces[name] : null;
 const NAMES_SORTED = Object.keys(POOL).sort((a, b) => b.length - a.length);
@@ -254,7 +259,7 @@ $('lobby-join').onclick = async () => {
 $('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
 $('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
-function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); }).catch(() => {}); }
+function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); }).catch(() => {}); }
 setInterval(beat, 20000); beat();
 showRoom(BOOT.room); checkMyMatch(BOOT.my_match); checkSpectate(BOOT.live_info);
 
