@@ -89,8 +89,8 @@ class Recorder(list):
                       'grave': [self.reg(c) for c in pl.grave], 'ban': [self.reg(c) for c in pl.banish],
                       'm': [self.cell(g, c) for c in pl.m], 's': [self.cell(g, c) for c in pl.s], 'sk': self.cell(g, pl.skill)})
         st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': self.chain_state(g),
-              'sh': self.cell(g, g.shared), 'so': g.shared_owner, 'fz': self.cell(g, g.fieldz)}
-        if g.shared is not None: st['sc'] = g.shared.controller
+              'sh': [self.cell(g, c) for c in g.shareds], 'so': list(g.shared_owners), 'fz': self.cell(g, g.fieldz)}   # 공유 존 칸마다(2칸 — 사용자 지시 2026-10-30)
+        st['sc'] = [c.controller if c is not None else None for c in g.shareds]
         if g.fieldz is not None: st['fc'] = g.fieldz.controller
         return st
 

@@ -130,6 +130,12 @@ main{padding:12px 16px 24px;max-width:1700px;margin:0 auto}
 .token .cf.k{background:radial-gradient(circle at 34% 28%,#4b505c 0,#1a1d24 52%,#060709 100%);color:#f2f4f8;transform:rotateY(180deg);box-shadow:0 0 0 6px #08090c,0 0 0 11px #c3c9d4,0 12px 30px #000c}
 .token .tl{position:absolute;right:-60px;top:calc(100% + 20px);white-space:nowrap;max-width:440px;overflow:hidden;text-overflow:ellipsis;font-size:26px;font-weight:800;background:#0b0f18e6;border:2px solid var(--line);border-radius:999px;padding:2px 14px;color:#dfe5f2}
 /* 공유 존 칸의 소유 표시 — 마커와 같은 색 테두리 + 모서리 작은 코인 */
+/* 공유 존 2칸 — 칸마다 작은 마커(사용자 지시 2026-10-30) */
+.token.mini .cf b{font-size:34px;letter-spacing:0}
+.token.mini .cf small{font-size:12px;margin-top:1px}
+.token.mini .cf.w{box-shadow:0 0 0 4px #fff,0 0 0 7px #7f889b,0 8px 18px #000c}
+.token.mini .cf.k{box-shadow:0 0 0 4px #08090c,0 0 0 7px #c3c9d4,0 8px 18px #000c}
+.token.mini .tl{right:auto;left:50%;transform:translateX(-50%);top:calc(100% + 12px);font-size:20px;padding:0 10px}
 .shz{position:absolute;border-radius:22px;pointer-events:none;z-index:3;opacity:0;border:7px solid transparent;transition:opacity .4s,border-color .4s,box-shadow .4s}
 .shz.on{opacity:1;border-color:#f4f6fa;box-shadow:0 0 0 3px #000a,0 0 30px 6px #ffffff70}
 .shz.on.black{border-color:#08090c;box-shadow:0 0 0 3px #e3e7ef,0 0 30px 6px #000}
