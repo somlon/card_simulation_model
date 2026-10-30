@@ -21,15 +21,18 @@
 
 ## 다음 회차 지시
 
-관전(④) 화면 진입은 이번 회차에 끝남(바로 아래 완료 기록 참고) — **다음은 ⑤ 룰미스 메모**:
-체인·효과 발동 로그를 줄 단위로 "룰미스 메모" 표시가 가능하게(관전자도 달 수 있어야 함 —
-board.js의 `rowHtml`/로그 줄 각각에 메모 버튼·입력창을 붙이고, 메모는 매치 상태가 아니라 클라이언트
-로컬에 쌓다가 매치가 끝날 때 `/api/match/*`가 아니라 재생 기록(replay)에 같이 묶어 저장하는 쪽을
-먼저 검토할 것 — 서버 쪽에 새 저장소를 만들기 전에 기존 `replay_dict()`/`store.replays()` 경로에
-`memos` 필드를 끼워 넣을 수 있는지부터 볼 것). ⑥(기보 수집 → `online/data-games`, 커밋 해시 필수)은
-메모 저장 형식이 정해진 뒤 바로 이어서 — 지금 메모가 없으니 1순위(수정 고리)가 계속 "해당 없음"인
-근본 원인이 바로 이 ⑤·⑥ 미완성이다(메모를 달 방법 자체가 없어서 처리할 기보가 생기지 않음) — 다음
-회차가 ⑤·⑥을 끝내야 1순위가 비로소 의미를 가짐.
+⑤ 룰미스 메모는 이번 회차에 끝남(바로 아래 완료 기록의 최신 항목 참고) — **다음은 ⑥ 기보 수집**:
+매치가 끝나 메모가 하나라도 붙은(또는 메모 없이 그냥 끝난) `u:` 재생 기록을 `online/data-games`로
+퍼가는 경로를 만들 것. `session.py Store.git_push()`가 이미 "앱이 관리하는 얕은 clone으로 학습
+기록을 올리는" 같은 모양의 코드라 거의 그대로 참고 가능(다만 그건 `data/human-games-<host>` 쪼가리로
+가는 것이고, 이번엔 `online/data-games` 로 가야 함 — 브랜치·경로만 다름). **커밋 해시 필수**(진행
+문서 R4 참고 — 1순위가 "기보 메타의 커밋 해시로 재현"하므로 없으면 수정 고리가 못 돈다): 기보 메타에
+`online/data-games`에 실제로 올라간 커밋의 해시를 박아 둘 것. 자동(매치 끝날 때마다 자동 push)으로
+할지, 사용자가 누르는 버튼으로 할지는 이번에 정할 것 — 자동이면 하마치 네트워크가 끊긴 상태(인터넷
+없음)에서도 매치가 막히면 안 되므로 `auto_push`처럼 실패를 조용히 기록만 하고 다음 기회에 다시
+시도하는 쪽을 따라갈 것(이미 있는 패턴 재사용, 새로 설계하지 말 것). 올라간 뒤에는 1순위("끝난 듀얼 +
+룰미스 메모 ≥ 1 + 미처리" 기보 찾기)가 실제로 찾을 데이터가 생기므로, ⑥ 완료 후 다음 회차부터는
+1순위가 "해당 없음"에서 벗어날 수 있는지 매 회차 다시 확인할 것.
 
 **이번 회차가 ④를 구현하며 새로 고친 것(다음에 손댈 사람이 알아야 함)**: 관전 화면 연결 자체는
 `stages.play.startLive(names, meta, 'spectate')`(board.js에 새로 추가한 seat 값 — 기존 0·1·null
@@ -91,6 +94,52 @@ pending·seat·key 는 절대 없음) 를 새로 추가해 관전자가 "지금 
   ("다음 회차 지시" 참고).
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1⑤ 룰미스 메모 — 체인·효과 발동 로그 줄 단위로 메모를 달 수 있게(관전자도
+  가능). `board.js`: 로그 줄마다(`rowHtml(fr, i)` — 기존엔 `fr`만 받았는데 `i`를 추가로 받게 바꿈)
+  메모 버튼(🏷, 평소엔 안 보이고 그 줄에 마우스를 올리면 나타남)을 붙였고, 이미 달린 메모가 있으면
+  배지(🏷 개수, 마우스 올리면 내용 툴팁)도 같이 보여준다. 메모는 `Stage.memos`(프레임 번호 → 배열)에
+  **클라이언트 로컬로만** 쌓인다(지난 회차 지시대로 매치 상태엔 전혀 안 건드림). 로그 줄 클릭이 이미
+  "그 프레임으로 이동"에 쓰이고 있어서(`bind()`의 기존 `.row` 클릭 핸들러), 메모 버튼 클릭이 그 핸들러로
+  새는 걸 막으려고 `ev.stopPropagation()`과 `ev.target.closest('.memo-btn')` 우선 검사를 추가함 — 버튼이
+  아닌 줄 자체를 누르는 기존 동작은 그대로.
+  **저장(지난 회차가 먼저 검토하라고 한 부분)**: 지난 회차 지시대로 새 저장소를 만들지 않고, 기존
+  `replay_dict()`/`store.replays()` 경로에 `memos` 필드를 끼워 넣는 쪽으로 됐다 — `session.py`에
+  `Store.add_memo(rid, memos)` 추가: 이미 저장된 `.json.gz`를 열어 `memos` 리스트에 덧붙이고(겹치는
+  `(줄, 글, 쓴이)`는 건너뜀 — 중복 전송 방지), `index.json` 메타의 `memos` 개수도 같이 갱신(나중에
+  1순위가 "메모 ≥ 1" 기보를 찾을 때 이 숫자로 거를 수 있게). `replay_meta()`도 `memos` 개수를 돌려주게
+  고쳤다. 새 HTTP 경로 `/api/replay/memo`(POST {id, memos}) 하나만 추가 — `/api/match/*` 쪽은 전혀
+  안 건드림(지난 회차 지시 그대로). **언제 서버로 보내나**: 실시간 대전 중엔 안 보내고(지난 회차 지시대로
+  클라이언트 로컬에만 쌓음), 매치가 끝나는 순간(`app.js`의 `finishLive`)에 쌓인 메모를 한 번에
+  `/api/replay/memo`로 묶어 보낸다(`replay_id`가 있을 때만). 반면 **저장된 기록을 나중에 다시 보다가**
+  메모를 달면(이미 그 기록의 id를 알고 있으므로) 매치 종료를 기다릴 필요가 없어 그 자리에서 바로
+  저장한다(`stages.watch`의 `onMemo` 콜백) — 둘 다 같은 로그 줄 UI·같은 `Stage` 클래스를 쓰므로 자연히
+  같이 됨, 따로 만든 게 아님. 누가 달았는지(`who`)는 매치 화면이 이미 알고 있는 좌석 이름(자기 좌석)이나
+  '관전'·'복기'를 그대로 써서(`stages.play.viewerLabel`/`stages.watch.viewerLabel`, `g-start`·`g-join`·
+  `checkMyMatch`·`checkSpectate`·`loadReplay` 각자 맞는 값을 세팅) 새 사용자 식별 체계를 만들지 않았다.
+  기본 제공(library, `l:`) 기록은 내 것이 아니므로 메모 저장을 거절(`add_memo`가 `u:`만 받음) — 화면
+  쪼가리는 안 막아 뒀고(버튼은 그대로 보임), 눌러도 저장 안 되면 토스트로만 알림(과설계 피함).
+  재현 테스트 `test_online_memo.py` 신규(6개): `Store.add_memo` 추가·중복 건너뜀·빈 글 무시·library/
+  없는 기록 거절·목록(`replays()`)에 개수 반영 · HTTP `/api/replay/memo` 왕복·잘못된 id 거절 — 전부
+  통과. `python -m py_compile app/server.py app/session.py test_online_memo.py` ·
+  `node --check app/static/app.js app/static/board.js` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate test_online_clients test_online_lobby test_online_lobby_match
+  test_online_memo -v`(64개 중 63 통과 — `test_chi2_change_detects_a_shift`는 scipy 미설치로 지난
+  회차들과 똑같이 무관, 이번에도 단독 실행해 ModuleNotFoundError만 재확인) 전부 실행 확인. 서버 기동
+  (`app/main.py --sim . --cards <더미> --user <더미> --no-browser --host 127.0.0.1`) 후 AI vs AI 매치를
+  실제로 끝까지 돌려(`/api/match/start`→`poll` 반복→`done`) 진짜 `replay_id`를 얻고, 그 위에 curl로
+  `/api/replay/memo`를 두 번(메모 2개 추가 → 겹치는 메모 재전송) 호출해 `added`·`total`·`/api/replay`
+  재조회·`/api/boot`의 `replays[].memos` 개수까지 실제로 확인(겹치는 재전송은 `added:0`으로 안 늘어남).
+  엔진·룰 레이어(`engine.py`·`cards*.py`·`blocks/`·`match.py`·`deck.py`)는 전혀 안 건드림.
+  **같이 확인한 것**: 1순위(수정 고리) — `online/data-games` 여전히 README.md뿐 → 해당 없음(⑥을
+  아직 안 했으니 당연함, 「다음 회차 지시」참고). 2순위(디스코드) — 지난 회차 "루틴 확인 필요" 절의
+  보류가 그대로 유효(토큰 사용 안 함, 어디에도 출력 안 함) — 사용자 결정 전까지 계속 보류. 3순위
+  (재정질문) — `재정질문/` 여전히 README.md뿐 → 해당 없음. AI 방식 3안 — `docs/AI_방식_선택지.md`
+  선택 기록란 여전히 비어있음 → 착수 안 함.
+  **아직 안 한 것**: ⑥ 기보 수집(`online/data-games`로 올리기, 커밋 해시 필수) — 「다음 회차 지시」
+  참고. 메모 글 수정·삭제는 없음(달기만, 잘못 달면 다시 못 지움 — 다음에 필요하면 추가). 메모 배지의
+  툴팁이 길어지면(메모가 많이 쌓이면) 잘릴 수 있음(브라우저 `title` 속성 한계, 전용 패널은 아직 없음).
 
 - 2026-10-30 (루틴): 기능 v1④ 관전 화면 진입 — 지난 회차까지는 `#g-lobby`의 "관전" 버튼이 room 에
   관전자로 등록만 하고 화면은 아무 매치도 따라가지 않았다. 이번에 실제로 연결: `/api/boot`·

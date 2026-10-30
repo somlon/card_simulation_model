@@ -212,6 +212,10 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .log .row.k-decision{color:var(--dim);font-size:11.5px;padding-left:20px}
 .log.nodec .row.k-decision{display:none}
 .log .row .opts{display:block;color:var(--dim);font-size:11px}
+.log .row .memo-btn{flex:0 0 auto;margin-left:auto;opacity:0;border:0;background:none;cursor:pointer;font-size:12px;padding:0 2px;color:var(--muted)}
+.log .row:hover .memo-btn{opacity:.7}
+.log .row .memo-btn:hover{opacity:1}
+.log .row .memo-badge{flex:0 0 auto;font-size:10.5px;color:var(--gold);cursor:help}
 /* 판단 패널 */
 .decision{background:#141c33;border:2px solid var(--gold);border-radius:12px;padding:10px 12px;box-shadow:0 0 24px -8px var(--gold)}
 .decision .q{font-weight:800;margin-bottom:8px}

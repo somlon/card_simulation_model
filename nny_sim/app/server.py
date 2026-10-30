@@ -216,6 +216,7 @@ class App:
         if path == '/api/replays': return self.store.replays()
         if path == '/api/replay': return self.store.replay(g('id', ''))
         if path == '/api/replay/delete': return {'ok': self.store.delete_replay(body.get('id', ''))}
+        if path == '/api/replay/memo': return self.store.add_memo(body.get('id', ''), body.get('memos', []))
         if path == '/api/playlists':
             return self.store.save_playlists(body.get('playlists', [])) if method == 'POST' else self.store.playlists()
         if path == '/api/match/start': return self.start_match(body, ip)

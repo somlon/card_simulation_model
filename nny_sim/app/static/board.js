@@ -45,7 +45,7 @@ function genCard(p) {
 
 class Stage {
   constructor(host, opts) {
-    this.o = opts; this.A = opts.assets; this.POOL = opts.pool;
+    this.o = opts; this.A = opts.assets; this.POOL = opts.pool; this.viewerLabel = '';
     this.ratio = this.A.ratio; this.CW = Math.round(CH * this.ratio); this.DEF_SCALE = SLOT.w / CH;
     this.MW = this.A.mat_size[0]; this.MH = this.A.mat_size[1];
     host.innerHTML = this.html(); this.host = host; this.root = host.firstElementChild;
@@ -106,12 +106,14 @@ class Stage {
     this.els = new Map(); this.cur = 0; this.lastRendered = -1; this.selected = null; this.rows = []; this.curRow = null;
     this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.tokOwner = null; this.reveal = [true, true]; this.showDec = false;
     this.live = false; this.mask = null; this.hideSeat = null; this.hl = new Set(); this.WINS = []; this.TURNS = [];
+    this.memos = new Map();   // 프레임 번호 i → [{text, who, t}] — 룰미스 메모(⑤), 클라이언트 로컬에 쌓다가 매치가 끝날 때 묶어 저장
     if (this.logEl) this.logEl.innerHTML = '';
   }
   // ── 불러오기 ──
   load(rec) {
     this.reset();
     this.F = rec.frames; this.S = rec.states; this.cards = rec.cards; this.pool = rec.pool || {}; this.meta = rec.meta; this.names = rec.meta.names;
+    for (const m of rec.memos || []) this.addMemoLocal(m.i, m.text, m.who, m.t);
     this.afterData(true); this.go(0, false);
   }
   startLive(names, meta, seat) {   // seat: 이 화면이 보는 사람 자리(0·1) — 사람vs사람이면 그 자리만 공개하고 반대 자리를 가린다.
@@ -187,7 +189,11 @@ class Stage {
       else el.onclick = () => this.action(a);
     });
     q('.scrub input').oninput = e => { this.stop(); this.go(+e.target.value, false); };
-    this.logEl.addEventListener('click', ev => { const r = ev.target.closest('.row'); if (r) { this.stop(); this.follow = false; this.go(+r.dataset.i, false); } });
+    this.logEl.addEventListener('click', ev => {
+      const mb = ev.target.closest('.memo-btn');
+      if (mb) { ev.stopPropagation(); this.addMemo(+mb.dataset.i); return; }
+      const r = ev.target.closest('.row'); if (r) { this.stop(); this.follow = false; this.go(+r.dataset.i, false); }
+    });
     this.board.addEventListener('click', () => { this.selected = null; this.els.forEach(e => e.el.classList.remove('sel')); });
   }
   action(a) {
@@ -468,10 +474,30 @@ class Stage {
     }
     this.q('.cap').innerHTML = `<div class="main">${main}</div>${eff ? `<div class="eff">${eff}</div>` : ''}${sub ? `<div class="sub">${sub}</div>` : ''}`;
   }
-  // ── 기록 ──
-  rowHtml(fr) {
+  // ── 기록 · 룰미스 메모(⑤) ──
+  rowHtml(fr, i) {
     const o = fr.k === 'decision' && !this.hidden(fr) ? this.optsLine(fr.d) : '';
-    return `<span class="ic">${this.frameIcon(fr)}</span><span>${this.nameHtml(esc(this.shortMsg(fr)))}${o ? `<span class="opts">${o}</span>` : ''}</span>`;
+    const memos = this.memos.get(i) || [];
+    const badge = memos.length
+      ? `<span class="memo-badge" title="${esc(memos.map(m => (m.who ? m.who + ': ' : '') + m.text).join('\n'))}">🏷 ${memos.length}</span>` : '';
+    return `<span class="ic">${this.frameIcon(fr)}</span><span>${this.nameHtml(esc(this.shortMsg(fr)))}${o ? `<span class="opts">${o}</span>` : ''}</span>` +
+      `${badge}<button class="memo-btn" data-i="${i}" title="룰미스 메모 달기">🏷</button>`;
+  }
+  addMemoLocal(i, text, who, t) {
+    if (!this.memos.has(i)) this.memos.set(i, []);
+    this.memos.get(i).push({text, who: who || '', t: t || Date.now()});
+  }
+  memoList() {
+    const out = [];
+    for (const [i, arr] of this.memos) for (const m of arr) out.push({i, text: m.text, who: m.who, t: m.t});
+    return out;
+  }
+  addMemo(i) {
+    const text = (prompt('룰미스 메모 — 체인·효과 발동이 이상했던 점을 적어 주세요(관전자도 달 수 있습니다)') || '').trim();
+    if (!text) return;
+    this.addMemoLocal(i, text, this.viewerLabel, Date.now());
+    const r = this.rows[i]; if (r) r.innerHTML = this.rowHtml(this.F[i], i);
+    if (this.o.onMemo) this.o.onMemo(i, text, this.viewerLabel, Date.now());
   }
   rebuildLog() { this.logEl.innerHTML = ''; this.rows = []; this.curRow = null; this.appendLog(0); }
   appendLog(start) {
@@ -479,7 +505,7 @@ class Stage {
     for (let i = start; i < this.F.length; i++) {
       const fr = this.F[i]; const r = document.createElement('div'); r.className = 'row k-' + fr.k; r.dataset.i = i;
       if (this.hidden(fr)) r.style.display = 'none';
-      r.innerHTML = this.rowHtml(fr); frag.appendChild(r); this.rows[i] = r;
+      r.innerHTML = this.rowHtml(fr, i); frag.appendChild(r); this.rows[i] = r;
     }
     this.logEl.appendChild(frag);
   }

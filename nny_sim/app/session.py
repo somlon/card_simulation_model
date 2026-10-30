@@ -143,7 +143,8 @@ class Store:
         m = rec['meta']
         return {'title': m.get('title') or ' vs '.join(m['names']), 'names': m['names'], 'decks': m['decks'], 'winner': m.get('winner'),
                 'kind': m.get('kind', 'ai'), 'created': m.get('created', ''), 'seed': m.get('seed'), 'frames': len(rec['frames']),
-                'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done')}
+                'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done'),
+                'memos': len(rec.get('memos') or [])}
 
     def save_replay(self, rec, base=None, rid=None):
         base = base or os.path.join(self.dir, 'replays')
@@ -153,6 +154,37 @@ class Store:
         with self.lock:
             idx = self._index(base); idx[rid] = self.replay_meta(rec); self._write_json(self._index_path(base), idx)
         return rid
+
+    def add_memo(self, rid, memos):
+        """기능 v1⑤ 룰미스 메모 — 체인·효과 발동 로그 줄(프레임 번호 i)에 매치가 끝난 뒤 묶어 붙인다(관전자도 가능).
+        새 저장소를 만들지 않고 기존 재생 기록(.json.gz)의 `memos` 필드에 끼워 넣는다 — 내 기록(u:)에만, 겹치는 메모는 건너뜀."""
+        src, _, key = rid.partition(':')
+        if src != 'u': return {'ok': False, 'msg': '내 기록에만 메모를 달 수 있습니다.'}
+        key = safe_name(key, '')
+        base = os.path.join(self.dir, 'replays'); path = os.path.join(base, key + '.json.gz')
+        if not key or not os.path.isfile(path): return {'ok': False, 'msg': '기록을 찾을 수 없습니다.'}
+        with self.lock:
+            with gzip.open(path, 'rt', encoding='utf-8') as f: rec = json.load(f)
+            have = rec.setdefault('memos', [])
+            seen = {(m.get('i'), m.get('text'), m.get('who')) for m in have}
+            added = 0
+            for m in (memos or [])[:50]:
+                try: i = int(m.get('i'))
+                except (TypeError, ValueError): continue
+                text = str(m.get('text') or '').strip()[:300]
+                if not text: continue
+                who = str(m.get('who') or '').strip()[:40]
+                sig = (i, text, who)
+                if sig in seen: continue
+                seen.add(sig)
+                try: t = int(m.get('t'))
+                except (TypeError, ValueError): t = int(time.time() * 1000)
+                have.append({'i': i, 'text': text, 'who': who, 't': t}); added += 1
+            if added:
+                with gzip.open(path, 'wt', encoding='utf-8') as f: json.dump(rec, f, ensure_ascii=False, separators=(',', ':'))
+                idx = self._index(base); meta = idx.get(key)
+                if meta is not None: meta['memos'] = len(have); self._write_json(self._index_path(base), idx)
+        return {'ok': True, 'added': added, 'total': len(have)}
 
     def delete_replay(self, rid):
         src, _, key = rid.partition(':')

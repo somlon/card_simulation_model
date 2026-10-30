@@ -54,7 +54,11 @@ function deckOptions(sel, withOfficialFirst = true, keep) {
 async function refreshBoot() { BOOT = await api('boot'); ['r-a', 'r-b', 'g-deck', 'g-ai'].forEach(id => deckOptions($(id))); renderReplays(); renderDeckList(); }
 
 // ═══════════════ 관전 · 재생 목록 ═══════════════
-stages.watch = new Stage($('w-stage'), {assets, pool: POOL, onEnd: () => playlistNext(true)});
+stages.watch = new Stage($('w-stage'), {assets, pool: POOL, onEnd: () => playlistNext(true),
+  onMemo: (i, text, who, t) => {   // 저장된 기록을 보다가 단 메모는(이미 재생 기록 id 가 있으므로) 바로 저장
+    if (!stages.watch.replayId) return;
+    api('replay/memo', {id: stages.watch.replayId, memos: [{i, text, who, t}]}).catch(e => toast('메모 저장 실패: ' + e.message));
+  }});
 activeStage = stages.watch;
 const W = {sel: new Set(), pl: {name: '', items: []}, idx: -1, playing: false};
 $('w-stage').querySelector('.extra').innerHTML = '<button data-x="prevm" title="이전 매치">⏪ 이전 매치</button><button data-x="nextm" title="다음 매치">다음 매치 ⏩</button>';
@@ -92,6 +96,7 @@ $('w-del').onclick = async () => {
 async function loadReplay(id) {
   $('w-now').textContent = '불러오는 중…';
   const rec = await api('replay?id=' + encodeURIComponent(id));
+  stages.watch.replayId = id; stages.watch.viewerLabel = '복기';
   stages.watch.load(rec); stages.watch.fit();
   const r = repById(id); $('w-now').textContent = r ? `재생 중: ${r.title}` + (W.idx >= 0 && W.pl.items.length ? ` · 재생 목록 ${W.idx + 1}/${W.pl.items.length}` : '') : '';
 }
@@ -183,6 +188,7 @@ $('g-start').onclick = async () => {
     G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
+    stages.play.viewerLabel = G.seat != null ? (r.names[G.seat] || '') : '';
     stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, G.seat);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
     $('g-status').textContent = `대전 중: ${r.title}` + (mode === 'human' && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
@@ -202,6 +208,7 @@ $('g-join').onclick = async () => {
     const r = await api('match/join', {id, key});
     G.id = id; G.pending = null; G.done = false; G.human = true; G.seat = r.seat; G.key = r.key; G.spectating = false;
     stages.play.ended = false;
+    stages.play.viewerLabel = r.names[G.seat] || '';
     stages.play.startLive(r.names, {decks: ['', '']}, G.seat);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
     $('g-pvpinfo').textContent = '';
@@ -222,6 +229,7 @@ function checkMyMatch(m) {
   if (!m || G.id === m.id) return;   // 이미 이 매치에 있으면(내가 시작한 쪽이거나 이미 들어온 뒤) 다시 건드리지 않음
   G.id = m.id; G.pending = null; G.done = false; G.human = true; G.seat = m.seat; G.key = m.key; G.spectating = false;
   stages.play.ended = false;
+  stages.play.viewerLabel = m.names[G.seat] || '';
   stages.play.startLive(m.names, {decks: ['', '']}, G.seat);
   stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
   $('g-pvpinfo').textContent = '';
@@ -232,6 +240,7 @@ function checkSpectate(li) {   // 관전(④): 로비에서 「관전」을 누�
   if (lobbyRole !== 'spectator' || !li || G.id === li.id) return;
   G.id = li.id; G.pending = null; G.done = false; G.human = false; G.seat = null; G.key = null; G.spectating = true;
   stages.play.ended = false;
+  stages.play.viewerLabel = '관전';
   stages.play.startLive(li.names, {decks: ['', '']}, 'spectate');
   stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = true;
   $('g-pvpinfo').textContent = '';
@@ -276,6 +285,8 @@ function finishLive(d) {
             : d.status === 'aborted' ? '그만둠' : d.status === 'stalled' ? '1000턴 안전장치로 중단' : '오류로 중단';
   $('g-status').innerHTML = `대전 끝: <b>${esc(msg)}</b>` + (d.learned ? ` · AI가 이 매치의 판단 ${d.learned}개를 학습했습니다(다음 대전부터 반영)` : '')
     + (d.replay_id ? ' · 재생 기록에 저장됨' : '') + (d.error ? `<pre class="err" style="white-space:pre-wrap">${esc(d.error)}</pre>` : '');
+  const memos = st.memoList();   // 룰미스 메모(⑤) — 매치 중엔 클라이언트에만 쌓아 두고, 끝난 뒤 한 번에 재생 기록과 묶어 저장
+  if (memos.length && d.replay_id) api('replay/memo', {id: d.replay_id, memos}).catch(e => toast('메모 저장 실패: ' + e.message));
   refreshBoot().catch(() => {});
 }
 // 판단 패널
