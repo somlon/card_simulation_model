@@ -269,6 +269,8 @@
     - 2026-10-30 (새 세션 session_018FeffAgHCpKXV4XbwZTHqs) 남은 일 1 완료 — `app/learning-data` f06b864 푸시: AI끼리 관전 · 녹화 → ai_games.jsonl · 신경망 표본(출처 ai),
       가중치 사람 3 : AI 1(학습표 다시 적용 · 대전 중 갱신 · 신경망 손실 · merge 도구), 학습 데이터 정리(/api/learning/items · exclude, 화면), 내보내기 · 올리기 합친 기록.
       시험: learning_data_test 16개 · heuristic_test 9개 · human_choice_test 8개 통과, 화면 시험 오류 0, 가중 손실 수치 미분 일치. 실행 폴더: /home/user/run130(model/table-weights + data) · /home/user/appsim(v1.2.2 data + sim 사본).
+    - 2026-10-30 남은 일 2 완료 — `app/heuristic-learning` 5b84ddd 푸시: session.LearningHeuristicAI(전술 = HeuristicAI 규칙, 전략 = 시작 패 배분 · 재배분 · 멀리건 · 드로우 덱 · 선후공 · 번식지 학습표),
+      heuristic_test 10개 통과, 같은 시드 120매치(상대 학습표 AI) 매치 승률 58.3% → 60.8%(같은 승자 97). 다음: 3 v1.3.0 빌드.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 사람 공격 대상 — 같은 이름 카드 구별 · 휴리스틱 AI 를 .exe 에서 (사용자 지시 2026-10-30 「사람 vs AI에서 사람이 공격 선언할 때 상대 필드의 같은 이름의 카드가 여러 장 있을 때 어느 카드를 공격할지 선택 가능한지 확인하고 선택권이 없다면 선택 가능하게 수정해 / 휴리스틱 모델의 AI도 .exe 파일에서 동작할 수 있게 추가해줘」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 매시 루틴 「공격 대상 · 휴리스틱 AI 자동 이어하기(매시)」(trig_01KJxkGJV7CnjkGJCjzzkqMq, 이 세션, 매시 19분) — 2026-10-30 끔.
