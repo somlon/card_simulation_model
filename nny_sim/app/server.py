@@ -12,6 +12,7 @@ import tables as T
 
 VERSION = '1.1.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
+CLIENT_TTL = 45          # 접속중 명단: 이만큼(초) heartbeat 가 없으면 끊긴 것으로 본다(heartbeat 주기 20초의 2배 이상)
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
 
@@ -45,17 +46,34 @@ class App:
         self.users_path = os.path.join(paths['user'], 'online_users.json')  # tools/discord_bot.py 의 /유저등록 이 쓰는 그 파일(같은 경로)
         self.token = secrets.token_hex(16)
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
+        self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
+
+    def _users(self):
+        """online_users.json(이름 → 하마치 IP, discord_bot.py 의 /유저등록 이 쓰는 그 파일) — 없거나 깨졌으면 {}."""
+        try:
+            with open(self.users_path, encoding='utf-8-sig') as f: u = json.load(f)
+        except (OSError, ValueError): return {}
+        return {k: v.strip() for k, v in u.items() if not k.startswith('_') and isinstance(v, str) and v.strip()}
 
     def allowed_ips(self):
         """등록된 하마치 IP 집합. 파일이 없거나 등록이 비어 있으면 None(게이트 비활성 — 첫 실행 때 호스트가
         자기 접속까지 막아버리는 걸 피한다; discord_bot.py 의 /유저등록 으로 한 명이라도 등록되면 그때부터 게이트가 선다)."""
-        try:
-            with open(self.users_path, encoding='utf-8-sig') as f: u = json.load(f)
-        except (OSError, ValueError): return None
-        ips = {v.strip() for k, v in u.items() if not k.startswith('_') and isinstance(v, str) and v.strip()}
+        ips = set(self._users().values())
         return ips or None
+
+    def heartbeat(self, ip):
+        self.last_beat = time.time()
+        if ip: self.clients[ip] = time.time()
+        return {'ok': True, 'online': self.connected()}
+
+    def connected(self):
+        """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
+        names = {ip: name for name, ip in self._users().items()}
+        now = time.time()
+        rows = [{'ip': ip, 'name': names.get(ip, ip)} for ip, last in self.clients.items() if now - last <= CLIENT_TTL]
+        return sorted(rows, key=lambda r: r['name'])
 
     # ── 덱 이름 · 대전 시작 ──
     def deck_label(self, did, d):
@@ -114,14 +132,14 @@ class App:
                            'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
-                'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES}
+                'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected()}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
         return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'), last_push=self.store.last_push())
 
     # ── 요청 처리 ──
-    def route(self, method, path, q, body):
+    def route(self, method, path, q, body, ip=None):
         g = lambda k, d=None: (q.get(k) or [d])[0]
         if path == '/api/boot': return self.boot()
         if path == '/api/pool': return self.pool
@@ -167,7 +185,7 @@ class App:
                       'learning': os.path.dirname(self.store.log_path)}.get(body.get('what'))
             if target and hasattr(os, 'startfile'): os.startfile(target)
             return {'ok': bool(target), 'path': target}
-        if path == '/api/heartbeat': self.last_beat = time.time(); return {'ok': True}
+        if path == '/api/heartbeat': return self.heartbeat(ip)
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)
@@ -220,7 +238,7 @@ def make_handler(app):
             if method == 'POST':
                 n = int(self.headers.get('Content-Length') or 0)
                 if n: body = json.loads(self.rfile.read(n).decode('utf-8'))
-            try: self._send(200, app.route(method, u.path, parse_qs(u.query), body))
+            try: self._send(200, app.route(method, u.path, parse_qs(u.query), body, self.client_address[0]))
             except KeyError as ex: self._send(404, {'error': str(ex)})
             except ValueError as ex: self._send(400, {'error': str(ex)})
             except Exception: self._send(500, {'error': traceback.format_exc()[-1500:]})

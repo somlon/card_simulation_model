@@ -23,7 +23,13 @@ const assets = BOOT.assets;
 const faceUrl = name => assets.faces[name] ? '/cards/' + assets.faces[name] : null;
 const NAMES_SORTED = Object.keys(POOL).sort((a, b) => b.length - a.length);
 function cardIn(label) { for (const n of NAMES_SORTED) if (label.includes(n)) return n; return null; }
-setInterval(() => api('heartbeat', {}).catch(() => {}), 20000); api('heartbeat', {}).catch(() => {});
+function showOnline(list) {
+  const el = $('online'); if (!el) return;
+  el.textContent = '접속중 ' + list.length + '명'; el.title = list.map(c => c.name).join(', ');
+}
+showOnline(BOOT.online || []);
+function beat() { api('heartbeat', {}).then(r => showOnline(r.online || [])).catch(() => {}); }
+setInterval(beat, 20000); beat();
 
 // ── 탭 ──
 let stages = {};

@@ -21,14 +21,15 @@
 
 ## 다음 회차 지시
 
-기능 v1② 중 "미등록 거부 게이트"는 이번 회차로 끝(바로 아래 완료 기록 참고). 다음은 v1② 나머지
-절반 — **접속중 명단**(현재 누가 붙어 있는지 화면/디스코드에서 보이게. `app/server.py`가 좌석별
-`LiveMatch` 는 추적하지만 "관전 포함 지금 연결된 클라이언트 목록" 자체는 아직 없음 — 가장 단순하게는
-heartbeat(`/api/heartbeat`) 호출 IP를 짧은 TTL로 기억해 `/api/boot`에 같이 내려주는 정도로 시작해도 됨).
-그 다음이 로비(③).
+기능 v1②(등록 유저제) 완성 — 미등록 거부 게이트 · 접속중 명단 모두 끝(바로 아래 완료 기록 참고).
+다음은 **로비(③)**: 참가/관전/나가기, 재접속 유예, 방 1·듀얼 1. 지금은 매치 시작 때 "사람 대 사람"을
+고르면 매치 ID·참가 키를 화면에서 직접 복사해 말/메신저로 건네야 한다(`g-pvpinfo`/`#g-join-*`) —
+로비가 생기면 이 수동 교환 UI는 로비 흐름(방에 들어오면 자동으로 참가, 떠나면 자동으로 관전/퇴장)으로
+흡수·정리한다. 접속중 명단(`/api/boot`·`/api/heartbeat` 의 `online` 배열, 지금은 이름/IP만)은 로비
+화면에서 "지금 로비에 있는 사람" 목록으로 바로 재사용할 수 있다(좌석별 `LiveMatch` 와는 별개 — 로비는
+매치 밖에서 누가 있는지를 보여주는 자리).
 
-(참고 — 로비(③) 가 생기면 지금의 「매치 ID+참가 키를 말로 전달」방식은 로비가 대신하므로, 로비를 만들 때
-이 수동 교환 UI(g-pvpinfo/#g-join-*)는 로비 흐름으로 자연스레 흡수·정리할 것.)
+(관전(④)은 로비 다음 — 로비가 "관전" 선택지를 만들면 그 흐름을 타고 ④로 이어간다.)
 
 ## 루틴 확인 필요 — 2순위(디스코드 질문 답변) 이번 회차 보류
 
@@ -59,6 +60,34 @@ heartbeat(`/api/heartbeat`) 호출 IP를 짧은 TTL로 기억해 `/api/boot`에 
 - 디스코드 루틴 답변(2순위) 토큰 사용 여부 — 위 "루틴 확인 필요" 참고
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1② — 접속중 명단(앞 회차가 미룬 나머지 절반). `app/server.py` App 에
+  `self.clients`(ip → 마지막 heartbeat 시각) 추가, `connected()` 가 `CLIENT_TTL`(45초 — heartbeat
+  주기 20초의 2배 이상) 안에 신호가 온 IP만 모아 등록 이름(있으면, `online_users.json` 역방향 조회 —
+  `allowed_ips()` 와 같은 파일을 `_users()` 헬퍼로 같이 씀)으로 돌려준다. `/api/heartbeat` 가 호출한
+  쪽 IP를 기록하고 그 자리에서 바로 `{'ok':True,'online':[...]}` 로 명단을 같이 돌려줌(이미 20초마다
+  부르고 있는 신호라 로비 없이도 화면이 거의 실시간으로 갱신됨) — `/api/boot` 응답에도 같은 `online`
+  필드 추가(최초 로드 때). `route()` 가 핸들러의 `client_address[0]`를 받도록 시그니처에 `ip=None` 추가.
+  화면: `index.html` 헤더에 `#online` 배지(접속중 N명, hover 로 이름 목록) · `app.js` 가 최초 boot 응답과
+  매 heartbeat 응답에서 그 배지를 갱신(새 네트워크 호출 없음 — 기존 20초 heartbeat 를 재사용). 엔진·룰
+  레이어 전혀 안 건드림.
+  재현 테스트 `nny_sim/test_online_clients.py` 신규(4개): heartbeat 전엔 명단 비어있음 · heartbeat 하면
+  boot·heartbeat 응답 둘 다에 그 IP가 뜸 · 등록된 이름이 있으면 IP 대신 이름으로 뜸 · TTL 을 넘기면
+  명단에서 빠짐 — 전부 통과. `python -m py_compile app/server.py test_online_clients.py` ·
+  `node --check app/static/app.js` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate test_online_clients -v`(46/47 — scipy 미설치 1개는 이전 회차와
+  동일하게 무관) 실행 확인. 서버 기동(`app/main.py --sim . --no-browser --host 127.0.0.1`, 더미 cards
+  폴더로) 후 `/api/ping`(토큰 없이 200) → `/api/boot`(online 비어있음) → `/api/heartbeat` POST(응답에
+  내 IP 뜸) → `/api/boot` 다시(같은 IP가 이제 떠 있음) 수동 curl 스모크로 실제 확인.
+  **같이 확인한 것**: 1순위(수정 고리) — `online/data-games` 에 아직 기보가 하나도 없음(README.md 뿐) →
+  이번 회차는 해당 없음. 3순위(재정질문) — `재정질문/` 에 README.md 뿐, 답변 적힌 파일 없음 → 해당 없음.
+  2순위(디스코드)는 "루틴 확인 필요" 절의 보류가 그대로 유효(이번 회차도 토큰 사용 안 함, 어디에도
+  출력 안 함) — 아래 "사용자 결정 대기" 참고.
+  **아직 안 한 것**: 명단에 "관전중" 구분은 없음(지금은 매치 좌석과 무관하게 서버에 신호를 보낸 모든
+  클라이언트가 한 묶음) · 디스코드 쪽 명단 노출은 호스트 상주 봇(`tools/discord_bot.py`)의 몫으로 남김
+  (이 회차는 `app/server.py`·화면만 — 봇 쪽 슬래시커맨드 추가는 범위 밖, 다음에 손댈 사람이 필요하면
+  `/api/boot` 의 `online` 필드를 그대로 읽어 디코 임베드로 보여주면 됨).
 
 - 2026-10-30 (루틴): 기능 v1② — 등록 유저제 중 "미등록 거부 게이트". `app/server.py` App 에
   `allowed_ips()` 추가: `paths['user']/online_users.json`(= `tools/discord_bot.py`의 `/유저등록`이
