@@ -77,8 +77,10 @@ def matchup_table(split_dir, decks, logs=()):
             if self.recording: self.deltas.append([k1, k2, won])
 
     t = MatchupTable()
-    with open(os.path.join(split_dir, 'manifest.json'), encoding='utf-8') as f:
-        man = json.load(f)
+    try:
+        with open(os.path.join(split_dir, 'manifest.json'), encoding='utf-8') as f: man = json.load(f)
+    except FileNotFoundError:   # 아직 나눠 둔 학습표가 없음(새 설치 · 온라인판 첫 가동) — 전부 휴리스틱 기본값으로
+        man = {'decks': []}
     ix = {n: i for i, n in enumerate(man['decks'])}
     want = sorted(set(decks))
     for a in want:

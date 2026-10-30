@@ -7,7 +7,7 @@ LiveMatch: 엔진 스레드에서 Bo3 매치 1개를 돌리며 기록기(viewer/
   매치가 끝나면(그만둔 경우도) 재생 기록으로 저장한다.
 Store: 사용자 폴더의 파일들.
 """
-import gzip, json, os, random, re, shutil, subprocess, threading, time, traceback, uuid
+import gzip, json, os, random, re, secrets, shutil, subprocess, threading, time, traceback, uuid
 
 import deck as D
 import match as M
@@ -232,13 +232,17 @@ class Store:
 
 
 class LiveMatch:
-    """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리(0) 여부"""
+    """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리 여부 — bool(좌석0만) 또는 (좌석0, 좌석1) 튜플(사람vs사람).
+    사람 자리마다 Bridge 가 따로 있다(self.bridges) — 사람vs사람이면 좌석마다 참가 키(self.keys)로 poll · answer 를 묶는다"""
 
     def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title=''):
-        self.store = store; self.split = split_dir; self.decks = decks; self.names = names; self.human = human
+        self.store = store; self.split = split_dir; self.decks = decks; self.names = names
+        self.humans = tuple(bool(x) for x in human) if isinstance(human, (tuple, list)) else (bool(human), False)
+        self.human = any(self.humans)   # 사람 자리가 하나 이상 있는가(기존 코드 호환)
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
-        self.learn = learn and human; self.hints = hints; self.title = title
-        self.bridge = Bridge(); self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
+        self.learn = learn and self.human; self.hints = hints; self.title = title
+        self.bridges = [Bridge(), Bridge()]; self.keys = [secrets.token_hex(8) if h else None for h in self.humans]
+        self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
         self.thread = threading.Thread(target=self._run, daemon=True)
 
@@ -261,11 +265,12 @@ class LiveMatch:
             self.table = table; self.status = 'running'
 
             def make_ai(d):
-                if self.human and d['_seat'] == 0: return HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
+                seat = d['_seat']
+                if self.humans[seat]: return HumanAI(d['스킬'], self.bridges[seat], table, learn=self.learn, hints=self.hints)
                 return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
-                if self.human and i == 0: return human_side(self.bridge, decks, i, wins, len(rnds) + 1, log)
+                if self.humans[i]: return human_side(self.bridges[i], decks, i, wins, len(rnds) + 1, log)
                 return M.side_swap(decks[i], decks[1 - i]['스킬'], rng, eps, log, decks[i]['이름'])
             dA = dict(self.decks[0], 이름=self.names[0]); dB = dict(self.decks[1], 이름=self.names[1])
             mw, rounds = M.play_match(dA, dB, self.first, random.Random(self.seed), self.rec, make_ai,
@@ -297,17 +302,29 @@ class LiveMatch:
                 'cards': {str(u): v for u, v in self.rec.cards.items()}, 'pool': pool,
                 'states': list(self.rec.states), 'frames': self.rec.export_frames()}
 
-    def poll(self, f_from=0, s_from=0, c_from=0):
+    def poll(self, seat=None, key=None, f_from=0, s_from=0, c_from=0):
         rec = self.rec
         frames = rec.export_frames(f_from); states = rec.states[s_from:]
         cards = list(rec.cards.items())[c_from:]
+        human_seats = [i for i, h in enumerate(self.humans) if h]
+        if seat is None and len(human_seats) == 1: seat = human_seats[0]   # 사람 자리가 하나뿐이면(기존 사람vsAI) 키 없이도 그 자리
+        pending = None
+        if seat is not None and self.humans[seat] and (len(human_seats) == 1 or key == self.keys[seat]):
+            pending = self.bridges[seat].pending
         return {'id': self.id, 'status': self.status, 'frames': frames, 'f_from': f_from, 'states': states, 's_from': s_from,
-                'cards': {str(u): v for u, v in cards}, 'c_from': c_from, 'pending': self.bridge.pending if self.human else None,
+                'cards': {str(u): v for u, v in cards}, 'c_from': c_from, 'pending': pending, 'seat': seat,
                 'result': self.result if self.status not in ('starting', 'running') else None, 'error': self.error,
-                'replay_id': self.replay_id, 'learned': self.learned, 'names': self.names, 'human': self.human}
+                'replay_id': self.replay_id, 'learned': self.learned, 'names': self.names, 'human': self.human, 'humans': list(self.humans)}
+
+    def answer(self, rid, idx, seat=None, key=None):
+        human_seats = [i for i, h in enumerate(self.humans) if h]
+        if seat is None and len(human_seats) == 1: seat = human_seats[0]
+        if seat is None or not self.humans[seat]: return False
+        if len(human_seats) > 1 and key != self.keys[seat]: return False   # 사람vs사람: 자기 참가 키 없이는 상대 자리에 답할 수 없다
+        return self.bridges[seat].reply(rid, idx)
 
     def abort(self):
-        self.bridge.abort()
+        for b in self.bridges: b.abort()
 
 
 def side_options(act, st, skill):

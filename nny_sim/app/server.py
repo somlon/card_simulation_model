@@ -1,5 +1,6 @@
-"""로컬 서버 — 게임 화면(static/)과 API. 127.0.0.1 에만 열고, 실행마다 새로 만드는 토큰을 요구한다(다른 웹사이트의 호출 차단)."""
-import json, mimetypes, os, secrets, sys, threading, time, traceback
+"""서버 — 게임 화면(static/)과 API. 하마치 어댑터 IP(25.x)에만 열고, 실행마다 새로 만드는 토큰을 요구한다(다른 웹사이트의 호출 차단).
+온라인판: 사람vs사람 대전은 좌석(0·1)마다 Bridge 가 따로 있고, 참가 키로 poll · answer 를 그 좌석에만 묶는다(session.LiveMatch 참고)."""
+import json, mimetypes, os, re, secrets, socket, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -13,6 +14,26 @@ VERSION = '1.1.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
+
+
+class HamachiNotFound(RuntimeError):
+    """하마치 가상 어댑터(25.x.x.x) 를 찾지 못함 — main.py 가 안내 문구를 찍고 조용히 끝낸다"""
+
+
+def hamachi_ip():
+    """이 PC의 하마치 가상 어댑터 IP(25.0.0.0/8). 없으면 None — 하마치가 안 깔렸거나 네트워크(new_card_game)에 아직 참가하지 않음.
+    표준 라이브러리만 쓴다(배포본은 외부 패키지를 내려받지 않음): 먼저 hostname 의 주소들에서 찾고, 안 되면 OS 네트워크 명령 출력을 훑는다"""
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if ip.startswith('25.'): return ip
+    except socket.gaierror: pass
+    try:
+        if sys.platform == 'win32': out = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='cp437', errors='replace', timeout=5).stdout
+        else: out = subprocess.run(['ip', 'addr'], capture_output=True, text=True, timeout=5).stdout
+        m = re.search(r'\b25\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', out)
+        if m: return m.group(0)
+    except (OSError, subprocess.SubprocessError): pass
+    return None
 
 
 class App:
@@ -32,7 +53,8 @@ class App:
 
     def start_match(self, j):
         if self.live and self.live.status in ('starting', 'running'): self.live.abort()
-        mode = j.get('mode', 'human')
+        # humans: [좌석0이 사람인가, 좌석1이 사람인가]. 새 클라이언트가 이걸 보내고, 옛 클라이언트의 mode(human/ai)도 그대로 받는다
+        humans = tuple(bool(x) for x in j['humans']) if j.get('humans') else (j.get('mode', 'human') == 'human', False)
         da, db = self.store.deck(j['deck']), self.store.deck(j['ai_deck'])
         if not da or not db: raise ValueError('덱을 찾을 수 없습니다')
         for d in (da, db):
@@ -41,15 +63,26 @@ class App:
         first = {'me': 0, 'ai': 1}.get(j.get('first'), None)
         if first is None: first = secrets.randbelow(2)
         s = self.store.settings()
-        if mode == 'human':
-            names = ['나', 'AI']; title = f'나({self.deck_label(j["deck"], da)}) vs AI({self.deck_label(j["ai_deck"], db)})'
+        a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
+        if humans[0] and humans[1]:
+            names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]} (사람 대 사람)'
+        elif humans[0]:
+            names = ['나', 'AI']; title = f'나({a}) vs AI({b})'
         else:
-            a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
             names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]}'
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
-        self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=(mode == 'human'), seed=seed, first=first,
+        self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title).start()
-        return {'id': self.live.id, 'names': names, 'title': title}
+        seats = {i: self.live.keys[i] for i in (0, 1) if self.live.humans[i]}
+        return {'id': self.live.id, 'names': names, 'title': title, 'seats': seats}
+
+    def join_match(self, j):
+        """사람vs사람 대전에 참가 키로 들어간다 — 좌석 번호를 몰라도 키만으로 자기 좌석을 찾는다"""
+        if not self.live or self.live.id != j.get('id'): raise ValueError('매치를 찾을 수 없습니다')
+        key = j.get('key')
+        for seat, k in enumerate(self.live.keys):
+            if k and k == key: return {'ok': True, 'seat': seat, 'key': key, 'names': self.live.names, 'title': self.live.title}
+        raise ValueError('참가 키가 올바르지 않습니다')
 
     def start_record(self, j):
         pairs = []
@@ -97,11 +130,14 @@ class App:
         if path == '/api/playlists':
             return self.store.save_playlists(body.get('playlists', [])) if method == 'POST' else self.store.playlists()
         if path == '/api/match/start': return self.start_match(body)
+        if path == '/api/match/join': return self.join_match(body)
         if path == '/api/match/poll':
             if not self.live or self.live.id != g('id'): return {'status': 'none'}
-            return self.live.poll(int(g('f', 0)), int(g('s', 0)), int(g('c', 0)))
+            seat = g('seat'); seat = int(seat) if seat not in (None, '') else None
+            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)))
         if path == '/api/match/answer':
-            ok = bool(self.live) and self.live.bridge.reply(int(body.get('rid', -1)), int(body.get('idx', -1))); return {'ok': ok}
+            ok = bool(self.live) and self.live.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
+            return {'ok': ok}
         if path == '/api/match/abort':
             if self.live: self.live.abort()
             return {'ok': True}
@@ -187,9 +223,14 @@ def make_handler(app):
     return H
 
 
-def serve(paths, port=0):
+def serve(paths, port=0, host=None):
+    """host=None 이면 하마치 어댑터 IP 에만 연다(온라인판 기본) — 없으면 HamachiNotFound.
+    host 를 직접 주면 그 주소에 연다(개발 · 자동 스모크 전용 — 배포 bat 은 넘기지 않는다)"""
+    if host is None:
+        host = hamachi_ip()
+        if host is None: raise HamachiNotFound('하마치 가상 어댑터(25.x.x.x)를 찾지 못했습니다')
     app = App(paths)
-    srv = ThreadingHTTPServer(('127.0.0.1', port), make_handler(app)); srv.daemon_threads = True
+    srv = ThreadingHTTPServer((host, port), make_handler(app)); srv.daemon_threads = True
     app.server = srv
     threading.Thread(target=app.watchdog, daemon=True).start()
     return app, srv

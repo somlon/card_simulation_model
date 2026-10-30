@@ -27,13 +27,22 @@ def paths_from(a):
 
 
 def running_port(user):
-    """이미 떠 있는 서버(같은 사용자 폴더)가 있으면 그 포트"""
+    """이미 떠 있는 서버(같은 사용자 폴더)가 있으면 (포트, 주소)"""
     try:
         info = json.load(open(os.path.join(user, 'server.json'), encoding='utf-8'))
-        with urllib.request.urlopen(f'http://127.0.0.1:{info["port"]}/api/ping', timeout=1.5) as r:
-            if json.load(r).get('app') == 'nny-sim': return info['port']
+        host = info.get('host', '127.0.0.1')
+        with urllib.request.urlopen(f'http://{host}:{info["port"]}/api/ping', timeout=1.5) as r:
+            if json.load(r).get('app') == 'nny-sim': return info['port'], host
     except Exception: pass
-    return None
+    return None, None
+
+
+HAMACHI_GUIDE = """하마치 가상 어댑터(25.x.x.x)를 찾지 못했습니다 — 온라인판은 하마치에서만 엽니다.
+
+1) LogMeIn Hamachi 를 설치합니다 (https://vpn.net/).
+2) 네트워크 참가: 이름 new_card_game, 비밀번호 17225
+3) 참가 후 이 프로그램을 다시 실행하세요.
+"""
 
 
 def open_window(url, user):
@@ -53,24 +62,28 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     for k in ('sim', 'split', 'cards', 'library', 'user', 'viewer'): ap.add_argument('--' + k)
     ap.add_argument('--port', type=int, default=0); ap.add_argument('--no-browser', action='store_true')
+    ap.add_argument('--host')   # 하마치 자동 탐색 대신 쓸 주소 — 개발 · 자동 스모크 전용(배포 bat 은 이 옵션을 넘기지 않는다)
     a = ap.parse_args(argv)
     P = paths_from(a)
     os.makedirs(P['user'], exist_ok=True)
     if sys.stderr is None or sys.stdout is None:   # 창 없는 실행(pythonw): 출력 · 오류를 사용자 폴더의 app.log 로
         log = open(os.path.join(P['user'], 'app.log'), 'a', encoding='utf-8', buffering=1)
         sys.stdout = sys.stdout or log; sys.stderr = sys.stderr or log
-    port = running_port(P['user'])
+    port, host = running_port(P['user'])
     if port:
-        if not a.no_browser: open_window(f'http://127.0.0.1:{port}/', P['user'])
+        if not a.no_browser: open_window(f'http://{host}:{port}/', P['user'])
         return
     sys.path[:0] = [P['sim'], P['viewer'], HERE]
     os.chdir(P['sim'])   # 엔진은 상대 경로(card_pool.json · decks · learned)를 쓴다
     import server
-    app, srv = server.serve(P, a.port)
-    port = srv.server_address[1]
+    try:
+        app, srv = server.serve(P, a.port, host=a.host)
+    except server.HamachiNotFound:
+        print(HAMACHI_GUIDE, flush=True); return
+    host, port = srv.server_address[0], srv.server_address[1]
     with open(os.path.join(P['user'], 'server.json'), 'w', encoding='utf-8') as f:
-        json.dump({'port': port, 'pid': os.getpid()}, f)
-    url = f'http://127.0.0.1:{port}/'
+        json.dump({'port': port, 'host': host, 'pid': os.getpid()}, f)
+    url = f'http://{host}:{port}/'
     print(f'NNY 시뮬레이터 {server.VERSION} — {url}', flush=True)
     if not a.no_browser: threading.Timer(0.5, open_window, (url, P['user'])).start()
     try: srv.serve_forever()

@@ -50,7 +50,7 @@ class Bridge:
         with self.cv:
             p = self.pending
             if not p or p['id'] != rid or not (0 <= idx < len(p['opts'])): return False
-            self.answer = idx; self.cv.notify_all(); return True
+            self.answer = idx; self.pending = None; self.cv.notify_all(); return True   # 바로 비움 — ask()가 깨기 전 poll 이 이미 답한 pending 을 또 보는 경쟁 막음
 
     def abort(self):
         with self.cv: self.aborted = True; self.cv.notify_all()
