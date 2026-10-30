@@ -302,8 +302,24 @@ class LearnedAI(HeuristicAI):
             if s <= VETO: continue   # 규칙상 발동할 수 있으나 AI는 쓰지 않는 경우
             go = self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', s, True), ('안 함', 0, False)])
             if go: out.append((s, c, e, ev))
-        out.sort(key=lambda x: -x[0])
-        return [(c, e, ev) for _, c, e, ev in out]
+        return [(c, e, ev) for _, c, e, ev in self.order_triggers(g, p, out)]
+
+    # ── 같은 타이밍 효과의 체인 순서 (사용자 지시 2026-10-30) ──
+    # 발동할 효과가 2개 이상이면 「다음에 선언할 효과」를 하나씩 고른다(먼저 선언 = 낮은 체인 번호 = 나중에 처리). 키 = 판단 ORDER_DECISION × 후보 「카드#번호」,
+    # 결과 = 그 판의 승패(다른 판단과 같음). 사전값은 휴리스틱 순서(점수가 높은 것부터)라 기록이 없으면 예전과 같은 순서.
+    # LearnedAI.choose 를 직접 부른다: 신경망 AI(DRLAI)도 이 판단은 학습표로 고른다 — DRL 판단 종류에 없음
+    ORDER_DECISION = '체인 순서(같은 타이밍)'
+    LEARN_ORDER = True
+
+    def order_triggers(self, g, p, items):
+        rest = HeuristicAI.order_triggers(self, g, p, items)
+        if not self.LEARN_ORDER or len(rest) < 2: return rest
+        out = []
+        while len(rest) > 1:
+            k = len(rest)   # 사전값: 휴리스틱 순서의 앞일수록 높다
+            i = LearnedAI.choose(self, g, p, self.ORDER_DECISION, [(f'{c.name}#{e.num}', 5.0 * (k - j) / k, j) for j, (_, c, e, _) in enumerate(rest)])
+            out.append(rest.pop(i))
+        return out + rest
 
     def respond(self, g, p, opts):
         cand = [('패스', 0, None)]
