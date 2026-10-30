@@ -237,6 +237,9 @@
     - 2026-10-30 시작 · 루틴 생성 · 조사(엔진 MZ=5 · g.shared 1칸 + shared_owner 마커, drl.features 몬스터 목록은 가변 · 공유 존 전역 특징 1칸).
     - 2026-10-30 ① `app/hide-set-cards` 2c55d08(사람 후보 · 판단 줄 · 기록 줄에서 상대 뒷면 카드 이름 감춤, human_choice_test 12 통과) ·
       ② `app/decision-curation` 3238ef1(판단 단위 정리 — excluded.json parts · 표본 판단 글, learning_data_test 판단 단위 7 통과, 화면 오류 0). 다음: ③ 공유 존 2칸.
+    - 2026-10-30 ③ 엔진 `model/shared-zones` 9dd654c(MZ=3 · 공유 존 2칸 칸마다 마커 · can_place 규칙만 · drl 특징 모양 유지, 전체 시험 통과 · 30매치 오류 0).
+      다음: `app/shared-zones`(record 상태 sh 목록 · board.js 배치 — 공유 존 = 옛 스킬 존 자리, 스킬 존 = 1 · 5번 몬스터 존 위(row2 col1 · col5), 필드 존 = 옛 공유 존 자리, 매트 이미지 · human choose_zone) →
+      기본 재생 기록 다시 녹화(make_library --rerecord) → 통합 · v1.3.2 빌드 · PR.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 행운의 도적 코스트 · 기적의 영웅 [신속] · 희생의 성녀 · 효과 처리 후 화면 갱신 (사용자 지시 2026-10-30 4건 + 「효과가 처리된 상황에서 화면 전환도 즉각적으로」(앞 4건 뒤에), 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「행운의 도적 · 기적의 영웅 · 희생의 성녀 · 화면 갱신 자동 이어하기(매시)」(trig_01HNZWzYAkLnKr7yXtFayEP1, 매시 52분).
