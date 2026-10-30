@@ -233,14 +233,38 @@
   - 원문 요약: ① 다른 종류의 AI끼리 대전 가능? ② 신경망 AI 판단 기준? ③ AI끼리 대전 데이터가 내보내기 · GitHub 반영에 잡히지 않음 → 잡히게
     ④ 휴리스틱 AI도 학습으로 발전 가능? 가능하면 다른 모델과 같은 기능 ⑤ 학습할 데이터를 사용자가 정제(유용한 데이터만) — AI 3종별 답변 · 가능하면 추가
     ⑥ 사람 vs AI 데이터를 AI vs AI 데이터보다 높은 가중치로(모든 모델) ⑦ AI가 패스(아무것도 안 함)를 고를 수 있나? 아니면 가능하게.
-  - 매시 루틴 「AI 학습 데이터 7건 자동 이어하기(매시)」(ID 아래 진행 기록, 이 세션).
+  - 매시 루틴 「AI 학습 데이터 7건 자동 이어하기(매시)」(trig_016RbDoVMzvBCEiniVr57bF5, 세션 session_018Feff9p4FHuAiYB3fcz4ve) — 2026-10-30 세션 압축으로 새 세션에 인계(R5), 새 세션이 같은 이름의 루틴을 만들면 옛 루틴은 끔.
   - 조사: ① AI vs AI 관전은 P1 학습표 고정 · P2만 선택, 녹화는 양쪽 같은 AI ② DRLAI — 학습표 AI의 후보 생성 · 하드 제약, 신경망이 후보 점수(모방 학습 + PPO + 로컬 미세 조정),
     시작 패 배분 · 재배분 · 표시 형식은 학습표 ③ LiveMatch learn = learn and human, 신경망 표본 nn_record = 사람 대전만 → AI끼리 대전은 학습 기록 · 표본 없음
     ④ HeuristicAI 는 규칙 기반(번식지 표만 학습) ⑤ 학습 기록 · 표본은 매치 단위 파일/줄이라 매치 단위 제외 가능 ⑥ Table.update 는 1씩만 더함
     ⑦ 학습표 · 신경망 AI: 대응 「패스」 · 행동 「종료」 · 임의 트리거 「안 함」 · 「공격 종료」 이미 있음, 휴리스틱은 점수가 양수인 행동이 없으면 하지 않음(암묵적 패스) — 강제 트리거 · 결착 우선 지침 · 반드시 공격 규칙만 예외.
   - 브랜치(계획): `model/table-weights`(Table.update 가중) · `app/ai-kinds-per-seat`(#99 위) → `app/learning-data` → `app/heuristic-learning` (쌓음) → v1.3.0 배포본.
+  - 남은 일(인계 — 이 순서로, 단계마다 푸시 · 진행 기록 한 줄):
+    1. `app/learning-data`(376cf7d, ← app/ai-kinds-per-seat 3b8777a ← #99 app/heuristic-ai; model/table-weights 6fb94be 의 Table.update(w) 필요) 마저 구현:
+       - session.py: `import learndata as LD`. Store: `ai_log_path`(learning/ai_games.jsonl — AI끼리, 출처 ai) · `log_paths` · `excluded()` · `learning_records()`(제외 뺀 두 파일 기록) ·
+         `write_records` · `export_learning`(합친 기록 하나, 줄마다 source) · `learning_items()`(매치 키로 학습표 기록 + 신경망 index.json 묶음: source · time · decks · ai_kinds · winner · table 갱신 수 · nn 표본 수 · excluded · weight) ·
+         `set_excluded(keys, excluded)` · `git_push` 합친 기록(제외 뺌)을 <컴퓨터>.jsonl 로.
+         LiveMatch: `self.learn = learn`(사람 대전만이던 것 해제) · `self.match_uid = uuid4().hex` · `T.matchup_table(..., logs=store.log_paths, exclude=store.excluded())` ·
+         저장 때 공통 정보 `{source: human|ai, match, ai_kinds, decks, seed, status, winner}` — 사람 대전은 log_path(+human_seat · human_won), AI끼리는 ai_log_path · tap.save 에도 같은 정보.
+         AI끼리 대전도 Tap(신경망 표본 — choose 가 있는 AI 자리 모두). RecordJob(learn, nn_record) 넘김.
+       - server.py: start_match `nn_record = learn and self.nn.ready()`(양쪽 모드) · start_record learn · `/api/learning` 두 파일 통계(출처별) · `/api/learning/items` · `/api/learning/exclude`(keys, excluded).
+       - nn_samples: index 정보로 출처 · 매치 키 · 제외(load_sources/load_all exclude, 표본 가중치 'sw' = learndata.weight_of(출처)) · stats 출처별. nn_train: batch 에 'sw', 손실 = (sw·L).sum()/sw.sum(), 기울기 같은 비율.
+         nnai: 학습 · share_files · 내보내기에서 제외 매치 뺌. merge_learning.py · merge_nn.py: 출처 가중치(learndata, 출처 없으면 사람).
+       - 화면: AI 모드에서도 「학습」 체크 사용 · 녹화에 「학습 데이터로 남기기」 · 학습 패널에 「학습 데이터 정리」(출처 · 덱 · AI 종류 거르기, 매치별 · 한꺼번에 넣기/빼기, 가중치 안내 사람 3 : AI 1) · README.
+       - 시험: learning_data_test(AI끼리 관전 · 녹화가 ai_games.jsonl · 표본에 잡힘, 제외하면 학습 · 내보내기 · 올리기에서 빠짐, 가중치 3:1 반영), 기존 heuristic_test · human_choice_test · app 시험 · 화면 시험.
+    2. `app/heuristic-learning`(← app/learning-data): 학습하는 휴리스틱 AI — 전술(발동 · 대응 · 공격 등 HeuristicAI 규칙)은 그대로, 전략 판단(시작 패 배분 · 재배분 · 멀리건 · 선후공 등 학습표 키가 있는 결정)은 학습표 값으로 고르고 학습(learn) —
+       'heuristic' 종류에 적용, 기록은 위와 같은 경로(학습표 기록 · 출처 · 가중치 · 제외 공통). 같은 시드 비교 · heuristic_test 갱신.
+    3. v1.3.0 빌드(실행 폴더 /home/user/run130 — 빌드 전 run130/policy.json.xz.hold 를 nny_sim/learned/policy.json.xz 로 되돌림, 재생 기록 release/library_v1.2.1, 기본 모델 run130 learned/drl/base_v2/model_best.npz,
+       app 브랜치들을 claude/vibrant-euler-jekich 통합에 합침) · wine 시험(그대로 + tests/wine_numpy shim 사본) · zip `exp/windows-app` 푸시(git add -f) · 채팅창 전달(SendUserFile).
+    4. PR: `model/table-weights` → model/main, `app/ai-kinds-per-seat` · `app/learning-data` · `app/heuristic-learning` → app/main(#98 → #99 위에 쌓였다고 본문에 적기). main 은 건드리지 않음(R1).
+    5. 사용자 보고(① ② ④ ⑤ ⑦ 답변 — 위 조사 내용, ⑤는 3종 AI별) · workflow.md 갱신 · 루틴 끄기.
   - 진행 기록:
-    - 2026-10-30 조사(위) · 루틴 생성.
+    - 2026-10-30 조사(위) · 루틴 생성(trig_016RbDoVMzvBCEiniVr57bF5).
+    - 2026-10-30 `model/table-weights` 6fb94be 푸시 — policy.Table.update(k1, k2, won, w=1) 가중 갱신(L0 · L1 · L2), test_table WeightedUpdateTest, 전체 시험 통과(건너뜀 4).
+    - 2026-10-30 `app/ai-kinds-per-seat` 3b8777a 푸시(① — #99 위) — AI끼리 관전 · 녹화에서 P1 · P2 AI 종류(학습표 · 신경망 · 휴리스틱)를 따로, 재생 정보 ai · ai2, 화면(P1 AI 종류 · 녹화 r-ai0/r-ai1),
+      heuristic_test 9개 통과(다른 종류 녹화 · 관전, 알 수 없는 종류 거절). 확인: 신경망 vs 휴리스틱 녹화에서 P1 신경망 판단 줄 51 · P2 0.
+    - 2026-10-30 `app/learning-data` 376cf7d 푸시(진행 중) — learndata.py(출처 · 가중치 HUMAN 3.0 / AI 1.0 · 매치 키 · learning/excluded.json) · tables.matchup_table(logs, exclude) 가중 · 제외 다시 적용.
+      세션 압축 → R5 인계(새 세션).
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 사람 공격 대상 — 같은 이름 카드 구별 · 휴리스틱 AI 를 .exe 에서 (사용자 지시 2026-10-30 「사람 vs AI에서 사람이 공격 선언할 때 상대 필드의 같은 이름의 카드가 여러 장 있을 때 어느 카드를 공격할지 선택 가능한지 확인하고 선택권이 없다면 선택 가능하게 수정해 / 휴리스틱 모델의 AI도 .exe 파일에서 동작할 수 있게 추가해줘」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 매시 루틴 「공격 대상 · 휴리스틱 AI 자동 이어하기(매시)」(trig_01KJxkGJV7CnjkGJCjzzkqMq, 이 세션, 매시 19분) — 2026-10-30 끔.
