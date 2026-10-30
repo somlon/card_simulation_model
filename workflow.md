@@ -229,7 +229,7 @@
 
 ## 진행 중
 
-- **【진행 중 — 2026-10-30】 같은 타이밍 효과의 체인 순서 — 사람이 정하고 AI가 학습 (사용자 지시 2026-10-30 「사람vs ai 대전에서 타이밍이 같은 효과들(예시: 유언과 트리거, 트리거)의 체인 순서를 플레이어가 정하지 못하고 있어 … 같은 타이밍의 효과들의 체인 순서를 정할 수 있게 수정해줘. ai의 경우, 해당 부분에 대해서도 학습하도록」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
+- **【완료 — 2026-10-30, 후속 사용자 확인】 같은 타이밍 효과의 체인 순서 — 사람이 정하고 AI가 학습 (사용자 지시 2026-10-30 「사람vs ai 대전에서 타이밍이 같은 효과들(예시: 유언과 트리거, 트리거)의 체인 순서를 플레이어가 정하지 못하고 있어 … 같은 타이밍의 효과들의 체인 순서를 정할 수 있게 수정해줘. ai의 경우, 해당 부분에 대해서도 학습하도록」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「같은 타이밍 체인 순서 자동 이어하기(매시)」(trig_01M2cq69csYJBB76QFDUhzbE, 매시 3분).
   - 조사: engine.Game.triggers 가 자리마다 ai.choose_triggers(후보 [(카드, 효과, 사건)]) 순서대로 발동 선언(먼저 선언 = 낮은 체인 번호 = 나중 처리, 턴 플레이어 먼저).
     ai.HeuristicAI · policy.LearnedAI 는 점수 내림차순 고정(학습 안 함), human.HumanAI 는 발동 여부만 묻고 후보 순서 그대로.
@@ -237,6 +237,9 @@
     `app/trigger-order`(HumanAI 가 2개 이상이면 순서를 묻고 같은 키로 학습, 학습하는 휴리스틱 STRATEGY 에 넣기, 신경망 표본 NOT_NN) → 시험 · PR.
   - 진행 기록:
     - 2026-10-30 조사 · 루틴 생성.
+    - 2026-10-30 **완료** — PR **#105** `model/trigger-order` ce2efc2(HeuristicAI · LearnedAI.order_triggers, 판단 「체인 순서(같은 타이밍)」, test_trigger_order 4 · 전체 시험 통과) ·
+      PR **#106** `app/trigger-order` ddb9b1c(1.3.1 — HumanAI 가 순서를 묻고 같은 키로 학습, 휴리스틱 STRATEGY, 신경망 AI 학습표 판단 학습 · NOT_NN, 화면 제목;
+      trigger_order_test 6 · heuristic_test 10 · human_choice_test 8 · learning_data_test 통과, 화면 오류 0). 배포본은 만들지 않음(지시 없음). 루틴 끔. 후속: #105 → #106 머지(사용자).
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 AI 종류 자리별 대전 · AI끼리 대전 학습 데이터 · 학습하는 휴리스틱 · 학습 데이터 정리 · 사람 데이터 가중치 (사용자 지시 2026-10-30 7개 항목 — 「위 내용 해결하고 PR하고 응용 프로그램 및 구동에 필요한 파일들을 세션 채팅창에 .zip 파일로 업로드」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 원문 요약: ① 다른 종류의 AI끼리 대전 가능? ② 신경망 AI 판단 기준? ③ AI끼리 대전 데이터가 내보내기 · GitHub 반영에 잡히지 않음 → 잡히게
