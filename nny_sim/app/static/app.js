@@ -230,12 +230,16 @@ function drawDecision() {
   if (box.dataset.rid === String(p.id)) return;
   box.dataset.rid = String(p.id);
   if (p.kind === 'side') { drawSide(p, box); return; }
+  // o.sub: 같은 이름 카드를 구별하는 칸 설명(「자신 몬스터 존 1 → 상대 몬스터 존 3」), o.u: 빛낼 카드(기록기 번호) — 사람 자리 HumanAI._ask
   const opts = p.opts.map((o, i) => { const x = optText(o.label); const src = x.card && faceUrl(x.card);
     const eff = x.eff && x.card && POOL[x.card] ? effText(POOL[x.card], x.eff).split('\n')[0] : '';
-    return `<button class="opt" data-i="${i}" data-card="${esc(x.card || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(x.t)}${x.s || eff ? `<small>${esc(x.s || '')}${eff ? ' — ' + esc(eff.replace(/^\d+\.\s*/, '')) : ''}</small>` : ''}</span>${o.v != null ? `<span class="v">${o.v}%</span>` : ''}</button>`; }).join('');
+    const sub = [o.sub, x.s].filter(Boolean).join(' · ');
+    return `<button class="opt" data-i="${i}" data-card="${esc(x.card || '')}" data-u="${esc((o.u || []).join(','))}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(x.t)}${sub || eff ? `<small>${esc(sub)}${eff ? ' — ' + esc(eff.replace(/^\d+\.\s*/, '')) : ''}</small>` : ''}</span>${o.v != null ? `<span class="v">${o.v}%</span>` : ''}</button>`; }).join('');
   box.innerHTML = `<div class="decision"><div class="q">${esc(decTitle(p.decision))}<small>${p.turn ? p.turn + '턴 · ' + esc(p.phase) : ''}</small></div><div class="opts">${opts}</div></div>`;
   box.querySelectorAll('.opt').forEach(b => {
-    b.onmouseenter = () => { const c = b.dataset.card; if (c) { stages.play.showName(c); stages.play.setHighlight([c]); } };
+    b.onmouseenter = () => { const c = b.dataset.card, u = b.dataset.u ? b.dataset.u.split(',') : [];
+      if (c) stages.play.showName(c);
+      if (u.length) stages.play.setHighlight([], u); else if (c) stages.play.setHighlight([c]); };   // 칸이 정해진 후보는 그 카드만 빛낸다
     b.onmouseleave = () => stages.play.setHighlight([]);
     b.onclick = () => answerDec(p, box, +b.dataset.i);
   });

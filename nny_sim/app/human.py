@@ -61,8 +61,10 @@ class HumanAI(P.LearnedAI):
         super().__init__(skill, learn=learn, table=table)
         self.bridge = bridge; self.hints = hints
 
-    def _ask(self, g, p, decision, labels, values=None, extra=None):
-        opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {})} for i, lab in enumerate(labels)]
+    def _ask(self, g, p, decision, labels, values=None, extra=None, subs=None, marks=None):
+        """subs: 후보마다 덧붙일 설명(같은 이름 카드를 칸으로 구별 — 「상대 몬스터 존 3」 등), marks: 후보마다 보드에서 빛낼 카드(기록기 번호)"""
+        opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {}),
+                 **({'sub': subs[i]} if subs and subs[i] else {}), **({'u': marks[i]} if marks and marks[i] else {})} for i, lab in enumerate(labels)]
         return self.bridge.ask({'kind': 'choose', 'p': p, 'decision': decision, 'opts': opts,
                                 'turn': getattr(g, 'turn', 0), 'phase': getattr(g, 'phase', ''), **(extra or {})})
 
@@ -112,9 +114,10 @@ class HumanAI(P.LearnedAI):
         return self.choose(g, p, f'시작 패 재배분({pos}·{n}장·남은 상급 {min(ups, 3)})',
                            self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10, shown=split_labels(n))
 
-    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None, forced=None):
+    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None, forced=None, subs=None, marks=None):
         """shown: 화면에 보일 이름표(후보 라벨 → 표시 문자열). 학습 키는 후보 라벨 그대로.
-        forced: 이미 사람이 다른 화면에서 고른 후보 번호 — 다시 묻지 않고 학습 기록 · 판단 줄만 남긴다(breeding_pick)"""
+        forced: 이미 사람이 다른 화면에서 고른 후보 번호 — 다시 묻지 않고 학습 기록 · 판단 줄만 남긴다(breeding_pick).
+        subs · marks: 화면 설명 · 빛낼 카드(_ask) — 같은 이름 카드를 후보로 따로 낼 때. 학습 키는 후보 라벨(카드 이름) 그대로"""
         if not opts: return None
         me = g.p[p].skill.name; op = g.p[1 - p].skill.name
         base = f'{me} vs {op}|{decision}|'; b = self.bucket(g, p)
@@ -124,7 +127,7 @@ class HumanAI(P.LearnedAI):
             v, n1, n2 = self.T.value(k1, k2, P.prior_of(h, scale))
             keyed.append((k1, k2, round(v * 100, 1)))
         idx = forced if forced is not None else 0 if len(opts) == 1 else \
-            self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed])
+            self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed], subs=subs, marks=marks)
         if self.learn: self.trace.append(keyed[idx][:2])
         if log and len(opts) > 1:
             g.L(f'판단[{g.pname(p)}] {decision}: → {opts[idx][0]} (사람)', 'decision')
@@ -206,20 +209,25 @@ class HumanAI(P.LearnedAI):
         return out
 
     def respond(self, g, p, opts):
-        cand = [('패스', 0, None)]; seen = set()
+        cand = [('패스', 0, None)]; seen = set(); subs = [None]; marks = [None]
         for c, e in opts:
-            lab = f'{c.name}#{e.num}'
-            if lab in seen: continue
-            seen.add(lab); cand.append((lab, act_score(g, c, e, p, g.chain, 0), (c, e)))
+            lab = f'{c.name}#{e.num}'; key = (lab, c.uid if g.on_field(c) else None)   # 필드의 같은 이름 카드는 따로(어느 카드로 발동할지)
+            if key in seen: continue
+            seen.add(key); cand.append((lab, act_score(g, c, e, p, g.chain, 0), (c, e)))
+            subs.append(slot_label(g, p, c) if g.on_field(c) else None); marks.append(rec_uids(g, c))
         if len(cand) == 1: return None
-        return self.choose(g, p, '대응' if g.chain else '우선권', cand)
+        return self.choose(g, p, '대응' if g.chain else '우선권', cand, subs=subs, marks=marks)
 
     def main_phase(self, g, p, ph):
         failed = set()
         for _ in range(MAX_ACTIONS):
-            acts = [('종료', 0, None)]; seen = set()
-            def add(lab, s, pay):
-                if lab not in seen: seen.add(lab); acts.append((lab, s, pay))
+            acts = [('종료', 0, None)]; seen = set(); subs = [None]; marks = [None]
+            def add(lab, s, pay, card=None):
+                """같은 라벨(카드 이름)이어도 필드의 카드는 카드마다 따로 낸다 — 어느 카드로 발동 · 표시 형식 변경할지 고르게"""
+                f = card is not None and g.on_field(card)
+                key = (lab, card.uid if f else None)
+                if key in seen: return
+                seen.add(key); acts.append((lab, s, pay)); subs.append(slot_label(g, p, card) if f else None); marks.append(rec_uids(g, card) if card is not None else None)
             if ph == '진행' and g.can_normal(p):
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
@@ -229,16 +237,16 @@ class HumanAI(P.LearnedAI):
                 for c in g.p[p].hand:
                     alt = getattr(c, 'alt_normal', None)
                     if alt and alt[0](g, p) and g.can_place(c, p) and g.can_normal(p, c): add(f'특수 일반소환:{c.name}', 70, ('alt', c, None))
-            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph): add(lab, s, ('extra', pay[1], pay))
+            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph): add(lab, s, ('extra', pay[1], pay), pay[1])
             for c, e in g.options(p, ('ignition', 'quick')):
-                if (c.uid, e.num) not in failed: add(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e))
+                if (c.uid, e.num) not in failed: add(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e), c)
             if g.free_s(p):
                 for c in g.p[p].hand:
                     if c.type == '마법' and c.d.get('subtype') in ('트리거', '신속') and not getattr(c.effects[0], 'hand_ok', False) \
                        and any(e.kind in ('resp', 'trigger', 'quick') for e in c.effects):
                         add(f'세트:{c.name}', 8, ('set', c, None))
             if len(acts) == 1: return
-            pick = self.choose(g, p, f'{ph} 행동', acts)
+            pick = self.choose(g, p, f'{ph} 행동', acts, subs=subs, marks=marks)
             if pick is None: return
             kind, c, e = pick
             if kind == 'summon': g.normal_summon(c, p); g.after_action(p)
@@ -255,19 +263,20 @@ class HumanAI(P.LearnedAI):
             attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]
             if not attackers: return
-            opts = [('공격 종료', 0, None)]; seen = set()
+            # 공격하는 몬스터 · 공격 대상은 카드마다 따로 낸다 — 같은 이름 카드가 여러 장이어도 어느 카드로 · 어느 카드를 공격할지 고른다(사용자 지시 2026-10-30).
+            # 학습 키(라벨)는 카드 이름 그대로, 화면 설명(subs)은 칸 · 빛낼 카드(marks)는 그 카드들
+            opts = [('공격 종료', 0, None)]; subs = [None]; marks = [None]
             for a in attackers:
                 av = g.atk(a)
                 if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
-                    lab = f'{a.name}→직접'
-                    if lab not in seen: seen.add(lab); opts.append((lab, av + 500, (a, None)))
+                    opts.append((f'{a.name}→직접', av + 500, (a, None))); subs.append(f'{slot_label(g, p, a)} → 직접공격'); marks.append(rec_uids(g, a))
                 for t in g.attack_targets(a):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
-                    lab = f'{a.name}→{t.name}'
-                    if lab not in seen: seen.add(lab); opts.append((lab, av - tv, (a, t)))
+                    opts.append((f'{a.name}→{t.name}', av - tv, (a, t))); subs.append(f'{slot_label(g, p, a)} → {slot_label(g, p, t)}')
+                    marks.append(rec_uids(g, a, t))
             if len(opts) > 1 and any(g.must_attack(o[2][0]) for o in opts[1:]):
-                opts = opts[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료 불가 (규칙)
-            pick = self.choose(g, p, '공격', opts, scale=400)
+                opts, subs, marks = opts[1:], subs[1:], marks[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료 불가 (규칙)
+            pick = self.choose(g, p, '공격', opts, scale=400, subs=subs, marks=marks)
             if pick is None: return
             g.attack(*pick)
 
@@ -281,6 +290,23 @@ ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '
 def split_labels(n):
     """후보 라벨 「메인 k」 → 화면 이름표 「메인 k / 상급 n-k」"""
     return lambda lab: f'{lab} / 상급 {n - int(lab.split()[-1])}'
+
+
+def slot_label(g, who, x):
+    """필드의 카드가 있는 칸 — 「자신 몬스터 존 2」 · 「상대 공유 존」 · 「상대 몬스터 존 3 (수비)」(같은 이름 카드를 구별)"""
+    s = g.side_of(x); side = '자신' if s == who else '상대'; z = ZONE_LABEL.get(x.zone, x.zone)
+    if x.zone in ('m', 's'):
+        row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
+        if x in row: z += f' {row.index(x) + 1}'
+    pos = ' (뒷면)' if not x.faceup else ' (수비)' if x.is_monster() and getattr(x, 'pos', 'atk') == 'def' else ''
+    return f'{side} {z}{pos}'
+
+
+def rec_uids(g, *cards):
+    """카드들의 기록기 번호(화면이 보드에서 빛낼 카드) — 기록기가 없으면 None"""
+    rec = getattr(g, 'log', None)
+    if not hasattr(rec, 'reg'): return None
+    return [rec.reg(c) for c in cards if c is not None] or None
 
 
 def card_label(g, who, x):

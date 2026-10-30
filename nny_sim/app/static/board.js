@@ -283,7 +283,7 @@ class Stage {
       e.el.classList.toggle('peek', peek); e.el.classList.toggle('inpile', !!o.pile);
       e.el.classList.remove('fx-act', 'fx-res', 'fx-des', 'fx-atk'); if (fxMap.has(uid)) e.el.classList.add(fxMap.get(uid));
       e.el.classList.toggle('neg', !!(o.cell && o.cell.n)); e.el.classList.toggle('sel', this.selected === uid);
-      const ci = this.info(uid); e.el.classList.toggle('hl', !!(ci && this.hl.has(ci.name) && o.seat === 0 && (o.up || own)));
+      const ci = this.info(uid); e.el.classList.toggle('hl', !!(ci && this.hl.has(ci.name) && o.seat === 0 && (o.up || own)) || !!(this.hlu && this.hlu.has(String(uid))));
       const c = o.cell, tags = [];
       const hh = CH * o.scale * (o.rot ? CW / CH : 1) / 2;
       if (!o.hand && !o.pile && c) {
@@ -551,7 +551,7 @@ class Stage {
     });
   }
   clearZonePick() { (this.zp || []).forEach(b => b.remove()); this.zp = null; }
-  setHighlight(names) { this.hl = new Set(names); if (this.lastRendered >= 0) this.render(this.lastRendered, true); }
+  setHighlight(names, uids) { this.hl = new Set(names); this.hlu = new Set((uids || []).map(String)); if (this.lastRendered >= 0) this.render(this.lastRendered, true); }
   // ── 재생 ──
   visible(i) { const fr = this.F[i]; return !this.hidden(fr) && (this.showDec || fr.k !== 'decision'); }
   nextIdx(i, dir) { let j = i + dir; while (j >= 0 && j < this.F.length && !this.visible(j)) j += dir; return Math.max(0, Math.min(this.F.length - 1, j)); }
