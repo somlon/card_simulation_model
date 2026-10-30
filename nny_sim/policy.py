@@ -64,12 +64,14 @@ class Table:
         w1, n1 = self.L1.get(k1, (0, 0)); m1 = (w1 + A * prior) / (n1 + A)
         w2, n2 = self.L2.get(k2, (0, 0)); return (w2 + A * m1) / (n2 + A), n1, n2
 
-    def update(self, k1, k2, won):
-        a = self.L1.setdefault(k1, [0, 0]); a[0] += won; a[1] += 1
-        b = self.L2.setdefault(k2, [0, 0]); b[0] += won; b[1] += 1
+    def update(self, k1, k2, won, w=1):
+        """won(0 · 1)을 가중치 w 만큼 더한다 — w 는 기록의 출처별 가중치(게임 프로그램: 사람 대전 기록을 AI끼리 대전보다 크게 — app/tables.py).
+        기본 1 은 예전과 같다"""
+        a = self.L1.setdefault(k1, [0, 0]); a[0] += won * w; a[1] += w
+        b = self.L2.setdefault(k2, [0, 0]); b[0] += won * w; b[1] += w
         k0 = k0_of(k1)
         if k0 is not None:
-            c = self.L0.setdefault(k0, [0, 0]); c[0] += won; c[1] += 1
+            c = self.L0.setdefault(k0, [0, 0]); c[0] += won * w; c[1] += w
 
     def rebuild_L0(self):
         """L1을 상대에 걸쳐 합해 L0을 다시 만든다 (L0이 없던 예전 표에 붙일 때)"""
