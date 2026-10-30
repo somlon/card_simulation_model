@@ -240,6 +240,8 @@
     - 2026-10-30 ③ 엔진 `model/shared-zones` 9dd654c(MZ=3 · 공유 존 2칸 칸마다 마커 · can_place 규칙만 · drl 특징 모양 유지, 전체 시험 통과 · 30매치 오류 0).
       다음: `app/shared-zones`(record 상태 sh 목록 · board.js 배치 — 공유 존 = 옛 스킬 존 자리, 스킬 존 = 1 · 5번 몬스터 존 위(row2 col1 · col5), 필드 존 = 옛 공유 존 자리, 매트 이미지 · human choose_zone) →
       기본 재생 기록 다시 녹화(make_library --rerecord) → 통합 · v1.3.2 빌드 · PR.
+    - 2026-10-30 `app/shared-zones` 3c5ff14(board.js 배치 · 마커 칸마다 · record sh 목록 · human 공유 존 1 · 2 · 매트 v2 field_mat_v2.png + make_mat_v2.py, 앱 시험 · 화면 오류 0).
+      통합 `claude/vibrant-euler-jekich`(hide-set-cards · decision-curation · shared-zones 병합 + VERSION 1.3.2 · 읽어보기). 기본 재생 기록 다시 녹화 중(/home/user/appsim/library132, 새 엔진). 다음: PR · 빌드 · zip.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 행운의 도적 코스트 · 기적의 영웅 [신속] · 희생의 성녀 · 효과 처리 후 화면 갱신 (사용자 지시 2026-10-30 4건 + 「효과가 처리된 상황에서 화면 전환도 즉각적으로」(앞 4건 뒤에), 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「행운의 도적 · 기적의 영웅 · 희생의 성녀 · 화면 갱신 자동 이어하기(매시)」(trig_01HNZWzYAkLnKr7yXtFayEP1, 매시 52분).
