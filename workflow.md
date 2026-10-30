@@ -234,6 +234,7 @@
     ④ 휴리스틱 AI도 학습으로 발전 가능? 가능하면 다른 모델과 같은 기능 ⑤ 학습할 데이터를 사용자가 정제(유용한 데이터만) — AI 3종별 답변 · 가능하면 추가
     ⑥ 사람 vs AI 데이터를 AI vs AI 데이터보다 높은 가중치로(모든 모델) ⑦ AI가 패스(아무것도 안 함)를 고를 수 있나? 아니면 가능하게.
   - 매시 루틴 「AI 학습 데이터 7건 자동 이어하기(매시)」(trig_016RbDoVMzvBCEiniVr57bF5, 세션 session_018Feff9p4FHuAiYB3fcz4ve) — 2026-10-30 세션 압축으로 새 세션에 인계(R5), 새 세션이 같은 이름의 루틴을 만들면 옛 루틴은 끔.
+  - 새 세션 session_018FeffAgHCpKXV4XbwZTHqs 의 매시 루틴 「AI 학습 데이터 7건 자동 이어하기(매시)」(trig_01UKnHS2qLQm6DfakznXU8pe, 매시 46분) — 2026-10-30 생성.
   - 조사: ① AI vs AI 관전은 P1 학습표 고정 · P2만 선택, 녹화는 양쪽 같은 AI ② DRLAI — 학습표 AI의 후보 생성 · 하드 제약, 신경망이 후보 점수(모방 학습 + PPO + 로컬 미세 조정),
     시작 패 배분 · 재배분 · 표시 형식은 학습표 ③ LiveMatch learn = learn and human, 신경망 표본 nn_record = 사람 대전만 → AI끼리 대전은 학습 기록 · 표본 없음
     ④ HeuristicAI 는 규칙 기반(번식지 표만 학습) ⑤ 학습 기록 · 표본은 매치 단위 파일/줄이라 매치 단위 제외 가능 ⑥ Table.update 는 1씩만 더함
