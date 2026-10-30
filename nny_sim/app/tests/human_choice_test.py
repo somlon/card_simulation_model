@@ -134,4 +134,20 @@ hu.main_phase(g, 0, '정비')
 pos = [o for o in seen.get('opts', []) if o['label'].startswith('수비 표시로:')]
 check('행동: 같은 이름 몬스터의 표시 형식 변경이 따로 나온다', len(pos) == 2 and pos[0].get('sub') != pos[1].get('sub'), str([(o['label'], o.get('sub')) for o in pos]))
 
+# ⑧ 선택 코스트(사용자 지시 2026-10-30) — 행운의 도적 1번 「자신 필드의 카드 1장을 묘지로 보내고 발동할 수도 있다」를 사람에게 묻고,
+#    효과를 받지 않는 기적의 영웅도 코스트로 고를 수 있다(코스트는 효과가 아님 — 엔진 model/play-fixes-1030)
+g, hu, bot = game('소원의 분수', '세제', [])
+th = put(g, '행운의 도적', 0, 'm', 0); hero = put(g, '기적의 영웅', 0, 'm', 1)
+h0 = len(g.p[0].hand); n0 = len(bot.asked)
+bot.answers = ['코스트를 낸다', '기적의 영웅']
+g.act(0, th, next(e for e in th.effects if e.num == 1))
+qs = [q for q, _ in bot.asked[n0:]]
+check('선택 코스트: 사람에게 묻고 기적의 영웅을 묘지로 보내 2장 드로우', qs and qs[0] == '선택 코스트:행운의 도적#1' and hero.zone == 'grave'
+      and len(g.p[0].hand) == h0 + 2, f'(질문 {qs[:3]} · 영웅 {hero.zone} · 드로우 {len(g.p[0].hand) - h0})')
+g, hu, bot = game('소원의 분수', '세제', [])
+th = put(g, '행운의 도적', 0, 'm', 0); hero = put(g, '기적의 영웅', 0, 'm', 1)
+h0 = len(g.p[0].hand); n0 = len(bot.asked); bot.answers = ['내지 않는다']
+g.act(0, th, next(e for e in th.effects if e.num == 1))
+check('선택 코스트: 내지 않으면 1장만 드로우', hero.zone == 'm' and len(g.p[0].hand) == h0 + 1, f'(드로우 {len(g.p[0].hand) - h0})')
+
 print('결과:', '통과' if ok else '실패'); sys.exit(0 if ok else 1)
