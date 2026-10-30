@@ -4,6 +4,17 @@
 const {Stage, esc, effText, typeLine, genCard} = window.NNY;
 const TOKEN = document.querySelector('meta[name=nny-token]').content;
 const $ = id => document.getElementById(id);
+// 화면 테마 3종(뉴네오·화이트·블랙) — 순전히 화면 취향이라 서버엔 안 보내고 이 기기에만 저장
+const THEMES = ['neo', 'white', 'black'];
+function setTheme(t) {
+  if (!THEMES.includes(t)) t = 'neo';
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('nny-theme', t); } catch (e) {}
+  $('theme-select').value = t;
+}
+let savedTheme = 'neo'; try { savedTheme = localStorage.getItem('nny-theme') || 'neo'; } catch (e) {}
+setTheme(savedTheme);
+$('theme-select').onchange = () => setTheme($('theme-select').value);
 async function api(path, body) {
   const r = await fetch('/api/' + path, {method: body ? 'POST' : 'GET', headers: {'X-NNY-Token': TOKEN, 'Content-Type': 'application/json'},
                                         body: body ? JSON.stringify(body) : undefined});

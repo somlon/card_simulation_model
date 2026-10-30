@@ -1,8 +1,16 @@
+/* 화면 테마 3종 — 뉴네오(기본, 아래가 그 값) · 화이트 · 블랙. app.js 가 <html data-theme> 로 전환(설정은 localStorage, 서버에 안 보냄).
+   게임 보드의 의미색(플레이어 색 --p1/--p2, 공격/대상/선택 등 --gold/--green/--danger/--cyan/--accent)은 세 테마 모두 공용 — 화면 톤만 바뀐다. */
 :root{
-  --bg:#0a0d14; --panel:#111725; --panel2:#161e30; --panel3:#1c2640; --line:#243049; --text:#e7eaf2; --muted:#8e98ad; --dim:#5d6780;
+  --bg:#0a0d14; --panel:#111725; --panel2:#161e30; --panel3:#1c2640; --line:#243049; --text:#e7eaf2; --muted:#8e98ad; --dim:#5d6780; --headerbg:#0c1019;
   --p1:#f2667a; --p2:#62aaff; --gold:#f3c84b; --green:#5fd38a; --danger:#ff5b5b; --cyan:#59e0ff; --accent:#7c9cff;
   --font:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Noto Sans CJK KR",system-ui,sans-serif;
   --dur:640ms;
+}
+:root[data-theme="white"]{
+  --bg:#f4f5f8; --panel:#ffffff; --panel2:#eef0f5; --panel3:#e3e7f0; --line:#d6dae3; --text:#1c2333; --muted:#5a6377; --dim:#8990a3; --headerbg:#ffffff;
+}
+:root[data-theme="black"]{
+  --bg:#000000; --panel:#0d0d0f; --panel2:#161618; --panel3:#1e1e22; --line:#2b2b30; --text:#f2f2f5; --muted:#9a9aa3; --dim:#68686f; --headerbg:#000000;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.45}
@@ -23,7 +31,7 @@ label.chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 h2.sec{font-size:12px;letter-spacing:.4px;color:var(--muted);margin:0 0 8px;font-weight:700}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
 /* 머리 막대 */
-header.nav{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line);background:#0c1019;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+header.nav{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--headerbg);position:sticky;top:0;z-index:50;flex-wrap:wrap}
 header.nav .logo{font-weight:900;letter-spacing:-.3px;margin-right:10px;white-space:nowrap}
 header.nav .logo small{color:var(--muted);font-weight:600;margin-left:6px}
 header.nav .tab{background:none;border:none;color:var(--muted);padding:8px 12px;border-radius:8px;font-weight:700}
