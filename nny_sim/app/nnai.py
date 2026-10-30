@@ -3,9 +3,10 @@
 모델
   기본 모델: 실행 폴더 learned/drl/base_v2/model_best.npz (저장소 data 계열, 배포본에 포함 — 학습표를 교사로 모방 학습 + 자기 대국 PPO)
   내 모델  : 사용자 폴더 learning/nn/model.npz — 「신경망 학습」 버튼으로 만든다. 학습할 때마다 기본 모델에서 시작해
-             지금까지 쌓인 사람 대전 표본 전체로 다시 학습한다(학습을 거듭해도 기본 모델에서 멀리 떠내려가지 않게). 이전 내 모델은 backups/ 에 보관.
+             지금까지 쌓인 표본 전체(사람 대전 · AI끼리 — 출처별 가중치, 사용자가 뺀 매치 제외)로 다시 학습한다
+             (학습을 거듭해도 기본 모델에서 멀리 떠내려가지 않게). 이전 내 모델은 backups/ 에 보관.
 대국: AI 종류 「신경망 AI」 = drl.agent.DRLAI(학습표 AI의 후보 생성 · 하드 제약은 그대로, 고르기만 신경망). 내 모델이 있으면 내 모델, 없으면 기본 모델.
-나누기(학습 기록과 같은 방식): 「신경망 내보내기」 = 표본 전체 · 내 모델 · manifest.json 을 zip 하나로(사용자 폴더 export/) →
+나누기(학습 기록과 같은 방식): 「신경망 내보내기」 = 표본(사용자가 뺀 매치 제외) · 내 모델 · manifest.json 을 zip 하나로(사용자 폴더 export/) →
   GitHub 웹에서 저장소의 nny_sim/learned/drl/human_nn/ 에 올림, 또는 「GitHub에 올리기」(session.Store.git_upload — data/human-nn-<컴퓨터> 브랜치의
   같은 폴더 아래 <컴퓨터>/). 저장소에서는 merge_nn.py 가 여러 사람의 표본을 모아(같은 매치는 한 번) 기본 모델을 다시 학습한다.
 """
@@ -132,7 +133,7 @@ class Manager:
             P, matches, info = NS.load_all(self.user)
             n = 0 if P is None else len(P['idx'])
             if n < MIN_SAMPLES:
-                raise ValueError(f'표본이 {n}개뿐입니다 — 「AI 학습」을 켜고 나 vs AI 대전을 해서 표본을 더 모아 주세요(최소 {MIN_SAMPLES}개).')
+                raise ValueError(f'표본이 {n}개뿐입니다 — 「AI 학습」을 켜고 대전(나 vs AI · AI끼리)을 해서 표본을 더 모으거나, 「학습 데이터 정리」에서 뺀 매치를 다시 넣어 주세요(최소 {MIN_SAMPLES}개).')
             arrays, _ = MD.load_arrays(self.base)
             j['msg'] = f'학습 중 — 매치 {info["files"]}개 · 판단 {n}개'
 
@@ -157,16 +158,17 @@ class Manager:
         import nn_samples as NS
         st = NS.stats(self.user); loc = model_info(local_path(self.user)) if self.np_ok else None
         return {'kind': 'nny-sim-nn-share', 'host': host, 'created': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'matches': st['matches'], 'samples': st['samples'], 'by_matchup': st['by_matchup'], 'base': '/'.join(BASE_REL),
+                'matches': st['matches'], 'samples': st['samples'], 'by_matchup': st['by_matchup'], 'by_source': st['by_source'], 'base': '/'.join(BASE_REL),
                 'base_info': {k: v for k, v in (model_info(self.base) or {}).items() if k in ('it', 'eval', 'created', 'stage')} if self.np_ok else None,
                 'local_model': {k: v for k, v in (loc or {}).items() if k != 'path'} or None}
 
     def share_files(self, host):
-        """나눌 파일 → [(묶음 안 경로, 원본 경로 또는 None(manifest))] — 표본 · 표본 목록 · 내 모델(있으면)"""
+        """나눌 파일 → [(묶음 안 경로, 원본 경로 또는 내용 bytes)] — 표본 · 표본 목록(사용자가 뺀 매치 제외) · 내 모델(있으면)"""
         import nn_samples as NS
-        d = NS.samples_dir(self.user)
-        names = sorted(n for n in os.listdir(d) if n.endswith('.npz') or n == 'index.json') if os.path.isdir(d) else []
-        out = [(f'{NS.DIR[-1]}/{n}', os.path.join(d, n)) for n in names]
+        d = NS.samples_dir(self.user); names, idx = NS.kept_files(self.user)
+        out = [(f'{NS.DIR[-1]}/{n}', os.path.join(d, n)) for n in sorted(names)]
+        if names:
+            out.append((f'{NS.DIR[-1]}/index.json', json.dumps({n: idx[n] for n in sorted(names)}, ensure_ascii=False, indent=1).encode('utf-8')))
         if os.path.exists(local_path(self.user)): out.append(('model.npz', local_path(self.user)))
         return out
 
@@ -178,7 +180,9 @@ class Manager:
         out = os.path.join(export_dir, time.strftime(f'신경망표본_{host}_%Y%m%d-%H%M%S.zip'))
         with zipfile.ZipFile(out + '.tmp', 'w', zipfile.ZIP_STORED) as z:   # npz 는 이미 압축됨
             z.writestr('manifest.json', json.dumps(self.manifest(host), ensure_ascii=False, indent=1))
-            for arc, src in files: z.write(src, arc)
+            for arc, src in files:
+                if isinstance(src, bytes): z.writestr(arc, src)
+                else: z.write(src, arc)
         os.replace(out + '.tmp', out)
         return out
 
@@ -187,7 +191,10 @@ class Manager:
         if os.path.isdir(dst): shutil.rmtree(dst)
         os.makedirs(dst)
         for arc, src in self.share_files(host):
-            os.makedirs(os.path.dirname(os.path.join(dst, arc)), exist_ok=True); shutil.copyfile(src, os.path.join(dst, arc))
+            out = os.path.join(dst, arc); os.makedirs(os.path.dirname(out), exist_ok=True)
+            if isinstance(src, bytes):
+                with open(out, 'wb') as f: f.write(src)
+            else: shutil.copyfile(src, out)
         with open(os.path.join(dst, 'manifest.json'), 'w', encoding='utf-8') as f:
             json.dump(self.manifest(host), f, ensure_ascii=False, indent=1)
 
