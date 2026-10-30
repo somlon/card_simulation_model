@@ -63,6 +63,8 @@ class HumanAI(P.LearnedAI):
 
     def _ask(self, g, p, decision, labels, values=None, extra=None, subs=None, marks=None):
         """subs: 후보마다 덧붙일 설명(같은 이름 카드를 칸으로 구별 — 「상대 몬스터 존 3」 등), marks: 후보마다 보드에서 빛낼 카드(기록기 번호)"""
+        rec = getattr(g, 'log', None)
+        if hasattr(rec, 'sync'): rec.sync()   # 묻기 전에 지금 필드를 화면에(마지막 처리 뒤의 상태 — viewer/record.Recorder.sync)
         opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {}),
                  **({'sub': subs[i]} if subs and subs[i] else {}), **({'u': marks[i]} if marks and marks[i] else {})} for i, lab in enumerate(labels)]
         return self.bridge.ask({'kind': 'choose', 'p': p, 'decision': decision, 'opts': opts,
@@ -290,6 +292,13 @@ ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '
 def split_labels(n):
     """후보 라벨 「메인 k」 → 화면 이름표 「메인 k / 상급 n-k」"""
     return lambda lab: f'{lab} / 상급 {n - int(lab.split()[-1])}'
+
+
+def optional_phrase(c, num, mark):
+    """카드 c의 num번 효과 문장에서 선택을 나타내는 문장(「…할 수도 있다」 · 「…할 수 있다」) — 화면 설명용"""
+    import cards
+    line = next((x for x in (c.d.get('text') or '').split('\n') if x.startswith(f'{num}.')), '')
+    return next((s.strip() for s in cards.sentences(line) if mark in s), line)[:120]
 
 
 def slot_label(g, who, x):
@@ -586,6 +595,27 @@ def install_block_hooks():
             ai = human_at(g, p)
             return ask_level_attr(cards8, ai, g, p, f'「{c.name}」 선언할') if ai else orig_joker(g, p, c)
         L.joker_pick = joker_pick
+
+    # 「…하고 발동할 수도 있다」 선택 코스트 · 「…할 수 있다」 선택 처리 — AI는 가치(L.wants_cost · L.wants)로 정하고, 사람은 직접 고른다
+    # (사용자 지시 2026-10-30: 「강제로 발동한다」가 아니면 모든 선택을 플레이어에게 묻는다 — 행운의 도적 1번 코스트를 낼지 묻지 않던 것)
+    orig_wants_cost, orig_wants = L.wants_cost, L.wants
+
+    def wants_cost(g, c, p, l, k):
+        ai = human_at(g, p)
+        if not ai: return orig_wants_cost(g, c, p, l, k)
+        bd = L.BLOCKS[k['blk']]
+        if bd.can is not L._always and not bd.can(g, c, p, l.ctx.get('ev'), k): return False   # 낼 수 없는 코스트는 묻지 않는다
+        phrase = optional_phrase(c, l.eff.num, '수도 있다')
+        return ai.choose(g, p, f'선택 코스트:{c.name}#{l.eff.num}', [('코스트를 낸다', 1, True), ('내지 않는다', 0, False)],
+                         subs=[phrase, '코스트 없이 발동'], marks=[rec_uids(g, c), None])
+    L.wants_cost = wants_cost
+
+    def wants(g, c, p, l, b):
+        ai = human_at(g, p)
+        if not ai: return orig_wants(g, c, p, l, b)
+        return ai.choose(g, p, f'선택 처리:{c.name}#{l.eff.num}', [('한다', 1, True), ('하지 않는다', 0, False)],
+                         subs=[optional_phrase(c, l.eff.num, '수 있다'), None], marks=[rec_uids(g, c), None])
+    L.wants = wants
 
     # 일반 서치 — 서치할 카드(같은 이름 · 같은 곳은 같은 선택)
     orig_search = L.BLOCKS['search'].run
