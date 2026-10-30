@@ -268,7 +268,15 @@ $('lobby-join').onclick = async () => {
   catch (e) { lobbyRole = null; toast(e.message); }
 };
 $('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
-$('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
+$('lobby-leave').onclick = async () => {
+  lobbyRole = null;
+  if (G.spectating) {   // 관전 중 로비 나가기 — 이전엔 매치가 끝날 때까지 화면이 계속 따라갔음(의도적 보류, 「다음 회차 지시」 2번)
+    clearTimeout(G.poll); G.id = null; G.spectating = false;
+    stages.play.reset(); stages.play.renderEmpty();
+    $('g-status').textContent = ''; $('g-pvpinfo').textContent = '';
+  }
+  showRoom(await api('room/leave', {}));
+};
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
 
 // ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
