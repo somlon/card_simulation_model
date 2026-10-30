@@ -42,10 +42,20 @@ class App:
         import human
         human.install_block_hooks()   # 첫 게임(카드 효과 코드 생성 · 캐시) 전에 — 사람 자리의 서치 · 카드 고르기를 화면에서 묻는다
         self.store = SS.Store(paths['user'], paths.get('library'))
+        self.users_path = os.path.join(paths['user'], 'online_users.json')  # tools/discord_bot.py 의 /유저등록 이 쓰는 그 파일(같은 경로)
         self.token = secrets.token_hex(16)
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
+
+    def allowed_ips(self):
+        """등록된 하마치 IP 집합. 파일이 없거나 등록이 비어 있으면 None(게이트 비활성 — 첫 실행 때 호스트가
+        자기 접속까지 막아버리는 걸 피한다; discord_bot.py 의 /유저등록 으로 한 명이라도 등록되면 그때부터 게이트가 선다)."""
+        try:
+            with open(self.users_path, encoding='utf-8-sig') as f: u = json.load(f)
+        except (OSError, ValueError): return None
+        ips = {v.strip() for k, v in u.items() if not k.startswith('_') and isinstance(v, str) and v.strip()}
+        return ips or None
 
     # ── 덱 이름 · 대전 시작 ──
     def deck_label(self, did, d):
@@ -197,9 +207,14 @@ def make_handler(app):
             if token: data = data.replace(b'__TOKEN__', app.token.encode())
             self._send(200, data, mimetypes.guess_type(path)[0] or 'application/octet-stream', cache)
 
+        def _registered(self):
+            ips = app.allowed_ips()
+            return ips is None or self.client_address[0] in ips
+
         def _api(self, method):
             u = urlparse(self.path)
             if u.path == '/api/ping': return self._send(200, {'ok': True, 'app': 'nny-sim', 'version': VERSION})
+            if not self._registered(): return self._send(403, {'error': '등록되지 않은 접속입니다. 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
             if self.headers.get('X-NNY-Token') != app.token: return self._send(403, {'error': 'token'})
             body = {}
             if method == 'POST':
@@ -213,6 +228,7 @@ def make_handler(app):
         def do_GET(self):
             u = urlparse(self.path)
             if u.path.startswith('/api/'): return self._api('GET')
+            if not self._registered(): return self._send(403, {'error': '등록되지 않은 접속입니다. 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
             if u.path in ('/', '/index.html'): return self._file(static, 'index.html', token=True)
             if u.path.startswith('/cards/'): return self._file(cards, u.path[len('/cards/'):], cache=True)
             return self._file(static, u.path.lstrip('/'))
