@@ -21,11 +21,15 @@ const PC = ['var(--p1)', 'var(--p2)'];
 const ICON = {act: '▶', res: '↳', draw: '✋', sys: '✦', turn: '━', round: '█', end: '■', side: '⇄', decision: '·'};
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const slot = (c, r) => ({x: SLOT.x0 + SLOT.dx * c, y: SLOT.y0 + SLOT.dy * r});
+// 존 배치(사용자 지시 2026-10-30): 몬스터 존 3칸 = 예전 1 · 3 · 5번 자리(열 1 · 3 · 5), 공유 존 2칸 = 예전 스킬 존 자리(가운데 줄 열 2 · 4),
+// 스킬 존 = P1 시점 1 · 5번 몬스터 존 위(가운데 줄 열 1 = P2 · 열 5 = P1), 필드 존 = 예전 공유 존 자리(가운데). 예전 기록(몬스터 존 5칸 · 공유 존 1칸)도 그린다.
+const MCOL = {3: [1, 3, 5], 5: [1, 2, 3, 4, 5]};   // 기록의 몬스터 존 수 → P1 쪽 열(P2 는 좌우 반대)
 const Z = [
-  {m: i => slot(1 + i, 3), s: i => slot(1 + i, 4), grave: slot(6, 3), ban: slot(0, 3), main: slot(6, 4), upper: slot(0, 4), sk: slot(4, 2)},
-  {m: i => slot(5 - i, 1), s: i => slot(5 - i, 0), grave: slot(0, 1), ban: slot(6, 1), main: slot(0, 0), upper: slot(6, 0), sk: slot(2, 2)},
+  {m: (i, n = 3) => slot(MCOL[n][i], 3), s: i => slot(1 + i, 4), grave: slot(6, 3), ban: slot(0, 3), main: slot(6, 4), upper: slot(0, 4), sk: slot(5, 2)},
+  {m: (i, n = 3) => slot(6 - MCOL[n][i], 1), s: i => slot(5 - i, 0), grave: slot(0, 1), ban: slot(6, 1), main: slot(0, 0), upper: slot(6, 0), sk: slot(1, 2)},
 ];
-const SHARED = slot(3, 2), FIELDZ = slot(0, 2);
+const SHARED = [slot(2, 2), slot(4, 2)], FIELDZ = slot(3, 2);
+const shList = v => Array.isArray(v) ? v : [v ?? null, null];   // 상태의 공유 존(sh · so · sc): 칸 목록, 예전 기록은 칸 하나
 const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[ch]));
 
 function typeLine(p) {
@@ -71,9 +75,9 @@ class Stage {
       <div class="pbar pb1" style="--pc:var(--p2)"></div><div class="pbar pb0" style="--pc:var(--p1)"></div>
       <div class="bcol"><div class="board-wrap"><div class="board">
         <svg class="fxl" viewBox="0 0 ${this.MW || 1664} ${this.MH || 1904}"><g class="arrows"></g></svg>
-        <div class="shz" style="left:${SHARED.x - SLOT.w / 2 - 12}px;top:${SHARED.y - SLOT.h / 2 - 12}px;width:${SLOT.w + 24}px;height:${SLOT.h + 24}px"><span class="shb"></span></div>
-        <div class="token" style="left:${TOKEN.x - TOKEN.d / 2}px;top:${TOKEN.y - TOKEN.d / 2}px;width:${TOKEN.d}px;height:${TOKEN.d}px">
-          <div class="coin"><div class="cf w"><b>선공</b><small>공유 존 마커</small></div><div class="cf k"><b>후공</b><small>공유 존 마커</small></div></div><div class="tl"></div></div>
+        ${SHARED.map((S, k) => `<div class="shz" data-k="${k}" style="left:${S.x - SLOT.w / 2 - 12}px;top:${S.y - SLOT.h / 2 - 12}px;width:${SLOT.w + 24}px;height:${SLOT.h + 24}px"><span class="shb"></span></div>`).join('')}
+        ${SHARED.map((S, k) => { const d = TOKEN.d * 0.5, x = TOKEN.x + (k ? 1 : -1) * TOKEN.d * 0.26; return `<div class="token mini" data-k="${k}" style="left:${x - d / 2}px;top:${TOKEN.y - d / 2}px;width:${d}px;height:${d}px">
+          <div class="coin"><div class="cf w"><b>${k + 1}</b><small>선공</small></div><div class="cf k"><b>${k + 1}</b><small>후공</small></div></div><div class="tl"></div></div>`; }).join('')}
         <div class="overlay"><div class="box"></div></div></div></div></div>
       <div class="controls ctl">
         <button data-a="prevTurn" title="이전 턴 (Shift+←)">⏮</button><button data-a="prev" title="한 단계 뒤로 (←)">◀</button>
@@ -107,7 +111,7 @@ class Stage {
     if (this.els) this.els.forEach(e => e.el.remove());
     this.F = []; this.S = []; this.cards = {}; this.pool = {}; this.names = ['P1', 'P2']; this.meta = {decks: ['', ''], rounds: []};
     this.els = new Map(); this.cur = 0; this.lastRendered = -1; this.selected = null; this.rows = []; this.curRow = null;
-    this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.tokOwner = null; this.reveal = [true, true]; this.showDec = false;
+    this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.tokOwner = [null, null]; this.reveal = [true, true]; this.showDec = false;
     this.live = false; this.mask = null; this.hl = new Set(); this.WINS = []; this.TURNS = [];
     if (this.logEl) this.logEl.innerHTML = '';
   }
@@ -222,7 +226,7 @@ class Stage {
     const o = {el, rot: el.firstChild, flip: el.querySelector('.flip'), tags: [], target: null};
     this.els.set(uid, o); return o;
   }
-  pileHome(uid) { const ci = this.info(uid); if (!ci) return SHARED; return Z[ci.owner][ci.pool.deck === '상급' ? 'upper' : 'main']; }
+  pileHome(uid) { const ci = this.info(uid); if (!ci) return FIELDZ; return Z[ci.owner][ci.pool.deck === '상급' ? 'upper' : 'main']; }
   handSpots(n, seat) {
     const w = this.CW * HAND_SCALE, span = HAND_X[1] - HAND_X[0] - w;
     const step = n > 1 ? Math.min(w + 10, span / (n - 1)) : 0, x0 = 832 - step * (n - 1) / 2;
@@ -236,14 +240,14 @@ class Stage {
     };
     st.P.forEach((P, seat) => {
       this.handSpots(P.hand.length, seat).forEach((pos, i) => L.set(P.hand[i], {x: pos.x, y: pos.y, rot: 0, scale: HAND_SCALE, up: this.reveal[seat], z: 400 + i, hand: true, seat}));
-      P.m.forEach((c, i) => cell(c, Z[seat].m(i), seat)); P.s.forEach((c, i) => cell(c, Z[seat].s(i), seat));
+      P.m.forEach((c, i) => cell(c, Z[seat].m(i, P.m.length), seat)); P.s.forEach((c, i) => cell(c, Z[seat].s(i), seat));
       if (P.sk) cell(P.sk, Z[seat].sk, seat);
       for (const k of ['grave', 'ban']) {
         const list = P[k], pos = Z[seat][k];
         list.forEach((u, i) => L.set(u, {x: pos.x, y: pos.y, rot: 0, scale: 1, up: true, z: 5 + i, pile: true, top: i === list.length - 1, seat}));
       }
     });
-    if (st.sh) cell(st.sh, SHARED, st.sc ?? 0, {ctl: st.sc});
+    const sc = shList(st.sc); shList(st.sh).forEach((c, k) => { if (c) cell(c, SHARED[k], sc[k] ?? 0, {ctl: sc[k]}); });
     if (st.fz) cell(st.fz, FIELDZ, st.fc ?? 0, {ctl: st.fc});
     for (const f of fx) { const u = f.u ?? f.a; const o = L.get(u); if (o && o.pile) { o.top = true; o.z = 300; } }
     return L;
@@ -335,19 +339,22 @@ class Stage {
     const rr = (this.meta.rounds || [])[r - 1]; return rr && rr.first != null ? rr.first : 0;
   }
   drawToken(st, fr, animate) {
-    // 공유 존 마커(양면 — 그 라운드 선공 쪽이 백, 후공 쪽이 흑)를 매트의 주인 토큰 존에 놓고, 공유 존 칸에도 소유를 표시한다.
-    // 마커는 라운드에서 처음 공유 존에 카드를 놓을 때 놓이고, 공유 존이 비어도 남으며, 상대가 쓰면 뒤집힌다(engine.Game — 사용자 재정 2026-09-30)
-    const tok = this.q('.token'), shz = this.q('.shz'), own = st ? st.so : null;
-    if (own == null) { tok.classList.remove('on', 'black', 'flipping'); shz.classList.remove('on', 'black'); this.tokOwner = null; return; }
-    const white = own === this.firstOf(st, fr.r);
-    if (this.tokOwner == null) tok.style.setProperty('--from', `${own === 0 ? TOKEN_DROP : -TOKEN_DROP}px`);
-    else if (this.tokOwner !== own && animate) { tok.classList.remove('flipping'); void tok.offsetWidth; tok.classList.add('flipping'); }
-    this.tokOwner = own;
-    tok.classList.add('on'); tok.classList.toggle('black', !white);
-    tok.querySelector('.tl').innerHTML = `<span class="nm${own}">P${own + 1}</span> 소유 · ${esc(this.names[own])}`;
-    tok.title = `공유 존 마커 — ${white ? '백(선공 쪽)' : '흑(후공 쪽)'} · P${own + 1} ${this.names[own]} 소유`;
-    shz.classList.add('on'); shz.classList.toggle('black', !white);
-    shz.title = `공유 존 — P${own + 1} ${this.names[own]} 소유(마커 ${white ? '백' : '흑'})`;
+    // 공유 존 마커(양면 — 그 라운드 선공 쪽이 백, 후공 쪽이 흑)를 칸마다(공유 존 1 · 2 — 사용자 지시 2026-10-30) 매트의 주인 토큰 원에 놓고, 공유 존 칸에도 소유를 표시한다.
+    // 마커는 라운드에서 그 칸에 처음 카드를 놓을 때 놓이고, 칸이 비어도 남으며, 상대가 쓰면 뒤집힌다(engine.Game — 사용자 재정 2026-09-30)
+    const owners = shList(st ? st.so : null);
+    SHARED.forEach((_, k) => {
+      const tok = this.q(`.token[data-k="${k}"]`), shz = this.q(`.shz[data-k="${k}"]`), own = owners[k] ?? null;
+      if (own == null) { tok.classList.remove('on', 'black', 'flipping'); shz.classList.remove('on', 'black'); this.tokOwner[k] = null; return; }
+      const white = own === this.firstOf(st, fr.r);
+      if (this.tokOwner[k] == null) tok.style.setProperty('--from', `${own === 0 ? TOKEN_DROP : -TOKEN_DROP}px`);
+      else if (this.tokOwner[k] !== own && animate) { tok.classList.remove('flipping'); void tok.offsetWidth; tok.classList.add('flipping'); }
+      this.tokOwner[k] = own;
+      tok.classList.add('on'); tok.classList.toggle('black', !white);
+      tok.querySelector('.tl').innerHTML = `<span class="nm${own}">P${own + 1}</span>`;
+      tok.title = `공유 존 ${k + 1} 마커 — ${white ? '백(선공 쪽)' : '흑(후공 쪽)'} · P${own + 1} ${this.names[own]} 소유`;
+      shz.classList.add('on'); shz.classList.toggle('black', !white);
+      shz.title = `공유 존 ${k + 1} — P${own + 1} ${this.names[own]} 소유(마커 ${white ? '백' : '흑'})`;
+    });
   }
   chainNumbers(st, fx) {   // 카드 → 체인 번호들 (처리 중인 고리는 남은 체인 다음 번호)
     const m = new Map(), add = (u, n) => m.set(u, (m.get(u) || []).concat(n));
@@ -513,7 +520,7 @@ class Stage {
   select(uid) { this.selected = uid; this.showCard(uid); this.els.forEach((e, u) => e.el.classList.toggle('sel', u === uid)); }
   cellOf(uid) {
     const st = this.stateAt(this.lastRendered); if (!st) return null;
-    const cs = [st.sh, st.fz]; st.P.forEach(P => cs.push(...P.m, ...P.s, P.sk)); return cs.find(c => c && c.u === uid) || null;
+    const cs = [...shList(st.sh), st.fz]; st.P.forEach(P => cs.push(...P.m, ...P.s, P.sk)); return cs.find(c => c && c.u === uid) || null;
   }
   showName(name, extra) {
     const p = this.POOL[name] || this.pool[name]; if (!p) return;
@@ -542,10 +549,10 @@ class Stage {
   setZonePick(zones, onPick) {
     this.clearZonePick();
     this.zp = zones.map((z, i) => {
-      const pos = z.zone === 'shared' ? SHARED : z.zone === 'm' ? Z[z.seat].m(z.i) : Z[z.seat].s(z.i);
+      const pos = z.zone === 'shared' ? SHARED[z.i || 0] : z.zone === 'm' ? Z[z.seat].m(z.i) : Z[z.seat].s(z.i);
       const b = document.createElement('button'); b.className = 'zpick' + (z.zone === 'shared' ? ' sh' : '');
       Object.assign(b.style, {left: (pos.x - SLOT.w / 2) + 'px', top: (pos.y - SLOT.h / 2) + 'px', width: SLOT.w + 'px', height: SLOT.h + 'px'});
-      b.innerHTML = `<span>${z.zone === 'shared' ? '공유 존' : z.i + 1}</span>`; b.title = z.zone === 'shared' ? '공유 존에 놓기' : `${z.zone === 'm' ? '몬스터' : '마법'} 존 ${z.i + 1}에 놓기`;
+      b.innerHTML = `<span>${z.zone === 'shared' ? `공유 존 ${(z.i || 0) + 1}` : z.i + 1}</span>`; b.title = z.zone === 'shared' ? `공유 존 ${(z.i || 0) + 1}에 놓기` : `${z.zone === 'm' ? '몬스터' : '마법'} 존 ${z.i + 1}에 놓기`;
       b.onclick = ev => { ev.stopPropagation(); this.clearZonePick(); onPick(i); };
       this.board.appendChild(b); return b;
     });
