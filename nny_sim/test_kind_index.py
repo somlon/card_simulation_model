@@ -13,6 +13,15 @@ def scan(g, key):
     return [s for s in g.continuous_sources() if getattr(s, key, None)]
 
 
+
+import databug_fixture   # 데이터버그 카드 · 덱(카드 풀에서 보류 중 — 사용자 지시 2026-10-30)을 이 모듈 시험 동안만 넣는다
+
+
+def setUpModule(): databug_fixture.install()
+
+
+def tearDownModule(): databug_fixture.uninstall()
+
 class KindIndexTest(unittest.TestCase):
     def keys(self, g):
         return sorted(g.hook_index()) + ['rule:없는_규칙', 'atk_mod', 'on_event']

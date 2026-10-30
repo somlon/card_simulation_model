@@ -14,6 +14,15 @@ ME = '데이터버그 패키지 프로그램'
 KILLER = '매수당한 킬러'
 
 
+
+import databug_fixture   # 데이터버그 카드 · 덱(카드 풀에서 보류 중 — 사용자 지시 2026-10-30)을 이 모듈 시험 동안만 넣는다
+
+
+def setUpModule(): databug_fixture.install()
+
+
+def tearDownModule(): databug_fixture.uninstall()
+
 class Idle(HeuristicAI):
     """아무 것도 하지 않는 AI (강제 트리거만) — 테스트가 직접 조작한다"""
     def respond(self, g, p, opts): return None
