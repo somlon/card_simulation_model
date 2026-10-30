@@ -21,15 +21,18 @@
 
 ## 다음 회차 지시
 
-기능 v1②(등록 유저제) 완성 — 미등록 거부 게이트 · 접속중 명단 모두 끝(바로 아래 완료 기록 참고).
-다음은 **로비(③)**: 참가/관전/나가기, 재접속 유예, 방 1·듀얼 1. 지금은 매치 시작 때 "사람 대 사람"을
-고르면 매치 ID·참가 키를 화면에서 직접 복사해 말/메신저로 건네야 한다(`g-pvpinfo`/`#g-join-*`) —
-로비가 생기면 이 수동 교환 UI는 로비 흐름(방에 들어오면 자동으로 참가, 떠나면 자동으로 관전/퇴장)으로
-흡수·정리한다. 접속중 명단(`/api/boot`·`/api/heartbeat` 의 `online` 배열, 지금은 이름/IP만)은 로비
-화면에서 "지금 로비에 있는 사람" 목록으로 바로 재사용할 수 있다(좌석별 `LiveMatch` 와는 별개 — 로비는
-매치 밖에서 누가 있는지를 보여주는 자리).
+로비(③) 서버 쪼가리(`/api/room/join`·`/api/room/leave`·`/api/room/status`, 방 1·자리 2명·재접속
+유예) 완성(바로 아래 완료 기록 참고) — **다음은 로비 화면 쪼가리**: `index.html`·`app.js`에 로비
+패널(참가/관전 버튼, 방 인원 표시 — `/api/boot`·`/api/heartbeat` 응답의 `room.members`를 그대로
+씀) 추가. 지금은 room 등록과 실제 매치 시작이 서로 안 이어져 있다 — 이번에 화면을 붙일 때 그 연결도
+자연스럽게 설계할 것(예: room 에 player 2명이 다 모이면 호스트 쪽에 "매치 시작" 버튼이 뜨고,
+시작하면 그 2명이 `/api/match/start`의 `humans`·좌석에 그대로 들어가는 식 — 지금의 수동 매치
+ID·참가 키 복사(`g-pvpinfo`/`#g-join-*`)를 대체). 매치가 끝나면 room 이 자동으로 비워지는지(또는
+그대로 다음 매치를 준비하는 상태로 남는지)도 이번에 정할 것 — 지금은 room 과 `self.live`가 전혀
+연결돼 있지 않아 매치가 끝나도 room 멤버십이 그대로 남는다.
 
-(관전(④)은 로비 다음 — 로비가 "관전" 선택지를 만들면 그 흐름을 타고 ④로 이어간다.)
+(관전(④)은 로비 화면이 "관전" 버튼을 달면 그 흐름을 타고 바로 이어간다 — poll() 이 좌석 없는
+조회엔 이미 pending 을 안 주므로 패 숨김 자체는 서버 쪽에 이미 돼 있음.)
 
 ## 루틴 확인 필요 — 2순위(디스코드 질문 답변) 이번 회차 보류
 
@@ -60,6 +63,35 @@
 - 디스코드 루틴 답변(2순위) 토큰 사용 여부 — 위 "루틴 확인 필요" 참고
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1③ 로비 — 서버 쪼가리(방 참가/관전/나가기 + 재접속 유예 + 자리(player)
+  최대 2). `app/server.py` App 에 `self.room`(ip → {name,role,joined,last_seen}) 추가 — 새 API
+  3개: `/api/room/join`(POST, {name,role}) · `/api/room/leave`(POST) · `/api/room/status`(GET,
+  {members,players,open_seat}). role='player'면 자리를 차지(최대 2명, 가득 차면 400), 'spectator'면
+  관전(인원 제한 없음) — 같은 ip 가 역할을 바꾸면(재접속 시 선택이 바뀐 경우 포함) 그대로 갱신. 재접속
+  유예: `ROOM_GRACE`(90초, `CLIENT_TTL` 45초보다 넉넉히) — 기존 `/api/heartbeat` 가 room 에 있는
+  ip 의 `last_seen` 도 같이 갱신하도록 한 줄 추가해서, 접속이 잠깐 끊겨도 유예 안에서는 자리가 안
+  비워진다(조회할 때마다 `room_gc`가 유예 지난 ip 를 지움). `/api/boot`·`/api/heartbeat` 응답에
+  `room` 필드 추가(기존 필드는 안 건드림). 엔진·룰 레이어, `human.py`, 화면(`static/*`) 전혀 안
+  건드림.
+  재현 테스트 `nny_sim/test_online_lobby.py` 신규(6개): 빈 방 · player 참가 후 boot/room 모두 반영 ·
+  역할을 player→spectator 로 바꾸면 자리가 비워짐 · 자리 2명 가득 차면 3번째 player 거부(관전은
+  허용) · leave · heartbeat 가 유예 안에서 자리를 지켜주는지 · 유예가 지나면 자리가 비는지 — 전부
+  통과. `python -m py_compile app/server.py test_online_lobby.py` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate test_online_clients test_online_lobby -v`(52/53 — scipy 미설치
+  1개는 이전 회차와 동일하게 무관) 실행 확인. 서버 기동(개발 모드, `host='127.0.0.1'`) 후
+  `/api/ping`(토큰 없이 200) → `/api/room/status`(빈 방) → `/api/room/join`(player, 반영) →
+  `/api/boot`·`/api/heartbeat` 양쪽의 `room` 필드 확인 → `/api/room/leave`(다시 빈 방) 수동 curl
+  스모크로 실제 확인. 커밋 `7937015`.
+  **같이 확인한 것**: 1순위(수정 고리) — `online/data-games` 여전히 README.md 뿐 → 해당 없음.
+  2순위(디스코드) — "루틴 확인 필요" 절의 보류가 그대로 유효(토큰 사용 안 함). 3순위(재정질문) —
+  `재정질문/` 여전히 README.md 뿐 → 해당 없음. AI 방식 3안 — `docs/AI_방식_선택지.md` 선택 기록란
+  여전히 비어있음(세창 선택 전까지 착수 안 함).
+  **아직 안 한 것**: room 은 아직 실제 매치 시작·참가와 안 이어져 있다(화면 쪽 로비 UI 를 설계할 때
+  같이 붙이는 게 자연스러움 — 다음 회차 지시 참고) · 매치 종료 시 room 자동 정리도 없음 · 관전(④)의
+  "패 숨김"은 기존 poll() 동작으로 서버 쪽은 이미 충분하지만 화면에서 쓸 수 있는 관전 진입 버튼은
+  없음.
 
 - 2026-10-30 (루틴): 기능 v1② — 접속중 명단(앞 회차가 미룬 나머지 절반). `app/server.py` App 에
   `self.clients`(ip → 마지막 heartbeat 시각) 추가, `connected()` 가 `CLIENT_TTL`(45초 — heartbeat
