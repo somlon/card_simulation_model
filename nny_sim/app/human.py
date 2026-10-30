@@ -11,7 +11,7 @@ import sys, threading
 
 import policy as P
 from ai import HeuristicAI, INTERFERE
-from cards import act_score
+from cards import act_score, value
 
 # 수의 가치를 계산하는 함수 — 이 안에서 불린 고르기는 「가정」이므로 사람에게 묻지 않고 AI와 같은 기본 방식으로 고른다
 # (블록 가치 v_search 가 「이 효과라면 무엇을 서치할까」를 pick_search 로 가정한다 — blocks/lib.py)
@@ -121,6 +121,11 @@ class HumanAI(P.LearnedAI):
         forced: 이미 사람이 다른 화면에서 고른 후보 번호 — 다시 묻지 않고 학습 기록 · 판단 줄만 남긴다(breeding_pick).
         subs · marks: 화면 설명 · 빛낼 카드(_ask) — 같은 이름 카드를 후보로 따로 낼 때. 학습 키는 후보 라벨(카드 이름) 그대로"""
         if not opts: return None
+        # 상대 필드의 뒷면 카드는 이름을 감춘다(사용자 지시 2026-10-30) — 학습 키는 라벨 그대로, 화면 · 판단 줄에는 「뒷면 카드」와 칸
+        if shown is None and any(hidden_card(g, p, o[2]) for o in opts):
+            hid = {o[0]: mask_label(o[0], o[2].name) for o in opts if hidden_card(g, p, o[2])}
+            shown = lambda lab: hid.get(lab, lab)
+            if subs is None: subs = [slot_label(g, p, o[2]) if hidden_card(g, p, o[2]) else None for o in opts]
         me = g.p[p].skill.name; op = g.p[1 - p].skill.name
         base = f'{me} vs {op}|{decision}|'; b = self.bucket(g, p)
         keyed = []
@@ -132,9 +137,10 @@ class HumanAI(P.LearnedAI):
             self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed], subs=subs, marks=marks)
         if self.learn: self.trace.append(keyed[idx][:2])
         if log and len(opts) > 1:
-            g.L(f'판단[{g.pname(p)}] {decision}: → {opts[idx][0]} (사람)', 'decision')
-            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': opts[idx][0], 'why': '사람',
-                                 'opts': [(o[0], keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
+            sh = shown or (lambda lab: lab)
+            g.L(f'판단[{g.pname(p)}] {decision}: → {sh(opts[idx][0])} (사람)', 'decision')
+            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': sh(opts[idx][0]), 'why': '사람',
+                                 'opts': [(sh(o[0]), keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
         return self._rec(g, p, idx, opts)
 
     # ── 제물 · 번식지 (사람이 직접 — AI는 가치가 낮은 제물 · 견제/엔진 안의 우선순위로 골랐다) ──
@@ -188,7 +194,13 @@ class HumanAI(P.LearnedAI):
 
     def pick_target(self, g, p, cands, purpose='remove', any_side=False):
         if evaluating(): return HeuristicAI.pick_target(self, g, p, cands, purpose, any_side)
-        return super().pick_target(g, p, cands, purpose, any_side)
+        if not any(hidden_card(g, p, x) for x in cands): return super().pick_target(g, p, cands, purpose, any_side)
+        # 상대의 뒷면 카드가 후보면 카드마다 따로 낸다 — 이름이 같은 뒷면 카드를 하나로 합치면 같은 카드라는 것이 드러난다(학습 키는 학습표 AI와 같음)
+        pool = cands
+        if any_side: pool = [x for x in cands if x.controller != p] or cands
+        heur = HeuristicAI.pick_target(self, g, p, cands, purpose, any_side)
+        opts = [(f'{"자" if x.controller == p else "상"}:{x.name}@{x.zone}', (10 if x is heur else 0) + value(g, x) * 3, x) for x in pool]
+        return self.choose(g, p, f'대상:{purpose}', opts, scale=20, marks=[rec_uids(g, x) for x in pool])
 
     def choose_mill_deck(self, g, chooser, target, n):
         pl = g.p[target]
@@ -318,13 +330,28 @@ def rec_uids(g, *cards):
     return [rec.reg(c) for c in cards if c is not None] or None
 
 
+HIDDEN_NAME = '뒷면 카드'   # 상대 필드의 뒷면 카드를 사람에게 보일 때의 이름
+
+
+def hidden_card(g, who, x):
+    """x가 who에게 감춰진 카드인가: 상대 필드에 뒷면으로 있는 카드(세트 카드 · 뒷면 수비 몬스터)"""
+    from engine import Card
+    return isinstance(x, Card) and g.on_field(x) and not x.faceup and g.side_of(x) != who
+
+
+def mask_label(lab, name):
+    """후보 라벨 속 카드 이름을 감춘다"""
+    return lab.replace(name, HIDDEN_NAME)
+
+
 def card_label(g, who, x):
     """후보 카드 이름표 — 필드의 카드는 칸 번호까지(같은 이름 몬스터 둘을 구별), 패 · 덱 · 묘지는 이름만(같은 이름은 같은 선택)"""
     s = g.side_of(x); side = '자신' if s == who else '상대'; z = ZONE_LABEL.get(x.zone, x.zone)
     if x.zone in ('m', 's'):
         row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
         if x in row: z += f' {row.index(x) + 1}'
-    return f'{side} {z}: {x.name}' + ('' if x.faceup or s == who else ' (뒷면)')
+    if hidden_card(g, who, x): return f'{side} {z}: {HIDDEN_NAME}'
+    return f'{side} {z}: {x.name}' + ('' if x.faceup else ' (뒷면)')
 
 
 def uniq_cards(g, who, cards):
