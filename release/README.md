@@ -2,11 +2,17 @@
 
 | 파일 | 크기 | SHA-256 |
 | --- | --- | --- |
+| `NNY_Simulator_v1.3.3_win64.zip` | 26.2MB | `00746f58357bdbcd6aad65a66d0592c391b5a700b58ef63d064d3df3ca2de501` |
 | `NNY_Simulator_v1.3.2_win64.zip` | 102.6MB | `6b2f50f9a6af94a017f9efec6d14cac12405c4a6199ad46d4195bf5c37d7599b` |
 | `NNY_Simulator_v1.3.1_win64.zip` | 102.6MB | `b250a112278cfa03c18ecc7156406d759b1a5988cc66c18c9233adc1f790c21d` |
 | `NNY_Simulator_v1.3.0_win64.zip` | 102.6MB | `834fb80f6e2e799fbee7c16b72027ec2b9ee730b0ed63b5d89f7ac9ad3b9469d` |
 | `NNY_Simulator_v1.1.0_win64.zip` | 90.4MB | `03494a7326a55510087a823d0216c5b50f5cde08f9f5281e98b1f88c58d43731` |
 | `NNY_Simulator_v1.0.0_win64.zip` | 90.3MB | `7bc238f0036939468c22a09b5061030f037c5acbb9f15c527435a058c2aa0a0f` |
+
+**v1.3.3 (2026-10-30)** — 데이터버그 테마 카드 23장 · 그 덱을 고칠 때까지 카드 풀에서 뺌(177장 · 덱 10개), 맵 형태 변경으로 학습 데이터 백지 — 학습표 · 전략 덱 교체표는 빈 표,
+기본 신경망은 학습하지 않은 초기 가중치(그래서 zip 이 26.2MB로 작아짐 — 대전별 학습표 73MB 가 비었음). 코드 `claude/vibrant-euler-jekich` aef9b27(+ `app/databug-free-tests` 3cd0042),
+엔진 `model/databug-fixture` 46bd5b5(`model/shared-zones` 위), 데이터 `data/reset-learning` 669ac2d, 기본 재생 기록 `release/library_v1.3.3`(v1.3.2 의 65매치 중 데이터버그 12매치를 빼고 백지 AI로 53매치 다시 녹화).
+검증: wine 9.0 그대로 빌드 — heuristic_test 통과(나 vs 휴리스틱 · AI끼리 관전 · 녹화 · 학습) / 시험용 shim 사본 — nn_backend(백지 기본 모델 대전 · 신경망 학습 · 기본 모델로 되돌리기) 정상.
 
 **v1.3.2 (2026-10-30)** — 필드: 몬스터 존 3칸(예전 1 · 3 · 5번 자리) · 공유 존 2칸(칸마다 마커, 예전 스킬 존 자리) · 스킬 존은 1 · 5번 몬스터 존 위 · 필드 존은 가운데(매트 v2),
 대전 중 상대 세트(뒷면) 카드 이름 감춤, 학습 데이터 판단 단위 정리. 코드 `claude/vibrant-euler-jekich` aa836bb(app/hide-set-cards · app/decision-curation · app/shared-zones 병합),
