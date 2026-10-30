@@ -281,5 +281,11 @@ table.t td.n{text-align:right;font-variant-numeric:tabular-nums}
 .msgs{font-size:12.5px;margin-top:8px;display:flex;flex-direction:column;gap:2px;max-height:160px;overflow:auto}
 .bigtxt{font-size:13px;color:#cfd6e4;line-height:1.6}
 .bigtxt code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+/* 인게임 메신저(수다) — 방 전체 공용 채팅 1개, 로비 패널과 같은 자리(3테마 공용 변수만 사용) */
+.chatlog{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow:auto;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.chatlog .msg{padding:2px 0;word-break:break-word}
+.chatlog .msg .who{font-weight:700;color:var(--accent);margin-right:5px}
+.chatlog .msg .t{color:var(--dim);font-size:10.5px;margin-left:6px}
+.chatlog .empty{color:var(--dim)}
 .progress{height:8px;background:#1d2538;border-radius:999px;overflow:hidden}
 .progress b{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}

@@ -144,7 +144,7 @@ class Store:
         return {'title': m.get('title') or ' vs '.join(m['names']), 'names': m['names'], 'decks': m['decks'], 'winner': m.get('winner'),
                 'kind': m.get('kind', 'ai'), 'created': m.get('created', ''), 'seed': m.get('seed'), 'frames': len(rec['frames']),
                 'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done'),
-                'memos': len(rec.get('memos') or [])}
+                'memos': len(rec.get('memos') or []), 'chat': len(rec.get('chat') or [])}
 
     def save_replay(self, rec, base=None, rid=None):
         base = base or os.path.join(self.dir, 'replays')
@@ -339,7 +339,7 @@ class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리 여부 — bool(좌석0만) 또는 (좌석0, 좌석1) 튜플(사람vs사람).
     사람 자리마다 Bridge 가 따로 있다(self.bridges) — 사람vs사람이면 좌석마다 참가 키(self.keys)로 poll · answer 를 묶는다"""
 
-    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title=''):
+    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='', chat_fn=None):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names
         self.humans = tuple(bool(x) for x in human) if isinstance(human, (tuple, list)) else (bool(human), False)
         self.human = any(self.humans)   # 사람 자리가 하나 이상 있는가(기존 코드 호환)
@@ -348,6 +348,9 @@ class LiveMatch:
         self.bridges = [Bridge(), Bridge()]; self.keys = [secrets.token_hex(8) if h else None for h in self.humans]
         self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
+        # 인게임 메신저(수다+로그 수집) — 방 전체 채팅 중 이 매치가 떠 있던 구간(start_ts~end_ts)만 기보에 묶어 올린다.
+        # chat_fn(start_ts, end_ts) 는 App.chat_between 재사용(새 저장소 없음) — 안 주어지면(RecordJob 등) 그냥 안 붙는다.
+        self.chat_fn = chat_fn; self.start_ts = time.time(); self.end_ts = None
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self): self.thread.start(); return self
@@ -395,7 +398,12 @@ class LiveMatch:
                     self.learned = len(self.table.deltas)
                     if self.store.settings().get('auto_push'): threading.Thread(target=self.store.auto_push, daemon=True).start()
                 if self.rec.frames:
-                    self.replay_id = 'u:' + self.store.save_replay(self.replay_dict())
+                    self.end_ts = time.time()
+                    rec = self.replay_dict()
+                    if self.chat_fn:   # 매치가 떠 있던 구간(start_ts~end_ts)에 온 채팅만 — chat_between 이 그 필터를 함
+                        try: rec['chat'] = self.chat_fn(self.start_ts, self.end_ts)
+                        except Exception: pass
+                    self.replay_id = 'u:' + self.store.save_replay(rec)
                     if self.store.settings().get('push_games'):
                         threading.Thread(target=self.store.push_game, args=(self.replay_id,), daemon=True).start()
             except Exception:

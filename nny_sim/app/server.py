@@ -1,6 +1,7 @@
 """서버 — 게임 화면(static/)과 API. 하마치 어댑터 IP(25.x)에만 열고, 실행마다 새로 만드는 토큰을 요구한다(다른 웹사이트의 호출 차단).
 온라인판: 사람vs사람 대전은 좌석(0·1)마다 Bridge 가 따로 있고, 참가 키로 poll · answer 를 그 좌석에만 묶는다(session.LiveMatch 참고)."""
 import json, mimetypes, os, re, secrets, socket, subprocess, sys, threading, time, traceback
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -14,6 +15,8 @@ VERSION = '1.1.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 CLIENT_TTL = 45          # 접속중 명단: 이만큼(초) heartbeat 가 없으면 끊긴 것으로 본다(heartbeat 주기 20초의 2배 이상)
 ROOM_GRACE = 90          # 로비(방) 재접속 유예: 이만큼(초) heartbeat 가 없어야 자리를 비운다(CLIENT_TTL 보다 넉넉히 — 잠깐 끊겨도 자리 유지)
+CHAT_MAX = 200           # 인게임 메신저: 메시지 1개 최대 글자 수(room_join 의 name[:40] 과 같은 식의 사람 입력 캡)
+CHAT_BUFFER = 200        # 인게임 메신저: 메모리 링버퍼에 유지하는 최근 메시지 수(프로세스 수명 동안만 — 그 이상은 push_game 으로 넘어가야 남음)
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
 
@@ -63,6 +66,8 @@ class App:
         self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
         self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 2
         self.live_ips = {}  # 로비에서 시작한 사람vs사람 매치의 ip -> 좌석(0|1) — 상대 화면이 매치 ID·참가 키를 수동으로 받지 않고 스스로 찾아 들어가게 함
+        self.chat = deque(maxlen=CHAT_BUFFER)  # 인게임 메신저: 방 전체 공용 채팅 1개(매치별 구분 없음) — 최근 CHAT_BUFFER개만 메모리에(프로세스 수명 동안만)
+        self.chat_seq = 0   # 끊기지 않고 늘어나는 메시지 id — 링버퍼에서 오래된 메시지가 밀려나도 커서(마지막으로 받은 id) 비교는 계속 올바름
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
 
@@ -85,13 +90,13 @@ class App:
         if not self.live or self.live.status not in ('starting', 'running'): return None
         return {'id': self.live.id, 'names': self.live.names, 'title': self.live.title}
 
-    def heartbeat(self, ip):
+    def heartbeat(self, ip, chat_from=0):
         self.last_beat = time.time()
         if ip:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
         return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip),
-                'live_info': self.live_info(), 'commit': self.commit}
+                'live_info': self.live_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from)}
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -131,6 +136,30 @@ class App:
         self.room.pop(ip, None)
         return self.room_status()
 
+    # ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — "방 1·듀얼 1"이라 매치별로 나눌 이유가 없다(room 참가자끼리) ──
+    def chat_post(self, ip, text):
+        """방(room)에 있는 사람만(참가·관전 모두) 쓸 수 있다 — room_join 으로 먼저 들어와야 함.
+        읽기는 따로 안 막는다(heartbeat/boot 로 누구나 받음 — 화면이 어차피 로비 패널 옆에 두므로 room 참가가 자연스러운 전제)."""
+        m = self.room.get(ip)
+        if not m: raise ValueError('방에 참가해야 채팅할 수 있습니다.')
+        text = (text or '').strip()
+        if not text: raise ValueError('빈 메시지는 보낼 수 없습니다.')
+        if len(text) > CHAT_MAX: raise ValueError(f'메시지가 너무 깁니다({CHAT_MAX}자 이하로 적어 주세요).')
+        self.chat_seq += 1
+        msg = {'id': self.chat_seq, 'who': m['name'] or ip, 'text': text, 't': int(time.time() * 1000)}
+        self.chat.append(msg)
+        return msg
+
+    def chat_since(self, from_id=0):
+        """heartbeat/boot 응답에 끼워 보낼 새 메시지만(기존 f_from/s_from/c_from 커서 패턴과 같음) — 매 호출마다 전체를 다시 보내지 않음."""
+        from_id = from_id or 0
+        return [m for m in self.chat if m['id'] > from_id]
+
+    def chat_between(self, start_ts, end_ts):
+        """기능 v1⑥ 기보 수집 경로 재사용 — 그 매치가 돌고 있던 시간(초, time.time()) 사이에 온 채팅만 묶어 같이 올린다."""
+        lo, hi = int(start_ts * 1000), int(end_ts * 1000)
+        return [m for m in self.chat if lo <= m['t'] <= hi]
+
     def my_match(self, ip):
         """로비(방)에서 짝지어 시작한 매치라면, 이 ip 가 매치 ID·참가 키를 묻지 않고도 자기 좌석을 그대로 받는다.
         로비를 거치지 않고(수동으로) 시작한 사람vs사람 매치는 live_ips 가 비어 있으므로 여기서 항상 None(기존 수동 키
@@ -165,7 +194,8 @@ class App:
             names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]}'
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
-                                 learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title).start()
+                                 learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
+                                 chat_fn=self.chat_between).start()
         seats = {i: self.live.keys[i] for i in (0, 1) if self.live.humans[i]}
         # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 방에 player 가 정확히 둘 · 시작한 ip 가 그 둘 중 하나) 상대 ip 를
         # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
@@ -199,7 +229,7 @@ class App:
         self.jobs[job.id] = job
         return job.info()
 
-    def boot(self, ip=None):
+    def boot(self, ip=None, chat_from=0):
         return {'version': VERSION, 'token_ok': True, 'decks': self.store.deck_list(),
                 'skills': sorted(n for n, c in POOL.items() if c['type'] == '스킬'), 'settings': self.store.settings(),
                 'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces'],
@@ -207,7 +237,8 @@ class App:
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
-                'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit}
+                'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit,
+                'chat': self.chat_since(chat_from)}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
@@ -217,7 +248,7 @@ class App:
     # ── 요청 처리 ──
     def route(self, method, path, q, body, ip=None):
         g = lambda k, d=None: (q.get(k) or [d])[0]
-        if path == '/api/boot': return self.boot(ip)
+        if path == '/api/boot': return self.boot(ip, int(g('chat_from', 0) or 0))
         if path == '/api/pool': return self.pool
         if path == '/api/decks': return self.store.deck_list()
         if path == '/api/deck':
@@ -262,10 +293,11 @@ class App:
                       'learning': os.path.dirname(self.store.log_path)}.get(body.get('what'))
             if target and hasattr(os, 'startfile'): os.startfile(target)
             return {'ok': bool(target), 'path': target}
-        if path == '/api/heartbeat': return self.heartbeat(ip)
+        if path == '/api/heartbeat': return self.heartbeat(ip, int(body.get('chat_from', 0) or 0))
         if path == '/api/room/status': return self.room_status()
         if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'))
         if path == '/api/room/leave': return self.room_leave(ip)
+        if path == '/api/room/chat': return self.chat_post(ip, body.get('text'))
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)

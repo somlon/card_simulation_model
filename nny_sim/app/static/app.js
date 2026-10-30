@@ -270,7 +270,28 @@ $('lobby-join').onclick = async () => {
 $('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
 $('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
-function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); }).catch(() => {}); }
+
+// ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
+// 보내기만 새 호출(/api/room/chat) 하나 추가. 매치별이 아니라 room 전체인 이유: "방 1·듀얼 1" 이라 나눌 의미가 없음.
+let chatCursor = 0;   // 마지막으로 화면에 그린 메시지 id — f_from/s_from/c_from 과 같은 커서 패턴
+function appendChatMsg(m) {
+  const el = $('chat-log'); if (!el) return;
+  const hm = new Date(m.t).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'});
+  el.insertAdjacentHTML('beforeend', `<div class="msg"><span class="who">${esc(m.who)}</span>${esc(m.text)}<span class="t">${hm}</span></div>`);
+  el.scrollTop = el.scrollHeight;
+}
+function renderChatNew(list) {
+  for (const m of (list || [])) { if (m.id <= chatCursor) continue; appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
+}
+$('chat-send').onclick = async () => {
+  const text = $('chat-text').value.trim(); if (!text) return;
+  try { const m = await api('room/chat', {text}); $('chat-text').value = ''; appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
+  catch (e) { toast(e.message); }
+};
+$('chat-text').addEventListener('keydown', e => { if (e.key === 'Enter') $('chat-send').click(); });
+renderChatNew(BOOT.chat);
+
+function beat() { api('heartbeat', {chat_from: chatCursor}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); renderChatNew(r.chat); }).catch(() => {}); }
 setInterval(beat, 20000); beat();
 showRoom(BOOT.room); checkMyMatch(BOOT.my_match); checkSpectate(BOOT.live_info);
 

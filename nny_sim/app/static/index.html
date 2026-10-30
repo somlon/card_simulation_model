@@ -83,6 +83,14 @@
       </div>
       <div class="muted" id="lobby-list"></div>
     </div>
+    <div class="panel" id="g-chat" style="margin-bottom:12px">
+      <h2 class="sec">채팅(방 전체 — 참가·관전 모두)</h2>
+      <div class="chatlog" id="chat-log"></div>
+      <div class="row2" style="margin-top:6px">
+        <input type="text" id="chat-text" placeholder="메시지(방에 참가·관전 중이어야 보낼 수 있습니다, 최대 200자)" maxlength="200" style="flex:1">
+        <button class="btn sm primary" id="chat-send">보내기</button>
+      </div>
+    </div>
     <div class="panel" id="g-setup" style="margin-bottom:12px">
       <div class="row2" style="gap:14px;align-items:flex-end">
         <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option><option value="pvp">사람 대 사람</option></select></div>
