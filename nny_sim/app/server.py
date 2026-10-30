@@ -98,9 +98,14 @@ class App:
         return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip),
                 'live_info': self.live_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from)}
 
+    def _ip_names(self):
+        """online_users.json 을 ip → 등록 이름으로 거꾸로 뒤집은 것(이름 → ip 인 _users() 를 접속중 명단 ·
+        로비 · 채팅이 전부 같은 식으로 표시에 쓴다 — 한곳에 모아 중복을 없앤다, R6)."""
+        return {ip: name for name, ip in self._users().items()}
+
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
-        names = {ip: name for name, ip in self._users().items()}
+        names = self._ip_names()
         now = time.time()
         rows = [{'ip': ip, 'name': names.get(ip, ip)} for ip, last in self.clients.items() if now - last <= CLIENT_TTL]
         return sorted(rows, key=lambda r: r['name'])
@@ -113,14 +118,18 @@ class App:
 
     def room_status(self):
         self.room_gc()
-        names = {ip: name for name, ip in self._users().items()}
+        names = self._ip_names()
         rows = [{'ip': ip, 'name': names.get(ip, m['name']), 'role': m['role']} for ip, m in self.room.items()]
         players = [r for r in rows if r['role'] == 'player']
         return {'members': sorted(rows, key=lambda r: (r['role'] != 'player', r['name'])),
                 'players': len(players), 'open_seat': len(players) < 2}
 
     def room_join(self, ip, name, role):
-        """방 참가(참가=player 자리 요청, 관전=spectator) — 이미 있던 사람의 재접속·역할 변경도 같은 호출로 처리한다"""
+        """방 참가(참가=player 자리 요청, 관전=spectator) — 이미 있던 사람의 재접속·역할 변경도 같은 호출로 처리한다.
+        등록된 하마치 유저(online_users.json)면 로비에서 직접 타이핑한 이름을 무시하고 등록 이름을 그대로 쓴다
+        (「다음 회차 지시」 2번 — 이러면 room_status() 뿐 아니라 채팅 발신자 이름(chat_post 의 m['name'])도
+        자동으로 등록 이름과 맞는다, 새 네트워크 호출·새 필드 없음). 미등록 IP는 기존 그대로 직접 타이핑한
+        이름을 쓴다(등록 게이트가 비활성일 때도 로비는 그대로 동작해야 하므로)."""
         self.room_gc()
         role = role if role in ('player', 'spectator') else 'spectator'
         cur = self.room.get(ip)
@@ -128,7 +137,8 @@ class App:
             if sum(1 for pip, m in self.room.items() if m['role'] == 'player' and pip != ip) >= 2:
                 raise ValueError('방 자리가 이미 가득 찼습니다(2명) — 관전으로 들어가 주세요')
         now = time.time()
-        self.room[ip] = {'name': (name or '').strip()[:40] or (cur['name'] if cur else ip), 'role': role,
+        reg = self._ip_names().get(ip)
+        self.room[ip] = {'name': reg or (name or '').strip()[:40] or (cur['name'] if cur else ip), 'role': role,
                           'joined': cur['joined'] if cur else now, 'last_seen': now}
         return self.room_status()
 

@@ -84,6 +84,36 @@ class RoomLobbyTest(unittest.TestCase):
         st, body = req(self.base, self.token, 'GET', '/api/room/status')
         self.assertEqual(body, {'members': [], 'players': 0, 'open_seat': True}, '유예가 지나면 자리를 비워야 한다')
 
+    def write_users(self, **ip_by_name):
+        """등록 유저 파일(online_users.json, 이름→IP) — test_user_gate.py 와 같은 방식."""
+        os.makedirs(self.paths['user'], exist_ok=True)
+        with open(os.path.join(self.paths['user'], 'online_users.json'), 'w', encoding='utf-8') as f:
+            json.dump(ip_by_name, f, ensure_ascii=False)
+
+    def test_registered_ip_join_uses_registered_name_not_typed(self):
+        # 「다음 회차 지시」 2번 — 등록된 유저가 로비에서 다른 이름을 타이핑해도 등록 이름이 그대로 쓰인다
+        self.write_users(장인준='127.0.0.1')
+        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '아무개', 'role': 'player'})
+        self.assertEqual(st, 200, body)
+        self.assertEqual(body['members'], [{'ip': '127.0.0.1', 'name': '장인준', 'role': 'player'}])
+
+    def test_unregistered_ip_join_keeps_typed_name(self):
+        # 게이트 비활성(등록 없음) 상태에서는 기존 그대로 직접 타이핑한 이름을 쓴다
+        # (등록이 있으면 게이트가 서서 미등록 IP 자체가 403 으로 막히므로 — test_user_gate.py 참고 —
+        # "등록 있음 + 이 IP 는 미등록" 조합은 room_join 전에 이미 걸러져 room_join 단계까지 오지 않는다)
+        self.write_users(_설명='이름:하마치IP')  # 메타 키만, 실제 등록 없음 → 게이트 비활성
+        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '아무개', 'role': 'player'})
+        self.assertEqual(st, 200, body)
+        self.assertEqual(body['members'], [{'ip': '127.0.0.1', 'name': '아무개', 'role': 'player'}])
+
+    def test_registered_name_flows_into_chat_sender(self):
+        # 로비 이름이 등록 이름으로 맞춰지면, 인게임 메신저의 발신자(who)도 직접 타이핑에 의존하지 않고 자동으로 맞는다
+        self.write_users(장인준='127.0.0.1')
+        req(self.base, self.token, 'POST', '/api/room/join', {'name': '아무개', 'role': 'player'})
+        st, msg = req(self.base, self.token, 'POST', '/api/room/chat', {'text': '안녕'})
+        self.assertEqual(st, 200, msg)
+        self.assertEqual(msg['who'], '장인준')
+
 
 if __name__ == '__main__':
     unittest.main()
