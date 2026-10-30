@@ -2,8 +2,17 @@
 
 | 파일 | 크기 | SHA-256 |
 | --- | --- | --- |
+| `NNY_Simulator_v1.3.0_win64.zip` | 102.6MB | `834fb80f6e2e799fbee7c16b72027ec2b9ee730b0ed63b5d89f7ac9ad3b9469d` |
 | `NNY_Simulator_v1.1.0_win64.zip` | 90.4MB | `03494a7326a55510087a823d0216c5b50f5cde08f9f5281e98b1f88c58d43731` |
 | `NNY_Simulator_v1.0.0_win64.zip` | 90.3MB | `7bc238f0036939468c22a09b5061030f037c5acbb9f15c527435a058c2aa0a0f` |
+
+**v1.3.0 (2026-10-30)** — AI끼리 관전 · 녹화에서 자리(P1 · P2)마다 AI 종류(학습표 · 신경망 · 휴리스틱 — 다른 종류의 AI끼리 대전),
+AI끼리 대전도 학습 데이터로(학습 기록 `ai_games.jsonl` · 신경망 표본 · 내보내기 · GitHub 올리기), 사람 대전 데이터 3배 가중치(학습표 · 신경망 · 저장소 합치기),
+「학습 데이터 정리」(출처 · 덱 · AI 종류로 걸러 매치마다 빼기/넣기), 학습하는 휴리스틱 AI(전술은 규칙, 전략 판단은 학습표로 고르고 학습).
+코드 `claude/vibrant-euler-jekich` 708ff76(= `app/heuristic-learning` 5b84ddd ← `app/learning-data` f06b864 ← `app/ai-kinds-per-seat` 3b8777a + 읽어보기),
+엔진 `model/table-weights` 6fb94be(`model/main` 74c285e + Table.update 가중), 데이터 `data/main` · 기본 신경망 `data/drl-base-v2` a57e839, 기본 재생 기록 `release/library_v1.2.1`, numpy 2.4.6(PyPI 공식 휠).
+검증: wine 9.0 그대로 빌드 — 신경망 기능만 꺼지고 AI끼리 관전(휴리스틱 vs 학습표) · 나 vs 휴리스틱 AI · 녹화 · 학습 데이터 정리 · 내보내기 정상 /
+시험용 shim 사본(`tests/wine_numpy`) — 휴리스틱 vs 신경망 관전 · 신경망 학습(사람 대전 119 · AI끼리 221 표본) · 신경망 내보내기 정상.
 
 **v1.1.0 (2026-10-29)** — 사람 자리에서 카드 효과 처리 중의 하위 선택(선택지 · 소환할 몬스터 · 카운터 · 종류별 코스트 · 공개할 카드 · 재배치 · 뒤집기 · 덱에서 묘지로 · 효과 변경 여부 등)을 직접 고름,
 라운드 사이 사람 전략 덱 교체(넣을 카드 → 뺄 카드, AI와 같은 교체 규칙 · 덱 규칙 재검사). 재생 화면 시각화 개선(공유 존 마커 흑백 코인 · 재생 약 1.6배 느리게 · 공격/효과 화살표 · 오른쪽 체인 순서 — 1번이 위)도 포함.
