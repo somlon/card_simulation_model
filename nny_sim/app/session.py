@@ -327,10 +327,10 @@ AI_KINDS = ('table', 'nn', 'heuristic')   # AI 대전 · 녹화에서 고를 수
 
 class LearningHeuristicAI(P.LearnedAI):
     """학습하는 휴리스틱 AI. 전술(발동 · 대응 · 트리거 · 공격 · 대상 · 서치 · 버릴 카드 · 소환 표시 형식 등)은 ai.HeuristicAI 규칙 그대로(덱 지침 · 카드 우선순위),
-    전략(STRATEGY — 시작 패 배분 · 멀리건 재배분 · 멀리건 · 드로우 덱 · 2 · 3라운드 선후공 · 번식지)은 학습표 AI와 같은 키 · 사전값으로 학습표 값을 보고 고르고,
+    전략(STRATEGY — 시작 패 배분 · 멀리건 재배분 · 멀리건 · 드로우 덱 · 2 · 3라운드 선후공 · 번식지 · 같은 타이밍 효과의 체인 순서)은 학습표 AI와 같은 키 · 사전값으로 학습표 값을 보고 고르고,
     학습을 켜면 그 결과를 학습표에 더한다 — 학습 기록 · 출처 · 가중치 · 제외는 다른 AI와 같다(learndata). 학습표에 기록이 없으면 사전값(휴리스틱 판단)이 이긴다.
     ai.BREEDING(전역 번식지 표)은 쓰지 않는다(번식지도 학습표 키). 전략 덱 교체는 다른 AI와 같은 규칙(match.side_swap)"""
-    STRATEGY = ('choose_split', 'mulligan_split', 'mulligan', 'choose_draw_deck', 'choose_first', 'first_result', 'breeding_pick')
+    STRATEGY = ('choose_split', 'mulligan_split', 'mulligan', 'choose_draw_deck', 'choose_first', 'first_result', 'breeding_pick', 'order_triggers')
     LEARNER = ('choose', 'end_game', 'bucket', 'split_opts')   # 학습표 판단 · 학습 장치(LearnedAI 그대로)
 
 
@@ -384,7 +384,7 @@ class LiveMatch:
             def make_ai(d):
                 seat = d['_seat']; kind = kinds[seat]
                 if self.human and seat == 0: ai = HumanAI(d['스킬'], self.bridge, table, learn=self.learn, hints=self.hints)
-                elif kind == 'nn': ai = NA.make_ai(d['스킬'], actor, table)
+                elif kind == 'nn': ai = NA.make_ai(d['스킬'], actor, table, learn=self.learn)
                 elif kind == 'heuristic': ai = LearningHeuristicAI(d['스킬'], learn=self.learn, table=table)
                 else: ai = P.LearnedAI(d['스킬'], learn=self.learn, table=table)
                 return tap.attach(ai, seat, table) if tap and hasattr(ai, 'choose') else ai   # 학습표 판단(choose)이 있는 자리 — 휴리스틱 AI는 전략 판단만
