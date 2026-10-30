@@ -229,7 +229,7 @@
 
 ## 진행 중
 
-- **【진행 중 — 2026-10-30】 데이터버그 카드풀 제외 · 학습 데이터 · 모델 백지 (사용자 지시 2026-10-30 「1. 데이터버그는 이후에 수정할게 일단은 카드풀에서 해당 테마 카드들을 모두 제외해줘 2. 이제 맵 형태도 바뀌어서 모든 ai모델들을 재학습시키려고 해. 그동안 깃허브에 쌓아둔 데이터들을 모두 리셋해서 .exe 파일에서 쓰이는 모델들을 완전히 백지 상태로」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
+- **【완료 — 2026-10-30, 후속 사용자 확인】 데이터버그 카드풀 제외 · 학습 데이터 · 모델 백지 (사용자 지시 2026-10-30 「1. 데이터버그는 이후에 수정할게 일단은 카드풀에서 해당 테마 카드들을 모두 제외해줘 2. 이제 맵 형태도 바뀌어서 모든 ai모델들을 재학습시키려고 해. 그동안 깃허브에 쌓아둔 데이터들을 모두 리셋해서 .exe 파일에서 쓰이는 모델들을 완전히 백지 상태로」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「데이터버그 제외 · 학습 리셋 자동 이어하기(매시)」(trig_019GUdgb836udJvJ8gL9JFHX, 매시 3분, 세션 session_018FeffBC56PKX6NFvddesKB — 2026-10-30 인계로 새로 만듦; 옛 루틴 trig_011DrwtwDt45ssLP5SZR5udb 는 끔).
   - 조사: .exe 가 쓰는 학습 데이터 = learned/policy.json.xz(대전별 학습표로 나눔) · learned/side.json(전략 덱 교체) · learned/drl/base_v2/model_best.npz(기본 신경망) ·
     learned/breeding_ground.json(저장소에 없음 — 이미 빈 것). 데이터버그 = 테마 23장(스킬 포함) · 덱 「시제_데이터버그_패키지_프로그램」 · learned/decks 레시피.
@@ -247,6 +247,11 @@
       ⑥ 보고(data/human-games-ksc 원격 브랜치는 지우지 않음 · DECK_POLICY/SPLIT_BY_MATCHUP 손 규칙 값은 기본값과 같아 둠 · 열린 PR #105 · #106 · #110 ~ #113) · 루틴 끄기.
     - 2026-10-30 (새 세션 session_018FeffBC56PKX6NFvddesKB) ① ~ ③ 완료 — `app/databug-free-tests`(app/shared-zones 위) 2dcaed6(앱 시험 4개 데이터버그 덱 → 호박옥 덱, 5개 앱 시험 통과) ·
       3cd0042(make_library --rerecord 가 없어진 덱 매치 건너뜀). ② 빈 학습표 split = 덱 0 · 키 0, matchup_table 정상. ③ 기본 재생 기록 53매치(65 − 데이터버그 12, 백지 AI, 체인 점검 0) /home/user/appsim/library133. 다음: ④ 빌드.
+    - 2026-10-30 **완료** — ④ 통합 `claude/vibrant-euler-jekich` aef9b27(app/databug-free-tests 병합 · VERSION 1.3.3 · 읽어보기), **v1.3.3** `exp/windows-app` 9f5bfb5
+      release/NNY_Simulator_v1.3.3_win64.zip(26.2MB — 대전별 학습표가 비어 작아짐, SHA-256 00746f58…e501) + release/library_v1.3.3 · 채팅창 전달.
+      wine 9.0: 그대로 빌드 heuristic_test 통과 / shim 사본 nn_backend(백지 기본 모델 대전 · 학습 · 되돌리기) 정상.
+      ⑤ PR **#114** data/reset-learning → data/main · **#115** model/databug-fixture → model/main(#110 위) · **#116** app/databug-free-tests → app/main(#111 위).
+      ⑥ 보고 · 루틴 trig_019GUdgb836udJvJ8gL9JFHX 끔. 후속(사용자): 머지 순서 #110 → #115, #111 → #116, #114 / 데이터버그 수정 뒤 보류 자료 되돌리기 / 백지 모델 재학습 / 실제 Windows 확인.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 세트 카드 정보 감춤 · 학습 데이터 판단 단위 정리 · 공유 존 2칸 (사용자 지시 2026-10-30 「1. 대전에서 세트 카드의 정보가 보이는 걸 안보이게 2. 학습시킬 데이터를 … 판단 단위로 데이터를 빼고 고를 수 있게 3. 공유존을 두 칸으로 늘리고 각 플레이어의 2,4번 몬스터 존을 제거 … 공유 존 위치는 현재의 스킬 카드 존, 스킬 카드 존은 P1 시점 기준 1,5번 몬스터 존 위쪽, 원래 공유존 위치에는 필드 카드 존 / PR 올리고 .ZIP 업로드」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「세트 카드 감춤 · 판단 단위 정리 · 공유 존 2칸 자동 이어하기(매시)」(trig_016wacR5jEQBEjHV4xjvEy8N, 매시 31분).
