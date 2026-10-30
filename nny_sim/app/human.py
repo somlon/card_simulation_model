@@ -203,10 +203,26 @@ class HumanAI(P.LearnedAI):
     def choose_triggers(self, g, p, cands):
         out = []
         for c, e, ev in cands:
-            if e.mandatory: out.append((c, e, ev)); continue
-            if self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', act_score(g, c, e, p, ev, 1), True), ('안 함', 0, False)]):
-                out.append((c, e, ev))
-        return out
+            s = act_score(g, c, e, p, ev, 1)
+            if e.mandatory: out.append((max(s, 1.0), c, e, ev)); continue
+            if self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', s, True), ('안 함', 0, False)]):
+                out.append((s, c, e, ev))
+        return [(c, e, ev) for _, c, e, ev in self.order_triggers(g, p, out)]
+
+    def order_triggers(self, g, p, items):
+        """같은 타이밍에 발동할 효과가 2개 이상이면 선언 순서를 사람이 정한다(사용자 지시 2026-10-30): 「다음에 선언할 효과」를 하나씩 고르고,
+        먼저 고른 것이 낮은 체인 번호(나중에 처리). 학습표 AI 와 같은 판단 키(LearnedAI.ORDER_DECISION × 「카드#번호」)라 사람의 순서도 학습된다.
+        화면 설명(sub)에 체인 번호 · 있는 곳 · 효과 종류. 가치 계산(가정) 안이면 휴리스틱 순서"""
+        rest = HeuristicAI.order_triggers(self, g, p, items)
+        if len(rest) < 2 or evaluating(): return rest
+        out = []; base = len(getattr(g, 'chain', None) or ())
+        while len(rest) > 1:
+            k = len(rest)
+            opts = [(f'{c.name}#{e.num}', 5.0 * (k - j) / k, j) for j, (_, c, e, _) in enumerate(rest)]
+            subs = [f'체인 {base + len(out) + 1}로 선언 · {where_label(g, p, c)} · {KIND_LABEL.get(e.kind, e.kind)}' for _, c, e, _ in rest]
+            i = self.choose(g, p, P.LearnedAI.ORDER_DECISION, opts, subs=subs, marks=[rec_uids(g, c) for _, c, _, _ in rest])
+            out.append(rest.pop(i))
+        return out + rest
 
     def respond(self, g, p, opts):
         cand = [('패스', 0, None)]; seen = set(); subs = [None]; marks = [None]
@@ -290,6 +306,15 @@ ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '
 def split_labels(n):
     """후보 라벨 「메인 k」 → 화면 이름표 「메인 k / 상급 n-k」"""
     return lambda lab: f'{lab} / 상급 {n - int(lab.split()[-1])}'
+
+
+KIND_LABEL = {'trigger': '[트리거]', 'lastwill': '[유언]', 'summon': '[소환]', 'battle': '[전투]'}   # 같은 타이밍에 발동하는 효과 종류(engine.Game.triggers)
+
+
+def where_label(g, who, x):
+    """카드가 있는 곳 — 필드면 칸(slot_label), 아니면 「자신 묘지」 · 「자신 패」 등"""
+    if g.on_field(x): return slot_label(g, who, x)
+    return ('자신 ' if x.owner == who else '상대 ') + ZONE_LABEL.get(x.zone, x.zone or '')
 
 
 def slot_label(g, who, x):
