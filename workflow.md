@@ -230,7 +230,7 @@
 ## 진행 중
 
 - **【진행 중 — 2026-10-30】 데이터버그 카드풀 제외 · 학습 데이터 · 모델 백지 (사용자 지시 2026-10-30 「1. 데이터버그는 이후에 수정할게 일단은 카드풀에서 해당 테마 카드들을 모두 제외해줘 2. 이제 맵 형태도 바뀌어서 모든 ai모델들을 재학습시키려고 해. 그동안 깃허브에 쌓아둔 데이터들을 모두 리셋해서 .exe 파일에서 쓰이는 모델들을 완전히 백지 상태로」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
-  - 매시 루틴 「데이터버그 제외 · 학습 데이터 리셋 자동 이어하기(매시)」(trig_011DrwtwDt45ssLP5SZR5udb, 매시 56분).
+  - 매시 루틴 「데이터버그 제외 · 학습 리셋 자동 이어하기(매시)」(trig_019GUdgb836udJvJ8gL9JFHX, 매시 3분, 세션 session_018FeffBC56PKX6NFvddesKB — 2026-10-30 인계로 새로 만듦; 옛 루틴 trig_011DrwtwDt45ssLP5SZR5udb 는 끔).
   - 조사: .exe 가 쓰는 학습 데이터 = learned/policy.json.xz(대전별 학습표로 나눔) · learned/side.json(전략 덱 교체) · learned/drl/base_v2/model_best.npz(기본 신경망) ·
     learned/breeding_ground.json(저장소에 없음 — 이미 빈 것). 데이터버그 = 테마 23장(스킬 포함) · 덱 「시제_데이터버그_패키지_프로그램」 · learned/decks 레시피.
     엔진 시험 7개 파일 · 앱 시험 4개가 데이터버그 카드를 씀. 사람 대전 기록 브랜치 data/human-games-ksc 는 .exe 에 들어가지 않음.
