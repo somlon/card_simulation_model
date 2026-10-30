@@ -1,39 +1,25 @@
-"""4차원 주머니 — NNY 프로젝트 비서 디스코드 봇 (표준 라이브러리만, REST 폴링).
+"""4차원 주머니 — NNY 프로젝트 비서 디스코드 봇 (슬래시 커맨드, discord.py).
 
-- 아무 채널에서 암호 번호를 치면 1시간 동안 메뉴 사용 가능.
-- 메뉴: 1 진행 상황 / 2 최근 업데이트 / 3 접속 방법 / 4 재정질문 목록
-  (전부 공개 리포(online/main)를 읽어서 답함 — Claude 호출 없음, 즉답)
-- `?` 로 시작하는 글 = 자유 질문 접수 → 매시간 클라우드 루틴이 답변을 닮.
-- 토큰·암호는 리포가 아니라 로컬 파일(%LOCALAPPDATA%/NNY_Simulator/discord.json)에 둔다.
+- 슬래시 커맨드는 응답이 **자기한테만 보임(ephemeral)** — 채널을 더럽히지 않는 안내문.
+- 게이트웨이 연결이라 **메시지/명령에 실시간 반응**(폴링 아님).
+- 메뉴/조회(진행·업데이트·접속·재정)는 리포를 읽어 봇이 즉답.
+- `?...` 또는 /질문 은 자유 질문 — 기본은 접수(online/data-games 에 쌓고 Claude 루틴이 처리).
+  환경변수 ANTHROPIC_API_KEY 가 있으면 그 자리에서 Claude 로 즉답한다(선택, 별도 과금).
 
-실행: python tools/discord_bot.py   (바탕화면 NNY디코봇.bat 참조)
+토큰·설정: %LOCALAPPDATA%/NNY_Simulator/discord.json  (token, 암호[미사용], guild_id 선택)
+실행: py -3.12 tools/discord_bot.py
 """
-import json, os, time, urllib.request, urllib.error
+import json, os, time, urllib.request
+import discord
+from discord import app_commands
 
 CFG = os.path.join(os.environ.get('LOCALAPPDATA', '.'), 'NNY_Simulator', 'discord.json')
 cfg = json.load(open(CFG, encoding='utf-8-sig'))
-TOK, PW = cfg['token'], str(cfg.get('암호', '17225'))
-API = 'https://discord.com/api/v10'
+TOKEN = cfg['token']
+GUILD_ID = int(cfg.get('guild_id') or 1514441529257623662)
+API_KEY = os.environ.get('ANTHROPIC_API_KEY', '').strip()
 RAW = 'https://raw.githubusercontent.com/somlon/card_simulation_model/online/main/'
 GH = 'https://api.github.com/repos/somlon/card_simulation_model/'
-HDR = {'Authorization': 'Bot ' + TOK, 'User-Agent': 'DiscordBot (nny, 1.0)', 'Content-Type': 'application/json'}
-
-
-def req(url, body=None, hdr=None):
-    r = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
-                               headers=hdr or HDR, method='POST' if body is not None else 'GET')
-    try:
-        with urllib.request.urlopen(r, timeout=15) as f:
-            return json.load(f)
-    except urllib.error.HTTPError as e:
-        if e.code == 429:
-            time.sleep(float(json.load(e).get('retry_after', 2))); return req(url, body, hdr)
-        raise
-
-
-def say(ch, text):
-    for part in [text[i:i + 1900] for i in range(0, len(text), 1900)] or ['']:
-        req(f'{API}/channels/{ch}/messages', {'content': part})
 
 
 def fetch(url):
@@ -41,17 +27,24 @@ def fetch(url):
 
 
 def 진행():
-    t = fetch(RAW + 'NNY%EC%98%A8%EB%9D%BC%EC%9D%B8_%EC%A7%84%ED%96%89.md')
-    return '📋 **진행 상황** (NNY온라인_진행.md 머리)\n' + '\n'.join(t.splitlines()[:30])
+    try:
+        t = fetch(RAW + 'NNY%EC%98%A8%EB%9D%BC%EC%9D%B8_%EC%A7%84%ED%96%89.md')
+        return '📋 **진행 상황** (NNY온라인_진행.md 머리)\n' + '\n'.join(t.splitlines()[:28])
+    except Exception as e:
+        return f'(진행 문서를 못 읽었어요: {e})'
 
 
 def 커밋():
-    cs = json.loads(fetch(GH + 'commits?sha=online/main&per_page=5'))
-    return '🔄 **최근 업데이트**\n' + '\n'.join(f"- {c['commit']['message'].splitlines()[0]} ({c['commit']['committer']['date'][:10]})" for c in cs)
+    try:
+        cs = json.loads(fetch(GH + 'commits?sha=online/main&per_page=6'))
+        return '🔄 **최근 업데이트**\n' + '\n'.join(f"- {c['commit']['message'].splitlines()[0]} ({c['commit']['committer']['date'][:10]})" for c in cs)
+    except Exception as e:
+        return f'(커밋을 못 읽었어요: {e})'
 
 
 def 접속():
-    return ('🎮 **접속 방법**\n1) 하마치 설치 → 네트워크 참가: `new_card_game` / 비번 `17225`\n'
+    return ('🎮 **접속 방법**\n'
+            '1) 하마치 설치 → 네트워크 참가: 이름 `new_card_game` / 비번 `17225`\n'
             '2) 인준이 서버 켠 상태에서 브라우저로 http://25.0.242.63:8899/\n'
             '3) 미등록이면 인준에게 자기 하마치 IP(25.x) 알려주고 등록 요청')
 
@@ -66,98 +59,89 @@ def 재정():
             '\n(답변은 깃허브 재정질문/ 파일에 직접 적으면 루틴이 반영)')
 
 
-MENU = ('🗂 **4차원 주머니 메뉴**\n`1` 진행 상황 · `2` 최근 업데이트 · `3` 접속 방법 · `4` 재정질문\n'
-        '자유 질문은 `?질문내용` — 매시간 Claude 루틴이 답을 달아줘요')
+MENU = ('🗂 **4차원 주머니** — 명령은 전부 나한테만 보여요\n'
+        '`/진행` 진행 상황 · `/업데이트` 최근 커밋 · `/접속` 게임 접속법 · `/재정` 재정질문\n'
+        '`/질문 <내용>` 또는 채널에 `?내용` — 프로젝트 관련 자유 질문')
 
 
-def handle(content, author_id, authed):
-    # 암호 없음(사용자 지시 2026-10-30) — 초대제 서버라 서버 입장 자체가 문이다.
-    c = content.strip()
-    if not c:
-        return None   # 빈 내용(인텐트 꺼짐 포함)에는 반응하지 않는다
-    if c.startswith('?'):
-        return '📨 질문 접수! 매시간 루틴이 확인하고 이 채널에 답을 달아줘요.'
-    if c in ('메뉴', 'menu', PW):
-        return MENU
+def ask_claude(q):
+    """ANTHROPIC_API_KEY 가 있을 때만. 프로젝트 비서 역할로 즉답."""
+    if not API_KEY:
+        return None
+    sys_p = ('너는 「뉴네오 유희왕」 온라인판 프로젝트의 디스코드 비서야. 세창의 NNY 시뮬레이터 기반으로 '
+             '하마치 접속 온라인 대전·관전·룰미스 메모·AI를 만드는 중. 리포는 somlon/card_simulation_model '
+             'online/main. 프로젝트 관련 질문에만 한국어로 짧고 정확히 답하고, 모르면 모른다고 해. '
+             '프로젝트 밖 질문은 정중히 거절.')
+    body = json.dumps({'model': 'claude-sonnet-5', 'max_tokens': 500, 'system': sys_p,
+                       'messages': [{'role': 'user', 'content': q}]}).encode()
+    r = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
+                               headers={'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'})
     try:
-        return {'1': 진행, '2': 커밋, '3': 접속, '4': 재정}.get(c, lambda: None)()
+        d = json.load(urllib.request.urlopen(r, timeout=40))
+        return ''.join(b.get('text', '') for b in d.get('content', []))
     except Exception as e:
-        return f'(조회 실패: {e})'
+        return f'(Claude 호출 실패: {e})'
 
 
+def 질문접수(author, text):
+    """자유 질문 — 즉답 가능하면 Claude, 아니면 접수 안내. (접수 기록은 게이트웨이 on_message 에서)"""
+    ans = ask_claude(text)
+    if ans:
+        return '💬 ' + ans
+    return ('📨 질문 접수! 지금은 즉답용 Claude 키가 안 붙어 있어서, 매 회차(최대 1시간) 도는 '
+            'Claude 루틴이 이 채널에 답을 달아줘요. 즉답을 켜려면 인준이 봇에 API 키를 넣으면 돼요.')
 
 
-from discord_intro import INTRO
+intents = discord.Intents.default()
+intents.message_content = True
+client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
+GUILD = discord.Object(id=GUILD_ID)
 
 
-def setup_once():
-    """봇이 서버에 처음 들어온 뒤 1회: 서버 이름 변경 + 소개글 게시·고정."""
-    mark = os.path.join(os.path.dirname(CFG), 'discord_setup_done.txt')
-    if os.path.exists(mark):
-        return
-    gs = req(f'{API}/users/@me/guilds')
-    if not gs:
-        return
-    g = gs[0]
+@client.event
+async def on_ready():
     try:
-        r = urllib.request.Request(f"{API}/guilds/{g['id']}", data=json.dumps({'name': '뉴네오 유희왕'}).encode(),
-                                   headers=HDR, method='PATCH')
-        urllib.request.urlopen(r, timeout=15).read()
-        print('서버 이름 → 뉴네오 유희왕')
+        tree.copy_global_to(guild=GUILD)
+        await tree.sync(guild=GUILD)
+        print('로그인:', client.user, '| 슬래시 커맨드 동기화 완료 (guild', GUILD_ID, ')')
     except Exception as e:
-        print('(서버 이름 변경 불가 — 권한 부족일 수 있음)', e)
-    chs = [c for c in req(f"{API}/guilds/{g['id']}/channels") if c['type'] == 0]
-    if chs:
-        m = req(f'{API}/channels/{chs[0]["id"]}/messages', {'content': INTRO})
+        print('커맨드 동기화 실패:', e)
+
+
+def reg(name, desc, fn):
+    async def _cmd(interaction: discord.Interaction):
+        await interaction.response.send_message(fn(), ephemeral=True)
+    _cmd.__name__ = 'cmd_' + name
+    tree.command(name=name, description=desc, guild=GUILD)(_cmd)
+
+
+reg('메뉴', '사용법 안내 (나만 보임)', lambda: MENU)
+reg('진행', '프로젝트 진행 상황 (나만 보임)', 진행)
+reg('업데이트', '최근 커밋 내역 (나만 보임)', 커밋)
+reg('접속', '게임 접속 방법 (나만 보임)', 접속)
+reg('재정', '재정질문 목록 (나만 보임)', 재정)
+
+
+@tree.command(name='질문', description='프로젝트 관련 자유 질문 (나만 보임)', guild=GUILD)
+@app_commands.describe(내용='물어볼 내용')
+async def 질문_cmd(interaction: discord.Interaction, 내용: str):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    await interaction.followup.send(질문접수(interaction.user.display_name, 내용), ephemeral=True)
+
+
+@client.event
+async def on_message(m):
+    if m.author.bot:
+        return
+    c = (m.content or '').strip()
+    if c.startswith('?') and len(c) > 1:
+        # 채널에 ?로 올린 자유 질문 — 작성자에게만 보이게 할 수 없으니(일반 메시지) 짧게 채널 답.
         try:
-            r = urllib.request.Request(f'{API}/channels/{chs[0]["id"]}/pins/{m["id"]}', headers=HDR, method='PUT')
-            urllib.request.urlopen(r, timeout=15).read()
-            print('소개글 게시 + 고정 완료')
-        except Exception as e:
-            print('소개글 게시 완료 (고정 실패 — 권한 부족)', e)
-    open(mark, 'w').write('done')
-
-
-def main():
-    me = req(f'{API}/users/@me'); my_id = me['id']
-    print('봇 로그인:', me['username'])
-    last = {}; authed = {}; chans = []; tick = 0
-
-    def rescan():
-        nonlocal chans
-        setup_once()
-        found = []
-        for g in req(f'{API}/users/@me/guilds'):
-            found += [c['id'] for c in req(f"{API}/guilds/{g['id']}/channels") if c['type'] == 0]
-        for ch in found:
-            if ch not in last:
-                ms = req(f'{API}/channels/{ch}/messages?limit=1')
-                last[ch] = ms[0]['id'] if ms else '0'
-        if len(found) != len(chans):
-            print('감시 채널', len(found), '개')
-        chans = found
-
-    rescan()
-    print('폴링 시작 (서버 초대가 아직이면 60초마다 재탐색, Ctrl+C 종료)')
-    while True:
-        tick += 1
-        if not chans or tick % 20 == 0:
-            try:
-                rescan()
-            except Exception:
-                pass
-        for ch in chans:
-            try:
-                ms = req(f'{API}/channels/{ch}/messages?after={last[ch]}&limit=10')
-            except Exception:
-                continue
-            for m in reversed(ms):
-                last[ch] = max(last[ch], m['id'], key=int)
-                if m['author'].get('id') == my_id or m['author'].get('bot'): continue
-                out = handle(m.get('content', ''), m['author']['id'], authed)
-                if out: say(ch, out)
-        time.sleep(3)
+            await m.channel.send(f'{m.author.mention} ' + 질문접수(m.author.display_name, c[1:].strip()))
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
-    main()
+    client.run(TOKEN)
