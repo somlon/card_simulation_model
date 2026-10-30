@@ -62,7 +62,8 @@ function repLabel(r) {
   const win = r.winner == null ? (r.status === 'done' ? '무승부' : r.status) : (r.names[r.winner] + ' 승');
   const score = r.rounds && r.rounds.length ? ` (${r.rounds.filter(x => x[0] === 0).length}–${r.rounds.filter(x => x[0] === 1).length})` : '';
   // 학습표 AI가 아닌 AI가 둔 매치는 AI 종류를 덧붙인다(meta.ai = P1 · meta.ai2 = P2 — session.LiveMatch)
-  const kinds = [...new Set([r.kind === 'human' ? null : r.ai, r.ai2].filter(k => k && k !== 'table'))].map(k => k === 'heuristic' ? '휴리스틱 AI' : k.startsWith('nn') ? '신경망 AI' : k);
+  const nm = k => k === 'heuristic' ? '휴리스틱 AI' : k.startsWith('nn') ? '신경망 AI' : k === 'table' ? '학습표 AI' : k;
+  const kinds = r.kind === 'human' ? (r.ai2 && r.ai2 !== 'table' ? [nm(r.ai2)] : []) : r.ai2 ? [`${nm(r.ai || 'table')} vs ${nm(r.ai2)}`] : r.ai && r.ai !== 'table' ? [nm(r.ai)] : [];
   return {t: r.title, s: `${r.source === 'library' ? '기본 제공' : r.kind === 'human' ? '내 대전' : '내 녹화'}${kinds.length ? ' · ' + kinds.join(' · ') : ''} · ${win}${score} · ${r.created || ''}`};
 }
 function repById(id) { return BOOT.replays.find(r => r.id === id); }
@@ -141,7 +142,7 @@ function playlistNext(auto) { if (W.idx < 0 || !$('pl-auto').checked) return; se
 $('r-b').selectedIndex = Math.min(1, $('r-b').options.length - 1);
 let jobT = null;
 $('r-go').onclick = async () => {
-  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai_kind: $('r-ai').value}); W.job = j.id; watchJob(); }
+  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value}); W.job = j.id; watchJob(); }
   catch (e) { toast(e.message); }
 };
 $('r-stop').onclick = () => W.job && api('jobs/stop', {id: W.job});
@@ -161,7 +162,8 @@ stages.play = new Stage($('g-stage'), {assets, pool: POOL, onCaughtUp: () => dra
 ['g-deck', 'g-ai'].forEach(id => deckOptions($(id)));
 $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
-$('g-mode').onchange = () => { const h = $('g-mode').value === 'human'; $('g-mylabel').textContent = h ? '내 덱' : 'P1 덱'; $('g-learn').disabled = !h; $('g-hints').disabled = !h; };
+$('g-mode').onchange = () => { const h = $('g-mode').value === 'human'; $('g-mylabel').textContent = h ? '내 덱' : 'P1 덱'; $('g-learn').disabled = !h; $('g-hints').disabled = !h;
+  $('g-aikind0-f').hidden = h; $('g-aikind-lab').textContent = h ? 'AI 종류' : 'P2 AI 종류'; };   // AI vs AI 관전은 자리마다 AI 종류
 const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false};
 const decBox = () => $('g-stage').querySelector('.dec');
 $('g-start').onclick = async () => {
@@ -169,14 +171,14 @@ $('g-start').onclick = async () => {
   try {
     const human = $('g-mode').value === 'human';
     const r = await api('match/start', {mode: human ? 'human' : 'ai', deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
-                                        learn: $('g-learn').checked, hints: $('g-hints').checked, ai_kind: $('g-aikind').value});
+                                        learn: $('g-learn').checked, hints: $('g-hints').checked, ai_kind: $('g-aikind').value, ai0_kind: $('g-aikind0').value});
     G.id = r.id; G.pending = null; G.done = false; G.human = human;
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
     stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, human);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
-    const kind = $('g-aikind').value;
-    $('g-status').textContent = `대전 중: ${r.title}` + (kind === 'nn' ? ` · 신경망 AI(${BOOT.nn && BOOT.nn.using === 'local' ? '내 모델' : '기본 모델'})` : kind === 'heuristic' ? ' · 휴리스틱 AI' : '')
+    const kinds = human ? [$('g-aikind').value] : [$('g-aikind0').value, $('g-aikind').value];
+    $('g-status').textContent = `대전 중: ${r.title} · ` + kinds.map((k, i) => (human ? '' : `P${i + 1} `) + aiKindName(k)).join(' vs ')
       + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
@@ -410,7 +412,11 @@ $('g-learn').onchange = () => api('settings', {learn: $('g-learn').checked}).cat
 const NN = {st: BOOT.nn, timer: null};
 const pct = v => v == null ? '–' : (v * 100).toFixed(1) + '%';
 const num = v => v == null ? '–' : (+v).toFixed(3);
-function nnAvail() { const o = $('g-aikind').querySelector('option[value=nn]'); o.disabled = !(NN.st && NN.st.available); if (o.disabled && $('g-aikind').value === 'nn') $('g-aikind').value = 'table'; }
+function nnAvail() {   // 신경망 기능을 쓸 수 없으면 모든 AI 종류 고르기에서 「신경망 AI」를 막는다
+  const ok = !!(NN.st && NN.st.available);
+  document.querySelectorAll('select.aikind').forEach(sel => { const o = sel.querySelector('option[value=nn]'); if (o) o.disabled = !ok; if (!ok && sel.value === 'nn') sel.value = 'table'; });
+}
+function aiKindName(k) { return k === 'nn' ? `신경망 AI(${BOOT.nn && BOOT.nn.using === 'local' ? '내 모델' : '기본 모델'})` : k === 'heuristic' ? '휴리스틱 AI' : '학습표 AI'; }
 function nnMetrics(t, title) {
   if (!t) return '';
   const row = (lab, a, b, f, tip) => `<tr title="${tip}"><td>${lab}</td><td class="n">${f(a)}</td><td class="n">${f(b)}</td></tr>`;

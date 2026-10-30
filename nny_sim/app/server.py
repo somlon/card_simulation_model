@@ -11,7 +11,6 @@ import nnai as NA
 import tables as T
 
 VERSION = '1.2.2'
-RECORD_AI = ('table', 'heuristic')   # 녹화(AI끼리) — 양쪽 같은 AI. 신경망 AI는 「AI 대전 → AI vs AI 관전」의 P2로
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
@@ -50,17 +49,22 @@ class App:
             a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
             names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]}'
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
-        ai_kind = j.get('ai_kind', 'table'); nn_model = None; nn_label = ''
-        if ai_kind not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {ai_kind}')
-        if ai_kind == 'nn':
-            if not self.nn.ready(): raise ValueError('신경망 AI를 쓸 수 없습니다: ' + self.nn.np_msg)
-            nn_model = self.nn.current_path()
-            nn_label = 'local' if nn_model == NA.local_path(self.store.dir) else 'base'
+        ai_kind = j.get('ai_kind', 'table'); ai0_kind = j.get('ai0_kind', 'table') if mode != 'human' else 'table'
+        nn_model, nn_label = self.nn_choice(ai_kind, ai0_kind)
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=(mode == 'human'), seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
-                                 ai_kind=ai_kind, nn_model=nn_model, nn_label=nn_label,
+                                 ai_kind=ai_kind, ai0_kind=ai0_kind, nn_model=nn_model, nn_label=nn_label,
                                  nn_record=mode == 'human' and self.nn.ready()).start()
         return {'id': self.live.id, 'names': names, 'title': title}
+
+    def nn_choice(self, *kinds):
+        """자리별 AI 종류 확인 → (신경망 모델 파일, 'local' · 'base') — 신경망 AI 자리가 없으면 (None, '')"""
+        for k in kinds:
+            if k not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
+        if 'nn' not in kinds: return None, ''
+        if not self.nn.ready(): raise ValueError('신경망 AI를 쓸 수 없습니다: ' + self.nn.np_msg)
+        m = self.nn.current_path()
+        return m, 'local' if m == NA.local_path(self.store.dir) else 'base'
 
     def start_record(self, j):
         pairs = []
@@ -70,10 +74,11 @@ class App:
             x, y = self.deck_label(a, da), self.deck_label(b, db)
             pairs.append(((da, db), [x, y] if x != y else [f'{x} (P1)', f'{y} (P2)']))
         if not pairs: raise ValueError('대진이 없습니다')
-        ai_kind = j.get('ai_kind', 'table')
-        if ai_kind not in RECORD_AI: raise ValueError(f'녹화에 쓸 수 없는 AI 종류: {ai_kind}')
+        ai_kind = j.get('ai_kind', 'table'); ai0_kind = j.get('ai0_kind', ai_kind)
+        nn_model, nn_label = self.nn_choice(ai_kind, ai0_kind)
         job = SS.RecordJob(self.store, self.p['split'], pairs, matches=max(1, min(20, int(j.get('matches', 1)))),
-                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind)
+                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind, ai0_kind=ai0_kind,
+                           nn_model=nn_model, nn_label=nn_label)
         self.jobs[job.id] = job
         return job.info()
 

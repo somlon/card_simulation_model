@@ -32,7 +32,8 @@ header.top select{margin-left:auto;max-width:min(520px,100%)}
 const $ = id => document.getElementById(id), esc = NNY.esc;
 const stage = new NNY.Stage($('stage'), {assets: ASSETS, pool: {}, url: rel => rel});   // 이미지는 파일 안의 data URI
 document.addEventListener('keydown', e => stage.key(e));
-const aiName = ai => ai === 'table' ? '학습표 AI' : ai === 'heuristic' ? '휴리스틱 AI' : ai;
+const aiName = ai => ai === 'table' ? '학습표 AI' : ai === 'heuristic' ? '휴리스틱 AI' : String(ai).startsWith('nn') ? '신경망 AI' : ai;
+const aiLine = M => M.ai2 ? `P1 ${aiName(M.ai)} vs P2 ${aiName(M.ai2)}` : `양쪽 ${aiName(M.ai)}`;   // 자리마다 AI 종류가 다르면(meta.ai2) 자리별로
 function result(M, names) {
   if (M.stalled) return '1000턴 안전장치로 중단';
   const w = [0, 1].map(s => M.rounds.filter(r => r.winner === s).length);
@@ -42,7 +43,7 @@ function load(k) {
   const R = REPLAYS[k], M = R.meta, N = M.names;
   stage.stop(); stage.load(R);
   $('title').textContent = `${N[0]} vs ${N[1]}`;
-  $('meta').textContent = `Bo3 매치 · 시드 ${M.seed} · 양쪽 ${aiName(M.ai)} · 결과: ${result(M, N)}${R.built ? ' · 생성 ' + R.built : ''}`;
+  $('meta').textContent = `Bo3 매치 · 시드 ${M.seed} · ${aiLine(M)} · 결과: ${result(M, N)}${R.built ? ' · 생성 ' + R.built : ''}`;
   stage.fit();
 }
 const sel = $('matchSel');
