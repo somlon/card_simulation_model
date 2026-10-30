@@ -13,6 +13,7 @@ import tables as T
 VERSION = '1.1.0'
 IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으면 서버를 끈다(창을 닫은 경우) — 녹화 작업 중에는 끄지 않음
 CLIENT_TTL = 45          # 접속중 명단: 이만큼(초) heartbeat 가 없으면 끊긴 것으로 본다(heartbeat 주기 20초의 2배 이상)
+ROOM_GRACE = 90          # 로비(방) 재접속 유예: 이만큼(초) heartbeat 가 없어야 자리를 비운다(CLIENT_TTL 보다 넉넉히 — 잠깐 끊겨도 자리 유지)
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
 
@@ -47,6 +48,7 @@ class App:
         self.token = secrets.token_hex(16)
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
         self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
+        self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 2
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
 
@@ -65,8 +67,10 @@ class App:
 
     def heartbeat(self, ip):
         self.last_beat = time.time()
-        if ip: self.clients[ip] = time.time()
-        return {'ok': True, 'online': self.connected()}
+        if ip:
+            self.clients[ip] = time.time()
+            if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
+        return {'ok': True, 'online': self.connected(), 'room': self.room_status()}
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -74,6 +78,37 @@ class App:
         now = time.time()
         rows = [{'ip': ip, 'name': names.get(ip, ip)} for ip, last in self.clients.items() if now - last <= CLIENT_TTL]
         return sorted(rows, key=lambda r: r['name'])
+
+    # ── 로비(방): 참가/관전/나가기, 재접속 유예, 방 1·자리(player) 최대 2 ──
+    def room_gc(self):
+        """ROOM_GRACE 를 넘겨 heartbeat 가 끊긴 자리를 비운다(재접속 유예 — 끝나야 남의 차례가 됨)"""
+        now = time.time()
+        for ip in [ip for ip, m in self.room.items() if now - m['last_seen'] > ROOM_GRACE]: del self.room[ip]
+
+    def room_status(self):
+        self.room_gc()
+        names = {ip: name for name, ip in self._users().items()}
+        rows = [{'ip': ip, 'name': names.get(ip, m['name']), 'role': m['role']} for ip, m in self.room.items()]
+        players = [r for r in rows if r['role'] == 'player']
+        return {'members': sorted(rows, key=lambda r: (r['role'] != 'player', r['name'])),
+                'players': len(players), 'open_seat': len(players) < 2}
+
+    def room_join(self, ip, name, role):
+        """방 참가(참가=player 자리 요청, 관전=spectator) — 이미 있던 사람의 재접속·역할 변경도 같은 호출로 처리한다"""
+        self.room_gc()
+        role = role if role in ('player', 'spectator') else 'spectator'
+        cur = self.room.get(ip)
+        if role == 'player' and (not cur or cur['role'] != 'player'):
+            if sum(1 for pip, m in self.room.items() if m['role'] == 'player' and pip != ip) >= 2:
+                raise ValueError('방 자리가 이미 가득 찼습니다(2명) — 관전으로 들어가 주세요')
+        now = time.time()
+        self.room[ip] = {'name': (name or '').strip()[:40] or (cur['name'] if cur else ip), 'role': role,
+                          'joined': cur['joined'] if cur else now, 'last_seen': now}
+        return self.room_status()
+
+    def room_leave(self, ip):
+        self.room.pop(ip, None)
+        return self.room_status()
 
     # ── 덱 이름 · 대전 시작 ──
     def deck_label(self, did, d):
@@ -132,7 +167,8 @@ class App:
                            'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
-                'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected()}
+                'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
+                'room': self.room_status()}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
@@ -186,6 +222,9 @@ class App:
             if target and hasattr(os, 'startfile'): os.startfile(target)
             return {'ok': bool(target), 'path': target}
         if path == '/api/heartbeat': return self.heartbeat(ip)
+        if path == '/api/room/status': return self.room_status()
+        if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'))
+        if path == '/api/room/leave': return self.room_leave(ip)
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)
