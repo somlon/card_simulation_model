@@ -64,7 +64,18 @@ check('휴리스틱 AI끼리 녹화', info['status'] == 'done' and len(reps) == 
       f'({info["status"]} · {[x["status"] for x in info["items"]]})')
 lst = [r for r in app.store.replays() if r.get('ai') == 'heuristic' or r.get('ai2') == 'heuristic']
 check('재생 목록 정보에 AI 종류', len(lst) >= 6, f'({len(lst)}개)')
+# 다른 종류의 AI끼리(자리별 AI 종류): 녹화 P1 휴리스틱 vs P2 학습표 · 관전 P1 휴리스틱 vs P2 휴리스틱 아님
+job = app.route('POST', '/api/record', {}, {'pairs': [['o:세제', 'o:올인']], 'matches': 1, 'ai0_kind': 'heuristic', 'ai_kind': 'table'})
+t0 = time.time()
+while app.jobs[job['id']].status == 'running' and time.time() - t0 < 600: time.sleep(0.5)
+info = app.jobs[job['id']].info(); r = app.store.replay(info['items'][0]['replay_id']) if info['items'] and info['items'][0]['replay_id'] else None
+nm = r['meta']['names'] if r else ['', '']
+check('다른 종류의 AI끼리 녹화(P1 휴리스틱 · P2 학습표)', r and r['meta']['ai'] == 'heuristic' and r['meta'].get('ai2') == 'table'
+      and not any(TABLE_STYLE in m for m in ai_lines(r, nm[0])) and any(TABLE_STYLE in m for m in ai_lines(r, nm[1])), f'({info["status"]})')
+res = play({'mode': 'ai', 'deck': 'o:번성충-대발생', 'ai_deck': 'o:희생제', 'first': 'me', 'seed': 6, 'ai0_kind': 'heuristic', 'ai_kind': 'table'})
+rep = app.store.replay(res['replay_id']) if res.get('replay_id') else None
+check('다른 종류의 AI끼리 관전(P1 휴리스틱 · P2 학습표)', rep and rep['meta']['ai'] == 'heuristic' and rep['meta'].get('ai2') == 'table', f'({res["status"]})')
 try:
-    app.route('POST', '/api/record', {}, {'pairs': [['o:세제', 'o:올인']], 'ai_kind': 'nn'}); check('녹화는 학습표 · 휴리스틱만', False)
-except ValueError as ex: check('녹화는 학습표 · 휴리스틱만', True, f'({ex})')
+    app.route('POST', '/api/record', {}, {'pairs': [['o:세제', 'o:올인']], 'ai_kind': 'random'}); check('알 수 없는 AI 종류는 거절', False)
+except ValueError as ex: check('알 수 없는 AI 종류는 거절', True, f'({ex})')
 print('결과:', '통과' if ok else '실패'); sys.exit(0 if ok else 1)
