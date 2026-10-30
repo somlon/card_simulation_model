@@ -28,8 +28,6 @@ function showOnline(list) {
   el.textContent = '접속중 ' + list.length + '명'; el.title = list.map(c => c.name).join(', ');
 }
 showOnline(BOOT.online || []);
-function beat() { api('heartbeat', {}).then(r => showOnline(r.online || [])).catch(() => {}); }
-setInterval(beat, 20000); beat();
 
 // ── 탭 ──
 let stages = {};
@@ -172,8 +170,10 @@ $('g-mode').onchange = () => {
   $('g-learn').disabled = mode !== 'human'; $('g-hints').disabled = mode !== 'human';
 };
 const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null};
+let lobbyRole = null, viaLobby = false;  // 로비(방) 참가 상태 — 매치 시작(로비) 로 시작했으면 상대가 매치 ID·키를 몰라도 스스로 들어온다
 const decBox = () => $('g-stage').querySelector('.dec');
 $('g-start').onclick = async () => {
+  const auto = viaLobby; viaLobby = false;
   if (G.id && !G.done && !confirm('진행 중인 대전을 그만두고 새로 시작할까요?')) return;
   try {
     const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'human' ? [true, false] : [false, false];
@@ -187,7 +187,9 @@ $('g-start').onclick = async () => {
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
     $('g-status').textContent = `대전 중: ${r.title}` + (mode === 'human' && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
     if (mode === 'pvp' && r.seats[1]) {
-      $('g-pvpinfo').innerHTML = `상대에게 매치 ID <code id="g-pvpid">${esc(r.id)}</code> 와 참가 키 <code id="g-pvpkey">${esc(r.seats[1])}</code> 를 알려 주세요(좌석1로 들어옵니다).`;
+      $('g-pvpinfo').innerHTML = auto
+        ? '로비 상대가 자동으로 들어옵니다(최대 20초 정도 걸릴 수 있습니다).'
+        : `상대에게 매치 ID <code id="g-pvpid">${esc(r.id)}</code> 와 참가 키 <code id="g-pvpkey">${esc(r.seats[1])}</code> 를 알려 주세요(좌석1로 들어옵니다).`;
     } else { $('g-pvpinfo').textContent = ''; }
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
@@ -208,6 +210,35 @@ $('g-join').onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 $('g-abort').onclick = async () => { if (!confirm('대전을 그만둘까요? (끝낸 라운드까지는 기록 · 학습됩니다)')) return; await api('match/abort', {}); };
+
+// ── 로비(방): 참가/관전/나가기 + 둘 다 모이면 자동 매치 연결 ──
+function showRoom(r) {
+  if (!r) return;
+  $('lobby-list').textContent = r.members.length
+    ? r.members.map(m => `${m.name}(${m.role === 'player' ? '참가' : '관전'})`).join(', ') : '방이 비었습니다.';
+  $('lobby-start').disabled = !(lobbyRole === 'player' && r.players === 2);
+}
+function checkMyMatch(m) {
+  if (!m || G.id === m.id) return;   // 이미 이 매치에 있으면(내가 시작한 쪽이거나 이미 들어온 뒤) 다시 건드리지 않음
+  G.id = m.id; G.pending = null; G.done = false; G.human = true; G.seat = m.seat; G.key = m.key;
+  stages.play.ended = false;
+  stages.play.startLive(m.names, {decks: ['', '']}, G.seat);
+  stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
+  $('g-pvpinfo').textContent = '';
+  $('g-status').textContent = `참가함(로비): ${m.title} · 내 좌석 ${m.seat}`;
+  clearTimeout(G.poll); pollLive();
+}
+$('lobby-join').onclick = async () => {
+  try { lobbyRole = 'player'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'player'})); }
+  catch (e) { lobbyRole = null; toast(e.message); }
+};
+$('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
+$('lobby-leave').onclick = async () => { lobbyRole = null; showRoom(await api('room/leave', {})); };
+$('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
+function beat() { api('heartbeat', {}).then(r => { showOnline(r.online || []); showRoom(r.room); checkMyMatch(r.my_match); }).catch(() => {}); }
+setInterval(beat, 20000); beat();
+showRoom(BOOT.room); checkMyMatch(BOOT.my_match);
+
 async function pollLive() {
   if (!G.id) return;
   const st = stages.play;

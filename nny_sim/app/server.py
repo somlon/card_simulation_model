@@ -49,6 +49,7 @@ class App:
         self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
         self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
         self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 2
+        self.live_ips = {}  # 로비에서 시작한 사람vs사람 매치의 ip -> 좌석(0|1) — 상대 화면이 매치 ID·참가 키를 수동으로 받지 않고 스스로 찾아 들어가게 함
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
 
@@ -70,7 +71,7 @@ class App:
         if ip:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
-        return {'ok': True, 'online': self.connected(), 'room': self.room_status()}
+        return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip)}
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -110,11 +111,20 @@ class App:
         self.room.pop(ip, None)
         return self.room_status()
 
+    def my_match(self, ip):
+        """로비(방)에서 짝지어 시작한 매치라면, 이 ip 가 매치 ID·참가 키를 묻지 않고도 자기 좌석을 그대로 받는다.
+        로비를 거치지 않고(수동으로) 시작한 사람vs사람 매치는 live_ips 가 비어 있으므로 여기서 항상 None(기존 수동 키
+        공유 방식 그대로) — 호환."""
+        if not self.live or self.live.status not in ('starting', 'running'): return None
+        seat = self.live_ips.get(ip)
+        if seat is None: return None
+        return {'id': self.live.id, 'seat': seat, 'key': self.live.keys[seat], 'names': self.live.names, 'title': self.live.title}
+
     # ── 덱 이름 · 대전 시작 ──
     def deck_label(self, did, d):
         return d['스킬'] if did.startswith('o:') else d['이름']
 
-    def start_match(self, j):
+    def start_match(self, j, ip=None):
         if self.live and self.live.status in ('starting', 'running'): self.live.abort()
         # humans: [좌석0이 사람인가, 좌석1이 사람인가]. 새 클라이언트가 이걸 보내고, 옛 클라이언트의 mode(human/ai)도 그대로 받는다
         humans = tuple(bool(x) for x in j['humans']) if j.get('humans') else (j.get('mode', 'human') == 'human', False)
@@ -137,6 +147,15 @@ class App:
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title).start()
         seats = {i: self.live.keys[i] for i in (0, 1) if self.live.humans[i]}
+        # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 방에 player 가 정확히 둘 · 시작한 ip 가 그 둘 중 하나) 상대 ip 를
+        # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
+        # 매치 ID·참가 키 수동 공유 방식이 그대로 동작한다(호환).
+        self.live_ips = {}
+        if humans[0] and humans[1]:
+            players = [pip for pip, m in self.room.items() if m['role'] == 'player']
+            if ip in players and len(players) == 2:
+                other = next(p for p in players if p != ip)
+                self.live_ips = {ip: 0, other: 1}
         return {'id': self.live.id, 'names': names, 'title': title, 'seats': seats}
 
     def join_match(self, j):
@@ -160,7 +179,7 @@ class App:
         self.jobs[job.id] = job
         return job.info()
 
-    def boot(self):
+    def boot(self, ip=None):
         return {'version': VERSION, 'token_ok': True, 'decks': self.store.deck_list(),
                 'skills': sorted(n for n, c in POOL.items() if c['type'] == '스킬'), 'settings': self.store.settings(),
                 'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces'],
@@ -168,7 +187,7 @@ class App:
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
-                'room': self.room_status()}
+                'room': self.room_status(), 'my_match': self.my_match(ip)}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
@@ -177,7 +196,7 @@ class App:
     # ── 요청 처리 ──
     def route(self, method, path, q, body, ip=None):
         g = lambda k, d=None: (q.get(k) or [d])[0]
-        if path == '/api/boot': return self.boot()
+        if path == '/api/boot': return self.boot(ip)
         if path == '/api/pool': return self.pool
         if path == '/api/decks': return self.store.deck_list()
         if path == '/api/deck':
@@ -193,7 +212,7 @@ class App:
         if path == '/api/replay/delete': return {'ok': self.store.delete_replay(body.get('id', ''))}
         if path == '/api/playlists':
             return self.store.save_playlists(body.get('playlists', [])) if method == 'POST' else self.store.playlists()
-        if path == '/api/match/start': return self.start_match(body)
+        if path == '/api/match/start': return self.start_match(body, ip)
         if path == '/api/match/join': return self.join_match(body)
         if path == '/api/match/poll':
             if not self.live or self.live.id != g('id'): return {'status': 'none'}
