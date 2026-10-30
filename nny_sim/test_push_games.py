@@ -106,6 +106,24 @@ class PushGameTest(unittest.TestCase):
         status = self.store.last_game_push()
         self.assertFalse(status['ok'])
 
+    def test_push_now_works_even_when_push_games_setting_is_off(self):
+        """push_games 수동 '지금 올리기' 버튼 — 자동 수집 설정(push_games)이 꺼져 있어도 그 자리에서 바로 올라가야 한다."""
+        self.store.save_settings({'push_games': False})
+        rid = 'u:' + self.store.save_replay(dummy_rec())
+        r = self.store.push_game_now(rid)
+        self.assertTrue(r['ok'], r)
+        self.assertIn('log', r)   # 버튼은 즉시 보여줄 로그까지 그대로 받아야 함(자동 push_game 과 다른 점)
+        status = self.store.last_game_push()
+        self.assertTrue(status and status['ok'], status)   # last_game_push.json 도 같이 갱신됨
+        verify = self._clone_data_games('verify3')
+        key = rid.split(':', 1)[1]
+        idx = json.load(open(os.path.join(verify, 'index.json'), encoding='utf-8'))
+        self.assertIn(key, idx)
+
+    def test_push_now_rejects_library_replay(self):
+        r = self.store.push_game_now('l:없음')
+        self.assertFalse(r['ok'])
+
 
 if __name__ == '__main__':
     unittest.main()

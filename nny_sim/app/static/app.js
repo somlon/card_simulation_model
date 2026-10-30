@@ -109,6 +109,19 @@ $('w-del').onclick = async () => {
   for (const id of ids) await api('replay/delete', {id});
   W.sel.clear(); await refreshBoot(); toast('지웠습니다.');
 };
+$('w-push').onclick = async () => {
+  const ids = [...W.sel].filter(id => id.startsWith('u:')); if (!ids.length) return toast('올릴 수 있는 내 기록이 없습니다.');
+  $('w-push').disabled = true; $('w-pushstate').textContent = `올리는 중... (0/${ids.length})`;
+  let ok = 0, last = null;
+  for (let i = 0; i < ids.length; i++) {
+    try { last = await api('replay/push', {id: ids[i]}); if (last.ok) ok++; }
+    catch (e) { last = {ok: false, msg: e.message, log: []}; }
+    $('w-pushstate').textContent = `올리는 중... (${i + 1}/${ids.length})`;
+  }
+  $('w-push').disabled = false;
+  $('w-pushstate').textContent = `${ok}/${ids.length}개 성공` + (last ? ` — 마지막: ${last.msg}` : '');
+  toast(ok === ids.length ? `${ok}개를 올렸습니다.` : `${ok}/${ids.length}개만 성공했습니다.`);
+};
 async function loadReplay(id) {
   $('w-now').textContent = '불러오는 중…';
   const rec = await api('replay?id=' + encodeURIComponent(id));

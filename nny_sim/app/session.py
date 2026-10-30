@@ -277,6 +277,15 @@ class Store:
             self._write_json(os.path.join(self.dir, 'learning', 'last_game_push.json'), r)
         finally: self.game_push_lock.release()
 
+    def push_game_now(self, rid):
+        """push_games 수동 '지금 올리기' 버튼 — push_game()은 자동 호출용이라 이미 올리는 중이면 조용히 건너뛰지만,
+        버튼은 사람이 누르고 기다리는 것이므로 그 자리에서 끝까지(블로킹) 돌리고 log까지 그대로 돌려준다."""
+        with self.game_push_lock:
+            r = self._push_game(rid)
+            saved = {k: v for k, v in r.items() if k != 'log'}; saved['time'] = now(); saved['rid'] = rid
+            self._write_json(os.path.join(self.dir, 'learning', 'last_game_push.json'), saved)
+        return r
+
     def _push_game(self, rid):
         git = shutil.which('git')
         if not git: return {'ok': False, 'msg': 'git 이 설치되어 있지 않습니다.'}
