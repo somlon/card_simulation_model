@@ -5,6 +5,15 @@ from engine import GameOver
 from test_new_mechanics import make, card, on_field, eff, Idle
 
 
+
+import databug_fixture   # 데이터버그 카드 · 덱(카드 풀에서 보류 중 — 사용자 지시 2026-10-30)을 이 모듈 시험 동안만 넣는다
+
+
+def setUpModule(): databug_fixture.install()
+
+
+def tearDownModule(): databug_fixture.uninstall()
+
 class EngineRulingTest(unittest.TestCase):
     def test_face_down_spell_ignores_negation(self):
         # 사용자 지시 2026-10-25: 뒷면 마법 카드는 대상 · 비대상 무효 효과를 전부 받지 않는다

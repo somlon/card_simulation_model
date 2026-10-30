@@ -28,6 +28,15 @@ def keep_decks(g, p, main, upper):
 
 
 # ═══════════════════════ 카드 텍스트 판정 ═══════════════════════
+
+import databug_fixture   # 데이터버그 카드 · 덱(카드 풀에서 보류 중 — 사용자 지시 2026-10-30)을 이 모듈 시험 동안만 넣는다
+
+
+def setUpModule(): databug_fixture.install()
+
+
+def tearDownModule(): databug_fixture.uninstall()
+
 class TaxTextTest(unittest.TestCase):
     def test_action_taxes_from_text(self):
         self.assertEqual(C.action_taxes(POOL['세 - 아이라리움']), [(1, 'draw', 2)])
