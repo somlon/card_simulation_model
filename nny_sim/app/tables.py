@@ -62,8 +62,10 @@ def split(policy_path, out_dir, read=None):
     return man
 
 
-def matchup_table(split_dir, decks, logs=()):
-    """대전에 나오는 덱(스킬 이름)들의 몫만 담은 학습표. logs: 사람 대전 학습 기록 파일들 — 그 덱이 「내 덱」인 갱신을 다시 적용"""
+def matchup_table(split_dir, decks, logs=(), exclude=()):
+    """대전에 나오는 덱(스킬 이름)들의 몫만 담은 학습표. logs: 학습 기록 파일들(사람 대전 · AI끼리) — 그 덱이 「내 덱」인 갱신을 다시 적용.
+    기록의 출처별 가중치(learndata.weight_of — 사람 대전을 크게)로 더하고, 사용자가 뺀 매치(exclude — learndata 매치 키)는 적용하지 않는다"""
+    import learndata as LD
     from policy import Table
 
     class MatchupTable(Table):
@@ -72,8 +74,8 @@ def matchup_table(split_dir, decks, logs=()):
             self.path = None; self.source = split_dir; self.L0 = {}; self.L1 = {}; self.L2 = {}; self.games = 0
             self.deltas = []; self.recording = True
 
-        def update(self, k1, k2, won):
-            Table.update(self, k1, k2, won)
+        def update(self, k1, k2, won, w=1):
+            Table.update(self, k1, k2, won, w)
             if self.recording: self.deltas.append([k1, k2, won])
 
     t = MatchupTable()
@@ -93,9 +95,11 @@ def matchup_table(split_dir, decks, logs=()):
     applied = 0
     for path in logs:
         for rec in read_log(path):
+            if LD.record_key(rec) in exclude: continue
+            w = LD.weight_of(LD.record_source(rec))
             for k1, k2, won in rec.get('updates', ()):
                 o = key_owner(k1)
-                if o and o[0] in want: t.update(k1, k2, won); applied += 1
+                if o and o[0] in want: t.update(k1, k2, won, w); applied += 1
     t.recording = True; t.applied = applied
     return t
 
@@ -123,11 +127,13 @@ def append_log(path, meta, updates):
     return rec
 
 
-def log_stats(path):
-    recs = read_log(path)
+def log_stats(path, exclude=()):
+    """학습 기록 파일 통계 — 사용자가 뺀 매치(exclude)는 세지 않는다"""
+    import learndata as LD
+    recs = [r for r in read_log(path) if LD.record_key(r) not in exclude]
     by = {}
     for r in recs:
         k = ' vs '.join(r.get('decks', ['?', '?'])); s = by.setdefault(k, {'matches': 0, 'wins': 0, 'updates': 0})
-        s['matches'] += 1; s['wins'] += int(r.get('human_won') is True); s['updates'] += len(r.get('updates', ()))
+        s['matches'] += 1; s['wins'] += int(r.get('human_won') is True or r.get('winner') == 0); s['updates'] += len(r.get('updates', ()))   # P1(사람 대전은 나) 승
     return {'matches': len(recs), 'updates': sum(len(r.get('updates', ())) for r in recs), 'by_matchup': by,
             'size': os.path.getsize(path) if os.path.exists(path) else 0}
