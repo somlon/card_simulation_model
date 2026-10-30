@@ -97,7 +97,7 @@ def matchup_table(split_dir, decks, logs=(), exclude=()):
         for rec in read_log(path):
             if LD.record_key(rec) in exclude: continue
             w = LD.weight_of(LD.record_source(rec))
-            for k1, k2, won in rec.get('updates', ()):
+            for k1, k2, won in LD.kept_updates(rec, exclude):   # 사용자가 뺀 판단(learndata parts)은 적용하지 않는다
                 o = key_owner(k1)
                 if o and o[0] in want: t.update(k1, k2, won, w); applied += 1
     t.recording = True; t.applied = applied
@@ -130,7 +130,7 @@ def append_log(path, meta, updates):
 def log_stats(path, exclude=()):
     """학습 기록 파일 통계 — 사용자가 뺀 매치(exclude)는 세지 않는다"""
     import learndata as LD
-    recs = [r for r in read_log(path) if LD.record_key(r) not in exclude]
+    recs = [dict(r, updates=LD.kept_updates(r, exclude)) for r in read_log(path) if LD.record_key(r) not in exclude]
     by = {}
     for r in recs:
         k = ' vs '.join(r.get('decks', ['?', '?'])); s = by.setdefault(k, {'matches': 0, 'wins': 0, 'updates': 0})
