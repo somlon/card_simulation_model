@@ -59,7 +59,8 @@
       </div>
       <div class="panel">
         <h2 class="sec">새 AI 대전 녹화</h2>
-        <div class="bigtxt muted" style="margin-bottom:8px">학습표 AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 편집한 덱도 고를 수 있습니다.</div>
+        <div class="bigtxt muted" style="margin-bottom:8px">AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 편집한 덱도 고를 수 있습니다.</div>
+        <div class="field"><span>AI</span><select id="r-ai"><option value="table">학습표 AI끼리</option><option value="heuristic">휴리스틱 AI끼리</option></select></div>
         <div class="field"><span>P1 덱</span><select id="r-a"></select></div>
         <div class="field"><span>P2 덱</span><select id="r-b"></select></div>
         <div class="row2"><span class="muted">매치 수</span><input type="number" id="r-n" value="1" min="1" max="20" style="width:70px">
@@ -77,7 +78,7 @@
         <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option></select></div>
         <div class="field"><span id="g-mylabel">내 덱</span><select id="g-deck"></select></div>
         <div class="field"><span>AI 덱</span><select id="g-ai"></select></div>
-        <div class="field"><span>AI 종류</span><select id="g-aikind" title="신경망 AI: 「신경망 학습」으로 학습한 내 모델(없으면 기본 모델)"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option></select></div>
+        <div class="field"><span>AI 종류</span><select id="g-aikind" title="학습표 AI: 학습한 판단표로 고름 · 신경망 AI: 「신경망 학습」으로 학습한 내 모델(없으면 기본 모델) · 휴리스틱 AI: 학습 없이 덱 지침 · 카드 우선순위로 고름(AI vs AI 관전에서는 P2)"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic">휴리스틱 AI</option></select></div>
         <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">나(P1)</option><option value="ai">AI(P2)</option><option value="random">무작위</option></select></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다(다음 대전부터 반영)"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
