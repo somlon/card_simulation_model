@@ -73,9 +73,9 @@
   <section class="view" id="v-play">
     <div class="panel" id="g-setup" style="margin-bottom:12px">
       <div class="row2" style="gap:14px;align-items:flex-end">
-        <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option></select></div>
+        <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option><option value="pvp">사람 대 사람</option></select></div>
         <div class="field"><span id="g-mylabel">내 덱</span><select id="g-deck"></select></div>
-        <div class="field"><span>AI 덱</span><select id="g-ai"></select></div>
+        <div class="field"><span id="g-oplabel">AI 덱</span><select id="g-ai"></select></div>
         <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">나(P1)</option><option value="ai">AI(P2)</option><option value="random">무작위</option></select></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다(다음 대전부터 반영)"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
@@ -83,6 +83,13 @@
         <div class="field"><span>&nbsp;</span><button class="btn danger" id="g-abort" disabled>그만두기</button></div>
       </div>
       <div class="muted" id="g-status" style="margin-top:6px"></div>
+      <div class="muted" id="g-pvpinfo" style="margin-top:6px"></div>
+      <div class="row2" style="margin-top:8px;gap:8px;align-items:flex-end">
+        <div class="field"><span>참가 키로 들어가기(상대가 받은 키)</span>
+          <div class="row2"><input type="text" id="g-join-id" placeholder="매치 ID" style="width:90px"><input type="text" id="g-join-key" placeholder="참가 키" style="width:160px"></div>
+        </div>
+        <button class="btn sm" id="g-join">참가</button>
+      </div>
     </div>
     <div id="g-stage"></div>
   </section>

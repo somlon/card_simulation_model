@@ -159,21 +159,45 @@ stages.play = new Stage($('g-stage'), {assets, pool: POOL, onCaughtUp: () => dra
 ['g-deck', 'g-ai'].forEach(id => deckOptions($(id)));
 $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
-$('g-mode').onchange = () => { const h = $('g-mode').value === 'human'; $('g-mylabel').textContent = h ? '내 덱' : 'P1 덱'; $('g-learn').disabled = !h; $('g-hints').disabled = !h; };
-const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false};
+$('g-mode').onchange = () => {
+  const mode = $('g-mode').value, human = mode !== 'ai';
+  $('g-mylabel').textContent = mode === 'pvp' ? 'P1 덱(나)' : human ? '내 덱' : 'P1 덱';
+  $('g-oplabel').textContent = mode === 'pvp' ? 'P2 덱(상대)' : mode === 'human' ? 'AI 덱' : 'P2 덱';
+  $('g-learn').disabled = mode !== 'human'; $('g-hints').disabled = mode !== 'human';
+};
+const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null};
 const decBox = () => $('g-stage').querySelector('.dec');
 $('g-start').onclick = async () => {
   if (G.id && !G.done && !confirm('진행 중인 대전을 그만두고 새로 시작할까요?')) return;
   try {
-    const human = $('g-mode').value === 'human';
-    const r = await api('match/start', {mode: human ? 'human' : 'ai', deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
+    const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'human' ? [true, false] : [false, false];
+    const r = await api('match/start', {humans, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
                                         learn: $('g-learn').checked, hints: $('g-hints').checked});
-    G.id = r.id; G.pending = null; G.done = false; G.human = human;
+    G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1];
+    G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
-    stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, human);
+    stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, G.seat);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
-    $('g-status').textContent = `대전 중: ${r.title}` + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
+    $('g-status').textContent = `대전 중: ${r.title}` + (mode === 'human' && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
+    if (mode === 'pvp' && r.seats[1]) {
+      $('g-pvpinfo').innerHTML = `상대에게 매치 ID <code id="g-pvpid">${esc(r.id)}</code> 와 참가 키 <code id="g-pvpkey">${esc(r.seats[1])}</code> 를 알려 주세요(좌석1로 들어옵니다).`;
+    } else { $('g-pvpinfo').textContent = ''; }
+    clearTimeout(G.poll); pollLive();
+  } catch (e) { toast(e.message, 6000); }
+};
+$('g-join').onclick = async () => {
+  const id = $('g-join-id').value.trim(), key = $('g-join-key').value.trim();
+  if (!id || !key) return toast('매치 ID와 참가 키를 입력하세요.');
+  if (G.id && !G.done && !confirm('진행 중인 대전을 그만두고 참가할까요?')) return;
+  try {
+    const r = await api('match/join', {id, key});
+    G.id = id; G.pending = null; G.done = false; G.human = true; G.seat = r.seat; G.key = r.key;
+    stages.play.ended = false;
+    stages.play.startLive(r.names, {decks: ['', '']}, G.seat);
+    stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
+    $('g-pvpinfo').textContent = '';
+    $('g-status').textContent = `참가함: ${r.title} · 내 좌석 ${r.seat}`;
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
 };
@@ -182,7 +206,9 @@ async function pollLive() {
   if (!G.id) return;
   const st = stages.play;
   try {
-    const d = await api(`match/poll?id=${G.id}&f=${st.F.length}&s=${st.S.length}&c=${Object.keys(st.cards).length}`);
+    let path = `match/poll?id=${G.id}&f=${st.F.length}&s=${st.S.length}&c=${Object.keys(st.cards).length}`;
+    if (G.seat != null) path += `&seat=${G.seat}&key=${encodeURIComponent(G.key || '')}`;
+    const d = await api(path);
     if (d.status === 'none') return;
     st.appendLive(d);
     G.pending = d.pending;
@@ -241,7 +267,7 @@ function drawDecision() {
 }
 async function answerDec(p, box, i) {
   box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]);
-  try { await api('match/answer', {rid: p.id, idx: i}); } catch (e) { toast(e.message); }
+  try { await api('match/answer', {rid: p.id, idx: i, seat: G.seat, key: G.key}); } catch (e) { toast(e.message); }
   G.pending = null; delete box.dataset.rid; box.innerHTML = '';
 }
 // 라운드 사이 전략 덱 교체 — 서버가 보낸 할 수 있는 교체(opts)를 넣을 카드별로 묶어 보여 주고, 하나씩 고른다(고를 때마다 서버가 다시 계산)

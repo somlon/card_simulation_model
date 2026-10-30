@@ -105,7 +105,7 @@ class Stage {
     this.F = []; this.S = []; this.cards = {}; this.pool = {}; this.names = ['P1', 'P2']; this.meta = {decks: ['', ''], rounds: []};
     this.els = new Map(); this.cur = 0; this.lastRendered = -1; this.selected = null; this.rows = []; this.curRow = null;
     this.playing = false; clearTimeout(this.timer); this.speed = this.speed || 1; this.tokOwner = null; this.reveal = [true, true]; this.showDec = false;
-    this.live = false; this.mask = null; this.hl = new Set(); this.WINS = []; this.TURNS = [];
+    this.live = false; this.mask = null; this.hideSeat = null; this.hl = new Set(); this.WINS = []; this.TURNS = [];
     if (this.logEl) this.logEl.innerHTML = '';
   }
   // ── 불러오기 ──
@@ -114,9 +114,10 @@ class Stage {
     this.F = rec.frames; this.S = rec.states; this.cards = rec.cards; this.pool = rec.pool || {}; this.meta = rec.meta; this.names = rec.meta.names;
     this.afterData(true); this.go(0, false);
   }
-  startLive(names, meta, mask) {
-    this.reset(); this.live = true; this.names = names; this.meta = Object.assign({decks: ['', ''], rounds: []}, meta); this.mask = mask || null;
-    if (mask) this.reveal = [true, false];
+  startLive(names, meta, seat) {   // seat: 이 화면이 보는 사람 자리(0·1) — 사람vs사람이면 그 자리만 공개하고 반대 자리를 가린다. null 이면 전부 공개(AI vs AI 관전)
+    this.reset(); this.live = true; this.names = names; this.meta = Object.assign({decks: ['', ''], rounds: []}, meta);
+    this.mask = seat === 0 || seat === 1; this.hideSeat = this.mask ? 1 - seat : null;
+    if (this.mask) this.reveal = [seat === 0, seat === 1];
     this.q('[data-a=reveal]').classList.toggle('on', this.reveal[1]);
     this.afterData(true); this.renderEmpty();
   }
@@ -130,7 +131,7 @@ class Stage {
     return true;
   }
   endLive() {   // 대전이 끝나면 숨겼던 정보를 모두 공개(복기)
-    this.mask = null; this.reveal = [true, true]; this.q('[data-a=reveal]').classList.add('on');
+    this.mask = null; this.hideSeat = null; this.reveal = [true, true]; this.q('[data-a=reveal]').classList.add('on');
     this.rebuildLog(); this.render(this.cur, false);
   }
   afterData(full, start = 0) {
@@ -427,13 +428,13 @@ class Stage {
       + `<span class="tx"><span class="nm"><span class="chip p${p}">P${p + 1}</span>${esc(name)}</span><small>${n ? n + '번 효과' : '카드 발동'}${state}</small>`
       + `${tg.length ? `<small class="to">→ 대상: ${tg.join(', ')}</small>` : ''}</span></div>`;
   }
-  hidden(fr) {   // 실시간 대전 중 상대(AI)의 비공개 정보
-    if (!this.mask) return false;
-    if (fr.k === 'decision') return fr.d ? fr.d.p === 1 || fr.m.startsWith(`판단[${this.names[1]}]`) : fr.m.startsWith(`판단[${this.names[1]}]`);
+  hidden(fr) {   // 실시간 대전 중 반대 자리(AI 또는 사람vs사람의 상대)의 비공개 정보
+    if (this.hideSeat == null) return false;
+    if (fr.k === 'decision') return fr.d ? fr.d.p === this.hideSeat || fr.m.startsWith(`판단[${this.names[this.hideSeat]}]`) : fr.m.startsWith(`판단[${this.names[this.hideSeat]}]`);
     return false;
   }
   maskMsg(fr, m) {
-    if (!this.mask || !m.startsWith(this.names[1])) return m;
+    if (this.hideSeat == null || !m.startsWith(this.names[this.hideSeat])) return m;
     if (/드로우|시작 패|멀리건|세트$/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
     return m;
   }
