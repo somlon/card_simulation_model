@@ -2,10 +2,16 @@
 
 | 파일 | 크기 | SHA-256 |
 | --- | --- | --- |
+| `NNY_Simulator_v1.3.2_win64.zip` | 102.6MB | `6b2f50f9a6af94a017f9efec6d14cac12405c4a6199ad46d4195bf5c37d7599b` |
 | `NNY_Simulator_v1.3.1_win64.zip` | 102.6MB | `b250a112278cfa03c18ecc7156406d759b1a5988cc66c18c9233adc1f790c21d` |
 | `NNY_Simulator_v1.3.0_win64.zip` | 102.6MB | `834fb80f6e2e799fbee7c16b72027ec2b9ee730b0ed63b5d89f7ac9ad3b9469d` |
 | `NNY_Simulator_v1.1.0_win64.zip` | 90.4MB | `03494a7326a55510087a823d0216c5b50f5cde08f9f5281e98b1f88c58d43731` |
 | `NNY_Simulator_v1.0.0_win64.zip` | 90.3MB | `7bc238f0036939468c22a09b5061030f037c5acbb9f15c527435a058c2aa0a0f` |
+
+**v1.3.2 (2026-10-30)** — 필드: 몬스터 존 3칸(예전 1 · 3 · 5번 자리) · 공유 존 2칸(칸마다 마커, 예전 스킬 존 자리) · 스킬 존은 1 · 5번 몬스터 존 위 · 필드 존은 가운데(매트 v2),
+대전 중 상대 세트(뒷면) 카드 이름 감춤, 학습 데이터 판단 단위 정리. 코드 `claude/vibrant-euler-jekich` aa836bb(app/hide-set-cards · app/decision-curation · app/shared-zones 병합),
+엔진 `model/shared-zones` 9dd654c, 데이터 `data/main` · 기본 신경망 base_v2, 기본 재생 기록 `release/library_v1.3.2`(새 규칙으로 같은 65매치 다시 녹화).
+검증: wine 9.0 — AI끼리 관전 · 나 vs 휴리스틱 AI · 녹화 · 내보내기 정상(신경망 기능은 wine 에서 꺼짐 — 이전과 같음).
 
 **v1.3.1 (2026-10-30)** — 「…하고 발동할 수도 있다」 선택 코스트 · 「…할 수 있다」 선택 처리를 사람이 직접 고름, 대상을 지정하지 않는 코스트는 효과 내성을 보지 않음(기적의 영웅을 행운의 도적 코스트로),
 체인 처리 뒤 우선권을 다시 엶(횟수가 남은 [신속]을 이어서 사용), 효과 처리 뒤 필드를 바로 화면에. 코드 `claude/vibrant-euler-jekich` 8f5aea7(= `app/main` 2830c43 + 읽어보기),
