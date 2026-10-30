@@ -55,6 +55,15 @@ class Recorder(list):
         self.frames.append(fr)
         if k == 'end': self.game = None
 
+    def sync(self):
+        """지금 상태를 보여 주는 숨은 프레임(k 'sync' — 기록 패널에 줄이 없다)을 덧붙인다. 상태가 마지막 프레임과 같으면 하지 않는다.
+        기록 줄은 엔진이 행동하기 직전에 남기므로 프레임의 상태는 그 줄의 행동 전이다 — 다음 줄이 오기 전에 엔진이 멈추면(사람의 판단을 기다림)
+        마지막 처리 뒤의 필드가 화면에 나오지 않았다(사용자 지시 2026-10-30: 효과가 처리된 뒤에도 처리 전 필드가 보이던 것) → 멈추기 전에 부른다"""
+        if self.game is None: return
+        n = len(self.states); i = self.snapshot()
+        if len(self.states) == n: return   # 바뀐 것이 없다
+        self.frames.append({'k': 'sync', 'm': '', 'r': self.round, 's': i, '_e': {'k': 'sync', 'm': ''}})
+
     # ── 상태 ──
     def reg(self, c):
         self.cards.setdefault(c.uid, [c.name, c.owner])

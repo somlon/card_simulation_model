@@ -63,6 +63,8 @@ class HumanAI(P.LearnedAI):
 
     def _ask(self, g, p, decision, labels, values=None, extra=None, subs=None, marks=None):
         """subs: 후보마다 덧붙일 설명(같은 이름 카드를 칸으로 구별 — 「상대 몬스터 존 3」 등), marks: 후보마다 보드에서 빛낼 카드(기록기 번호)"""
+        rec = getattr(g, 'log', None)
+        if hasattr(rec, 'sync'): rec.sync()   # 묻기 전에 지금 필드를 화면에(마지막 처리 뒤의 상태 — viewer/record.Recorder.sync)
         opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {}),
                  **({'sub': subs[i]} if subs and subs[i] else {}), **({'u': marks[i]} if marks and marks[i] else {})} for i, lab in enumerate(labels)]
         return self.bridge.ask({'kind': 'choose', 'p': p, 'decision': decision, 'opts': opts,
