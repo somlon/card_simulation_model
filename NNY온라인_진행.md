@@ -21,18 +21,20 @@
 
 ## 다음 회차 지시
 
-로비(③) 서버 쪼가리(`/api/room/join`·`/api/room/leave`·`/api/room/status`, 방 1·자리 2명·재접속
-유예) 완성(바로 아래 완료 기록 참고) — **다음은 로비 화면 쪼가리**: `index.html`·`app.js`에 로비
-패널(참가/관전 버튼, 방 인원 표시 — `/api/boot`·`/api/heartbeat` 응답의 `room.members`를 그대로
-씀) 추가. 지금은 room 등록과 실제 매치 시작이 서로 안 이어져 있다 — 이번에 화면을 붙일 때 그 연결도
-자연스럽게 설계할 것(예: room 에 player 2명이 다 모이면 호스트 쪽에 "매치 시작" 버튼이 뜨고,
-시작하면 그 2명이 `/api/match/start`의 `humans`·좌석에 그대로 들어가는 식 — 지금의 수동 매치
-ID·참가 키 복사(`g-pvpinfo`/`#g-join-*`)를 대체). 매치가 끝나면 room 이 자동으로 비워지는지(또는
-그대로 다음 매치를 준비하는 상태로 남는지)도 이번에 정할 것 — 지금은 room 과 `self.live`가 전혀
-연결돼 있지 않아 매치가 끝나도 room 멤버십이 그대로 남는다.
+로비(③) 화면 쪼가리(참가/관전/나가기 패널 + 방 인원 2명이 모이면 매치 시작 자동 연결) 완성
+(바로 아래 완료 기록 참고, 커밋 `5fdd823`) — **다음은 관전(④) 화면 진입**: 지금 `#g-lobby`의
+"관전" 버튼은 서버 쪽 room 에만 등록될 뿐 화면이 실제로 관전 모드로 들어가지는 않는다(poll() 이
+좌석 없는 조회엔 이미 pending 을 안 주므로 패 숨김 자체는 서버 쪽에 이미 돼 있음 — 화면 연결만
+빠져 있음). 방에 매치가 떠 있을 때(`/api/boot`·`/api/heartbeat` 의 `live`/`my_match` 로 알 수 있음)
+관전 버튼을 누른 사람은 `stages.play.startLive(...)` 를 좌석 없이(또는 양쪽 다 가린 채) 호출해
+그 매치를 따라가게 — `/api/match/poll` 은 이미 seat·key 없이 호출하면 관전처럼 동작한다(기존
+`test_online_pvp.py` 의 관전 테스트 참고). 매치가 중간에 시작됐을 때 관전자가 처음부터가 아니라
+중간부터 자연스럽게 따라붙는지(f/s/c 카운터를 0 부터 보낼 때 과거 프레임을 다 받아도 괜찮은지)도
+같이 확인할 것. ⑤(룰미스 메모)·⑥(기보 수집)은 그 다음.
 
-(관전(④)은 로비 화면이 "관전" 버튼을 달면 그 흐름을 타고 바로 이어간다 — poll() 이 좌석 없는
-조회엔 이미 pending 을 안 주므로 패 숨김 자체는 서버 쪽에 이미 돼 있음.)
+다음에 손댈 사람이 참고할 것(이번 회차에 일부러 안 건드림): 로비 참가자 이름이 등록된 하마치
+유저 이름과 자동으로 맞춰지지 않음(지금은 `#lobby-name` 에 직접 타이핑) — 서버의 `_users()` 역방향
+조회(이미 `connected()` 가 쓰는 그 패턴)를 `/api/room/join` 쪼가리에도 붙이면 자연스러움.
 
 ## 루틴 확인 필요 — 2순위(디스코드 질문 답변) 이번 회차 보류
 
@@ -63,6 +65,40 @@ ID·참가 키 복사(`g-pvpinfo`/`#g-join-*`)를 대체). 매치가 끝나면 r
 - 디스코드 루틴 답변(2순위) 토큰 사용 여부 — 위 "루틴 확인 필요" 참고
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1③ 로비 — 화면 쪼가리(로비 패널) + room·매치 시작 자동 연결.
+  `index.html`·`app.js`에 `#g-lobby` 패널 추가(이름 입력 + 참가/관전/나가기/매치 시작(로비) 버튼,
+  방 인원 표시) — `/api/boot`·`/api/heartbeat` 응답의 `room.members`를 그대로 읽어 표시(새 네트워크
+  호출 없음, 기존 20초 heartbeat 재사용), 참가/관전/나가기는 기존 `/api/room/join`·`leave` 그대로
+  호출. **room 등록과 실제 매치 시작 연결**(지난 회차가 미룬 숙제): `app/server.py`의 `start_match`
+  가 이제 `ip`를 받아, 사람vs사람이고(humans 둘 다 true) 방에 player 가 정확히 둘이며 시작한 ip 가
+  그 둘 중 하나면 두 ip 를 좌석0·1 에 자동으로 묶는다(`App.live_ips`) — `App.my_match(ip)`가
+  boot·heartbeat 응답의 `my_match` 필드로 그 ip 의 매치 ID·좌석·참가 키를 그대로 돌려줘서, 상대
+  화면은 매치 ID·참가 키를 수동으로 입력하지 않고 다음 heartbeat(최대 20초)에서 스스로 들어온다
+  (`app.js` `checkMyMatch`). 방을 거치지 않은(수동) 사람vs사람 시작은 `live_ips`가 비어 있으므로
+  기존 매치 ID·키 수동 공유 방식이 그대로 동작한다(호환). **매치 종료 시 room 정리 — 이번에 정한
+  것**: 비우지 않기로 결정했다(같은 두 사람이 바로 재대전하기 쉽게, room 멤버십은 매치가 끝나도
+  그대로 남아 다음 "매치 시작(로비)"을 바로 누를 수 있음). 엔진·룰 레이어 전혀 안 건드림.
+  재현 테스트 `nny_sim/test_online_lobby_match.py` 신규(4개): 방에 player 둘(ip 다름)이 있을 때
+  매치를 시작하면 둘 다 좌석에 자동으로 묶이고 `my_match`가 각자 맞는 좌석·키를 돌려줌 · 방에 없는
+  ip는 자동 연결 안 됨 · 실제 HTTP(boot·heartbeat)에도 `my_match` 필드가 실림 · 수동 시작은
+  `live_ips`가 비어 기존 방식 그대로 · 관전자가 섞여 있어도 player 둘만 연결됨 — 전부 통과.
+  `python -m py_compile app/server.py test_online_lobby_match.py` · `node --check app/static/app.js` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate test_online_clients test_online_lobby test_online_lobby_match -v`
+  (56/57 — scipy 미설치 1개는 이전 회차와 동일하게 무관) 실행 확인. 서버 기동(`app/main.py --sim .
+  --cards <더미> --no-browser --host 127.0.0.1`) 후 curl 로 `/api/boot`(room·my_match 필드 확인) →
+  `/api/room/join`(player) → `/api/room/status` → `/api/heartbeat`(room·my_match 포함) →
+  `/api/room/leave` → `index.html`에 로비 패널(`#g-lobby`·`lobby-join` 등)이 실제로 떠 있는지
+  수동 curl 스모크로 실제 확인. 커밋 `5fdd823`.
+  **같이 확인한 것**: 1순위(수정 고리) — `online/data-games` 여전히 README.md뿐 → 해당 없음.
+  2순위(디스코드) — 지난 회차 "루틴 확인 필요" 절의 보류가 그대로 유효(이번 회차도 토큰 사용 안
+  함, 어디에도 출력 안 함) — 호스트 게이트웨이 봇과의 중복 응답 문제는 사용자 결정 전까지 보류.
+  3순위(재정질문) — `재정질문/` 여전히 README.md뿐 → 해당 없음. AI 방식 3안 —
+  `docs/AI_방식_선택지.md` 선택 기록란 여전히 비어있음 → 착수 안 함.
+  **아직 안 한 것**: 관전(④) 화면 쪽 진입 버튼은 이번에도 안 다룸(다음 회차 지시 참고) · 화면
+  테마 3종은 이번에도 안 다룸 · 로비 참가자 이름이 등록된 하마치 유저 이름과 자동으로 맞춰지지는
+  않음(지금은 `#lobby-name` 입력란에 직접 타이핑).
 
 - 2026-10-30 (루틴): 기능 v1③ 로비 — 서버 쪼가리(방 참가/관전/나가기 + 재접속 유예 + 자리(player)
   최대 2). `app/server.py` App 에 `self.room`(ip → {name,role,joined,last_seen}) 추가 — 새 API
