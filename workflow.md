@@ -277,6 +277,8 @@
       shim 사본 = 휴리스틱 vs 신경망 관전 · 신경망 학습(사람 119 · AI끼리 221 표본) · 신경망 내보내기 정상.
       PR **#100** model/table-weights → model/main · **#101** app/ai-kinds-per-seat · **#102** app/learning-data · **#103** app/heuristic-learning → app/main(#98 → #99 위에 쌓임 — 머지 순서 #100, #98 → #99 → #101 → #102 → #103).
       답변 보고(① ② ④ ⑤ ⑦) · 루틴 trig_01UKnHS2qLQm6DfakznXU8pe 끔. 후속: PR 머지(사용자), 실제 Windows 확인.
+    - 2026-10-30 사용자 지시 「순서대로 머지해줘」로 #100 → #98 → #99 → #101 → #102 → #103 머지(model/main 4b0f419 = model/table-weights 트리,
+      app/main e05a437 = app/heuristic-learning 트리 — 배포본 코드와 차이는 claude/vibrant-euler-jekich 에만 있는 읽어보기 문구 build_windows.py 뿐). main 미반영. 남은 것: 실제 Windows 확인.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 사람 공격 대상 — 같은 이름 카드 구별 · 휴리스틱 AI 를 .exe 에서 (사용자 지시 2026-10-30 「사람 vs AI에서 사람이 공격 선언할 때 상대 필드의 같은 이름의 카드가 여러 장 있을 때 어느 카드를 공격할지 선택 가능한지 확인하고 선택권이 없다면 선택 가능하게 수정해 / 휴리스틱 모델의 AI도 .exe 파일에서 동작할 수 있게 추가해줘」, 세션 session_018Feff9p4FHuAiYB3fcz4ve):**
   - 매시 루틴 「공격 대상 · 휴리스틱 AI 자동 이어하기(매시)」(trig_01KJxkGJV7CnjkGJCjzzkqMq, 이 세션, 매시 19분) — 2026-10-30 끔.
