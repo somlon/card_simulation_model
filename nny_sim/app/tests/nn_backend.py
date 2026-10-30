@@ -40,7 +40,7 @@ def play(da, db, seed, ai_kind):
 
 
 n = int(os.environ.get('GAMES', 2))
-pairs = [('투기장의 규칙', '던전마스터 셔플!'), ('세제', '솔루나 아츠'), ('번성충-대발생', '희생제'), ('데이터버그 패키지 프로그램', '올인')]
+pairs = [('투기장의 규칙', '던전마스터 셔플!'), ('세제', '솔루나 아츠'), ('번성충-대발생', '희생제'), ('호박옥 - 몽식의 계약', '올인')]
 for k in range(n):
     play(*pairs[k % len(pairs)], 21 + k, 'nn' if k % 2 == 0 else 'table')
 st = app.nn.status(); print('samples', st['samples']['matches'], st['samples']['samples'], st['samples']['by_matchup'])

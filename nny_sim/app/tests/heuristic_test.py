@@ -65,7 +65,7 @@ check('AI vs AI 관전: P1 학습표 · P2 휴리스틱', rep and rep['meta']['a
       and any(TABLE_STYLE in m for m in ai_lines(rep, names[0]) if not strategic(m)) and heuristic_ok(ai_lines(rep, names[1])),
       f'({res["status"]})')
 
-job = app.route('POST', '/api/record', {}, {'pairs': [['o:데이터버그 패키지 프로그램', 'o:소원의 분수']], 'matches': 2, 'ai_kind': 'heuristic', 'learn': True})
+job = app.route('POST', '/api/record', {}, {'pairs': [['o:호박옥 - 봉인의 계약', 'o:소원의 분수']], 'matches': 2, 'ai_kind': 'heuristic', 'learn': True})
 t0 = time.time()
 while app.jobs[job['id']].status == 'running' and time.time() - t0 < 600: time.sleep(0.5)
 info = app.jobs[job['id']].info()

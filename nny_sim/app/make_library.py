@@ -2,7 +2,7 @@
 
   python3 make_library.py --sim <실행 폴더> --split <분할 표> --out <library> --all-pairs --matches 1 --seed 1 [--workers 4]
   python3 make_library.py --out <library> --from-json 기록.json [...]
-  python3 make_library.py --sim <실행 폴더> --split <분할 표> --out <새 library> --rerecord <있는 library> [--workers 4]   # 기록기를 바꾼 뒤 같은 매치를 다시 녹화
+  python3 make_library.py --sim <실행 폴더> --split <분할 표> --out <새 library> --rerecord <있는 library> [--workers 4]   # 기록기를 바꾼 뒤 같은 매치를 다시 녹화(없어진 덱의 매치는 건너뜀)
 """
 import argparse, gzip, json, os, sys, time
 from concurrent.futures import ProcessPoolExecutor
@@ -52,8 +52,12 @@ def main(argv=None):
         if a.rerecord:
             src = os.path.abspath(a.rerecord)
             with open(os.path.join(src, 'index.json'), encoding='utf-8') as f: idx = json.load(f)
+            have = set(SE.load_decks())
             for rid in sorted(idx):
                 with gzip.open(os.path.join(src, rid + '.json.gz'), 'rt', encoding='utf-8') as f: m = json.load(f)['meta']
+                gone = [d for d in m['decks'][:2] if d not in have]
+                if gone:   # 지금 덱 목록에 없는 덱(카드 풀에서 빠진 덱 등)의 매치는 다시 녹화하지 않는다
+                    print(f'건너뜀 {rid} {m.get("title", "")} — 없는 덱 {gone}', flush=True); continue
                 jobs.append((sim, split, m['decks'][0], m['decks'][1], m['seed'], m['first'], tmp))
         if a.all_pairs:
             names = sorted(SE.load_decks()); k = 0
