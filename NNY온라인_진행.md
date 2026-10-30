@@ -21,11 +21,11 @@
 
 ## 다음 회차 지시
 
-상급 제물 일반소환 사람 모드 수정은 이번 회차로 끝(바로 아래 완료 기록 참고). 다음은 기능 v1 ②
-(등록 유저제 — online_users.json 연결·미등록 거부·접속중 명단). **참고**: 디스코드 봇(`tools/discord_bot.py`
-`/유저등록`)이 이미 online_users.json에 이름→하마치IP를 쓰는 길을 하나 만들어 뒀다(정원 5 체크 포함) — v1②는
-그 파일을 game 서버(`app/server.py`)쪽에서 읽어 미등록 IP의 접속을 거부하는 실제 게이트를 붙이는 일로 좁혀졌다.
-등록 쓰는 쪽(봇)과 읽어 거부하는 쪽(서버)이 같은 online_users.json을 보므로 스키마가 바뀌면 양쪽 다 고칠 것.
+기능 v1② 중 "미등록 거부 게이트"는 이번 회차로 끝(바로 아래 완료 기록 참고). 다음은 v1② 나머지
+절반 — **접속중 명단**(현재 누가 붙어 있는지 화면/디스코드에서 보이게. `app/server.py`가 좌석별
+`LiveMatch` 는 추적하지만 "관전 포함 지금 연결된 클라이언트 목록" 자체는 아직 없음 — 가장 단순하게는
+heartbeat(`/api/heartbeat`) 호출 IP를 짧은 TTL로 기억해 `/api/boot`에 같이 내려주는 정도로 시작해도 됨).
+그 다음이 로비(③).
 
 (참고 — 로비(③) 가 생기면 지금의 「매치 ID+참가 키를 말로 전달」방식은 로비가 대신하므로, 로비를 만들 때
 이 수동 교환 UI(g-pvpinfo/#g-join-*)는 로비 흐름으로 자연스레 흡수·정리할 것.)
@@ -59,6 +59,25 @@
 - 디스코드 루틴 답변(2순위) 토큰 사용 여부 — 위 "루틴 확인 필요" 참고
 
 ## 완료 기록
+
+- 2026-10-30 (루틴): 기능 v1② — 등록 유저제 중 "미등록 거부 게이트". `app/server.py` App 에
+  `allowed_ips()` 추가: `paths['user']/online_users.json`(= `tools/discord_bot.py`의 `/유저등록`이
+  쓰는 그 파일, 디스코드 봇이 없는 비-포터블 배포에서는 `%LOCALAPPDATA%/NNY_Simulator` 로 서로 같은
+  경로) 에서 `_`로 시작하지 않는 키의 값(IP)들을 모아 허용 집합으로 쓴다. 파일이 없거나 등록이
+  비어 있으면(첫 실행) 게이트 비활성 — 호스트가 자기 접속까지 막아버리는 사고를 피함.
+  `do_GET`·`_api`(POST 포함) 양쪽 진입점에서 `client_address[0]`를 그 집합과 대조해 미등록이면 403 —
+  `/api/ping`만 기존 토큰 체크처럼 예외(디스코드 `/상태` 헬스체크용). 엔진·룰 레이어 전혀 안 건드림.
+  재현 테스트 `nny_sim/test_user_gate.py` 신규(5개): 파일 없음/등록 비어 있음 → 허용 ·
+  미등록 IP → 403(루트·`/api/boot` 둘 다) · 등록 IP → 200 · ping 은 미등록이라도 200 — 전부 통과.
+  `python -m py_compile app/server.py test_user_gate.py app/human.py app/session.py` ·
+  `python -m unittest test_online_pvp test_match_sim test_table test_blocks test_summon_pos
+  test_human_tribute test_user_gate -v`(42/43 — scipy 미설치 1개는 이전 회차와 동일하게 무관) 실행
+  확인. 서버 기동(`main.py --no-browser --host 127.0.0.1`, 더미 user 폴더로 등록/미등록 양쪽 재현)
+  후 `/api/ping`·`/`·`/api/boot` 수동 curl 스모크로 등록 IP 200·미등록 403·ping 항시 200 확인.
+  커밋 `faafdb1`.
+  **아직 안 한 것**: "접속중 명단"(위 다음 회차 지시 참고) · 이름 확인 플로우(온라인_접속_안내.md가
+  말하는 "처음 접속하면 이름을 확인받는다"는 아직 없음 — 지금은 IP만 보고, 이름 입력/표시는 로비(③)
+  쪽에서 자연스럽게 붙이는 쪽으로 미룸, 과한 선작업 피함).
 
 - 2026-10-30 (루틴): 사람 모드 상급(제물) 일반소환 수정 — 「세창 체크 요청 검증」 2번 과제.
   **실제로 확인해 보니 진단이 조금 달랐다(정정)**: `app/human.py`의 행동 목록은 `extra_summon_options`를
