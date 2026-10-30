@@ -460,8 +460,23 @@ class Stage {
   }
   maskMsg(fr, m) {
     if (this.sideHidden(fr)) return `${this.names[1]} 전략 덱 교체 — 무엇을 바꿨는지는 대전이 끝난 뒤 재생 기록에서 볼 수 있습니다`;
-    if (!this.mask || !m.startsWith(this.names[1])) return m;
+    if (!this.mask) return m;
+    m = this.maskHidden(fr, m);
+    if (!m.startsWith(this.names[1])) return m;
     if (/드로우|시작 패|멀리건|세트$/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
+    return m;
+  }
+  hiddenNames(st) {   // 실시간 대전: 상대(P2) 필드의 뒷면 카드 이름 중 공개된 곳(앞면 필드 · 묘지 · 제외 · 내 패)에 같은 이름이 없는 것
+    const hid = new Set(), shown = new Set(), nm = u => (this.info(u) || {}).name;
+    const add = (c, seat) => { if (!c) return; (seat === 1 && c.f === 0 ? hid : shown).add(nm(c.u)); };
+    st.P.forEach((P, seat) => { P.m.forEach(c => add(c, seat)); P.s.forEach(c => add(c, seat)); [...P.grave, ...P.ban].forEach(u => shown.add(nm(u))); });
+    st.P[0].hand.forEach(u => shown.add(nm(u)));
+    add(st.sh, st.sc ?? 0); add(st.fz, st.fc ?? 0);
+    return [...hid].filter(n => n && !shown.has(n));
+  }
+  maskHidden(fr, m) {   // 기록 줄의 「대상: 「X」」 · 「고름: X」 등에서 상대 뒷면 카드 이름을 감춘다(사용자 지시 2026-10-30)
+    const st = fr.s >= 0 ? this.S[fr.s] : null; if (!st) return m;
+    for (const n of this.hiddenNames(st)) m = m.split(`「${n}」`).join('「뒷면 카드」');
     return m;
   }
   shortMsg(fr) {
