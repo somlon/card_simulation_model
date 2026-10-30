@@ -1217,9 +1217,20 @@ class Game:
                 if e.kind in kinds and self.legal(p, c, e, ev): out.append((c, e))
         return out
 
+    REOPEN_MAX = 30   # 체인 처리 뒤 우선권을 다시 여는 횟수 상한(같은 창에서 체인을 거듭 만들 때의 안전장치)
+
     def priority(self, start):
-        if self.locked: return   # 종료 단계 a 이후에는 발동 불가 (§5-5)
-        passes = 0; cur = start; guard = 0
+        """start부터 번갈아 우선권. 체인을 만들어 처리했으면 처리가 끝난 뒤 턴 플레이어부터 다시 우선권을 준다 — 체인 처리 뒤에도
+        [신속] · 대응 효과를 쓸 수 있게(사용자 지시 2026-10-30: 횟수가 남은 [신속]이 체인 처리 뒤 타이밍을 놓치던 것 — 기적의 영웅 3번).
+        양쪽이 빈 체인에서 연이어 넘기면 끝난다"""
+        for _ in range(self.REOPEN_MAX):
+            if self.locked or not self._priority_round(start): return
+            start = self.turn_player
+
+    def _priority_round(self, start):
+        """우선권 한 바퀴: 양쪽이 연이어 넘길 때까지 응답을 쌓고 체인을 처리한다. 반환: 이 바퀴에 발동이 있었는가"""
+        if self.locked: return False   # 종료 단계 a 이후에는 발동 불가 (§5-5)
+        passes = 0; cur = start; guard = 0; built = False
         while guard < 60:
             if self.chain and getattr(self.chain[-1].eff, 'no_resp', False): break
             guard += 1
@@ -1228,11 +1239,12 @@ class Game:
             if pick:
                 c, e = pick
                 if self.activate(cur, c, e, ev=self.chain[-1] if self.chain else None):
-                    passes = 0; cur = 1 - cur; continue
+                    passes = 0; cur = 1 - cur; built = True; continue
             passes += 1
             if passes >= 2: break
             cur = 1 - cur
         self.resolve_chain()
+        return built
 
     def resolve_chain(self):
         while self.chain:

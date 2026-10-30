@@ -205,9 +205,12 @@ def pick_cards(g, c, p, pool, n, k):
 
 
 # ═══════════════════════ S1 고르기 ═══════════════════════
-def pick_pool(g, c, p, sc, l=None):
+def pick_pool(g, c, p, sc, l=None, cost=False):
     """고를 수 있는 후보: 집합 조건에 맞고 p의 효과를 받지 않는 필드의 카드는 뺀다
     (대상 지정 여부는 엔진의 발동 판정 · 코스트 단계 판정이 본다 — Game.immune · Effect.targets_text).
+    cost=True: 대상을 지정하지 않는 코스트(「…를 묘지로 보내고 발동」 등)는 효과가 아니므로 효과 내성을 보지 않는다(사용자 지시 2026-10-30 —
+    기적의 영웅도 행운의 도적 1번의 코스트로 묘지로 보낼 수 있다, 재정 Q2 · Q58 「코스트로 하는 것은 효과가 아니다」와 같음).
+    「릴리스할 수 없다」 같은 금지는 그 블록의 조건(pred 'releasable' 등)이 따로 본다.
     sc['among'] = 앞에서 남긴 카드 목록(「덱 위 5장을 확인하고 그 중 …」)의 참조 이름 — 그 안에서만 고른다"""
     if sc.get('among'):
         base = [x for x in ref_cards(g, c, p, l, sc['among']) if match_card(g, c, p, x, sc)] if l is not None else []
@@ -216,7 +219,7 @@ def pick_pool(g, c, p, sc, l=None):
     if sc.get('counter_add'):   # 카운터를 놓는 효과: 「카운터를 쌓는 효과는 적용」 카드는 내성이 있어도 놓을 수 있다(Game.counter_blocked)
         out = [x for x in base if not g.counter_blocked(x, c)]
     else:
-        out = [x for x in base if not (g.on_field(x) and g.immune(x, p, c))]
+        out = base if cost else [x for x in base if not (g.on_field(x) and g.immune(x, p, c))]
     if sc.get('pickable'): out = [x for x in out if g.pickable(x, c)]   # 같은 이름 규칙(덱 · 묘지 · 제외 존에서 패에 넣기 — Game.pickable)
     return out
 
@@ -283,7 +286,7 @@ def subjects(g, c, p, l, k):
         return xs
     sc = k.get('scope')
     if sc is None: return []
-    pool = pick_pool(g, c, p, sc, l)
+    pool = pick_pool(g, c, p, sc, l, cost=bool(k.get('cost')))
     if k.get('all'): return pool
     if k.get('want'): return want_pick(g, c, p, pool, k)
     n = cost_n(g, c, p, k, num(l, k.get('n', 1)))
@@ -308,12 +311,13 @@ def can_subjects(g, c, p, ev, k):
     """발동 판정: 처리 때 고를 후보가 정한 수만큼 있는가 (앞에서 고른 카드를 쓰는 블록은 True)"""
     if k.get('cost') and k.get('transfer'): p = payer(g, p, k)
     if 'ref' in k or k.get('scope') is None or k['scope'].get('among'): return True
-    if k.get('all') or k.get('want'): return bool(pick_pool(g, c, p, k['scope'])) or k.get('zero_ok', False)   # 「전부」 · 「원하는 수까지」: 1장 이상
+    cost = bool(k.get('cost'))
+    if k.get('all') or k.get('want'): return bool(pick_pool(g, c, p, k['scope'], cost=cost)) or k.get('zero_ok', False)   # 「전부」 · 「원하는 수까지」: 1장 이상
     n = k.get('n', 1)
     if not isinstance(n, int): n = 1
     n = cost_n(g, c, p, k, n)
     if k.get('upto') and k.get('zero_ok'): return True   # 「…까지」가 0장이어도 되는 문장(카운터만 떼고 아무것도 파괴하지 않음 등)
-    return len(pick_pool(g, c, p, k['scope'])) >= (1 if k.get('upto') else n)
+    return len(pick_pool(g, c, p, k['scope'], cost=cost)) >= (1 if k.get('upto') else n)
 
 
 def preview(g, c, p, ev, k):
