@@ -66,19 +66,19 @@ def 재정():
             '\n(답변은 깃허브 재정질문/ 파일에 직접 적으면 루틴이 반영)')
 
 
-MENU = (f'🗂 **4차원 주머니 메뉴** (1시간 유효)\n`1` 진행 상황 · `2` 최근 업데이트 · `3` 접속 방법 · `4` 재정질문\n'
-        f'자유 질문은 `?질문내용` — 매시간 Claude 루틴이 답을 달아줘요')
+MENU = ('🗂 **4차원 주머니 메뉴**\n`1` 진행 상황 · `2` 최근 업데이트 · `3` 접속 방법 · `4` 재정질문\n'
+        '자유 질문은 `?질문내용` — 매시간 Claude 루틴이 답을 달아줘요')
 
 
 def handle(content, author_id, authed):
+    # 암호 없음(사용자 지시 2026-10-30) — 초대제 서버라 서버 입장 자체가 문이다.
     c = content.strip()
-    if c == PW:
-        authed[author_id] = time.time(); return MENU
-    ok = time.time() - authed.get(author_id, 0) < 3600
+    if not c:
+        return None   # 빈 내용(인텐트 꺼짐 포함)에는 반응하지 않는다
     if c.startswith('?'):
         return '📨 질문 접수! 매시간 루틴이 확인하고 이 채널에 답을 달아줘요.'
-    if not ok:
-        return None if c not in '1234' else '🔒 먼저 암호 번호를 입력해 주세요.'
+    if c in ('메뉴', 'menu', PW):
+        return MENU
     try:
         return {'1': 진행, '2': 커밋, '3': 접속, '4': 재정}.get(c, lambda: None)()
     except Exception as e:
