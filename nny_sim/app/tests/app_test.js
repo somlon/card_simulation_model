@@ -42,6 +42,14 @@ const { chromium } = require('playwright');
   const status = await p.textContent('#g-status');
   await p.click('header .tab[data-v=learn]'); await p.waitForTimeout(800);
   await p.screenshot({ path: `win_learn_${W}.png` });
-  console.log(JSON.stringify({ clicks, sides, splits, sideRows: [...sideRows], status, errs: errs.slice(0, 10) }));
+  // 학습 데이터 정리: 첫 매치를 빼고(체크 해제) 다시 넣는다
+  const curation = { rows: await p.$$eval('#c-list input[data-key]', xs => xs.length) };
+  if (curation.rows) {
+    await p.click('#c-list input[data-key]'); await p.waitForTimeout(800);
+    curation.out = (await p.textContent('#l-stats')).includes('뺀 매치');
+    await p.click('#c-list input[data-key]'); await p.waitForTimeout(800);
+    curation.back = !(await p.textContent('#l-stats')).includes('뺀 매치');
+  }
+  console.log(JSON.stringify({ clicks, sides, splits, sideRows: [...sideRows], status, curation, errs: errs.slice(0, 10) }));
   await b.close();
 })();

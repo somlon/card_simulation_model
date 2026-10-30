@@ -142,7 +142,7 @@ function playlistNext(auto) { if (W.idx < 0 || !$('pl-auto').checked) return; se
 $('r-b').selectedIndex = Math.min(1, $('r-b').options.length - 1);
 let jobT = null;
 $('r-go').onclick = async () => {
-  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value}); W.job = j.id; watchJob(); }
+  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value, learn: $('r-learn').checked}); W.job = j.id; watchJob(); }
   catch (e) { toast(e.message); }
 };
 $('r-stop').onclick = () => W.job && api('jobs/stop', {id: W.job});
@@ -162,7 +162,7 @@ stages.play = new Stage($('g-stage'), {assets, pool: POOL, onCaughtUp: () => dra
 ['g-deck', 'g-ai'].forEach(id => deckOptions($(id)));
 $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
-$('g-mode').onchange = () => { const h = $('g-mode').value === 'human'; $('g-mylabel').textContent = h ? '내 덱' : 'P1 덱'; $('g-learn').disabled = !h; $('g-hints').disabled = !h;
+$('g-mode').onchange = () => { const h = $('g-mode').value === 'human'; $('g-mylabel').textContent = h ? '내 덱' : 'P1 덱'; $('g-hints').disabled = !h;   // 학습은 AI끼리 관전도(출처 「AI끼리」)
   $('g-aikind0-f').hidden = h; $('g-aikind-lab').textContent = h ? 'AI 종류' : 'P2 AI 종류'; };   // AI vs AI 관전은 자리마다 AI 종류
 const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false};
 const decBox = () => $('g-stage').querySelector('.dec');
@@ -179,7 +179,7 @@ $('g-start').onclick = async () => {
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
     const kinds = human ? [$('g-aikind').value] : [$('g-aikind0').value, $('g-aikind').value];
     $('g-status').textContent = `대전 중: ${r.title} · ` + kinds.map((k, i) => (human ? '' : `P${i + 1} `) + aiKindName(k)).join(' vs ')
-      + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
+      + ($('g-learn').checked ? ' · AI 학습 켜짐' : '');
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
 };
@@ -391,10 +391,13 @@ renderDeckList();
 
 // ═══════════════ 학습 ═══════════════
 async function refreshLearning() {
-  const L = await api('learning'); const s = BOOT.settings;
+  const L = await api('learning'); const s = BOOT.settings; CL.weights = L.weights;
   const rows = Object.entries(L.by_matchup || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v.matches}</td><td class="n">${v.wins}</td><td class="n">${v.updates}</td></tr>`).join('');
-  $('l-stats').innerHTML = `<div class="bigtxt">학습한 매치 <b>${L.matches}</b>개 · 판단 기록 <b>${L.updates}</b>개 · 파일 ${(L.size / 1024).toFixed(1)}KB<br><span class="muted">${esc(L.path)}</span></div>
-    ${rows ? `<table class="t" style="margin-top:8px"><tr><th>대전(내 덱 vs AI 덱)</th><th>매치</th><th>내 승</th><th>판단 기록</th></tr>${rows}</table>` : '<div class="hint" style="margin-top:8px">아직 학습한 대전이 없습니다. AI 대전에서 「AI 학습」을 켜고 두어 보세요.</div>'}`;
+  const bs = L.by_source || {}, sm = k => bs[k] ? `${bs[k].matches}매치 · 판단 ${bs[k].updates}개` : '0';
+  $('l-stats').innerHTML = `<div class="bigtxt">학습한 매치 <b>${L.matches}</b>개 · 판단 기록 <b>${L.updates}</b>개 · 파일 ${(L.size / 1024).toFixed(1)}KB<br>
+    사람 대전 ${sm('human')} · AI끼리 ${sm('ai')}${L.excluded ? ` · <b>뺀 매치 ${L.excluded}개</b>(학습 · 내보내기 · 올리기에서 제외)` : ''}<br><span class="muted">${esc(L.path)}<br>${esc(L.ai_path)}</span></div>
+    ${rows ? `<table class="t" style="margin-top:8px"><tr><th>사람 대전(내 덱 vs AI 덱)</th><th>매치</th><th>내 승</th><th>판단 기록</th></tr>${rows}</table>` : (L.matches ? '' : '<div class="hint" style="margin-top:8px">아직 학습한 대전이 없습니다. AI 대전에서 「AI 학습」을 켜고 두어 보세요.</div>')}`;
+  refreshCuration().catch(e => toast(e.message));
   $('l-url').value = s.git_url || ''; $('l-base').value = s.git_base || ''; $('l-branch').value = s.git_branch || ''; $('l-auto').checked = !!s.auto_push;
   const lp = L.last_push; $('l-last').textContent = lp ? `마지막 자동 올리기(${lp.time}): ${lp.ok ? '성공' : '실패'} — ${lp.msg}` : '';
 }
@@ -408,6 +411,40 @@ $('l-git').onclick = async () => {
   const r = await api('learning/git', {}); $('l-gitlog').textContent = r.msg + '\n\n' + (r.log || []).join('\n\n');
 };
 $('g-learn').onchange = () => api('settings', {learn: $('g-learn').checked}).catch(() => {});
+// ── 학습 데이터 정리: 매치마다 학습표 기록 · 신경망 표본을 함께 빼거나 넣는다(session.Store.learning_items · set_excluded) ──
+const CL = {items: [], weights: null};
+const kindName = k => k === 'human' ? '나' : k === 'heuristic' ? '휴리스틱' : (k || '').startsWith('nn') ? '신경망' : k === 'table' ? '학습표' : (k || '?');
+async function refreshCuration() {
+  CL.items = await api('learning/items');
+  const w = CL.weights;
+  $('c-help').innerHTML = `대전마다 남은 학습 데이터(학습표 기록 · 신경망 표본)입니다. 쓸모없는 매치(실수 · 시험 대전 등)를 빼면 학습표 AI · 신경망 AI 학습과 내보내기 · GitHub 올리기에서 빠집니다(파일은 지우지 않아 다시 넣을 수 있음).`
+    + (w ? ` 가중치 — 사람 대전 ${w.human} : AI끼리 ${w.ai}.` : '') + ' 학습표 AI는 다음 대전부터, 신경망 AI는 다음 「🧠 신경망 학습」부터 반영됩니다.';
+  drawCuration();
+}
+function curationShown() {
+  const src = $('c-src').value, stv = $('c-state').value, q = $('c-q').value.trim().toLowerCase();
+  return CL.items.filter(it => (!src || it.source === src) && (!stv || (stv === 'out') === it.excluded)
+    && (!q || [...(it.decks || []), ...(it.ai_kinds || []).map(kindName)].join(' ').toLowerCase().includes(q)));
+}
+function drawCuration() {
+  const shown = curationShown();
+  $('c-count').textContent = `${shown.length} / ${CL.items.length}매치`;
+  $('c-list').innerHTML = shown.length ? `<table class="t"><tr><th>넣음</th><th>시각</th><th>출처</th><th>대전</th><th>결과</th><th class="n">학습표</th><th class="n">신경망</th></tr>` + shown.map(it => {
+    const k = it.ai_kinds || [], res = it.winner == null ? (it.status === 'done' ? '무승부' : it.status || '') : it.source === 'human' ? (it.human_won ? '내 승' : 'AI 승') : `P${it.winner + 1} 승`;
+    return `<tr${it.excluded ? ' style="opacity:.5"' : ''}><td><input type="checkbox" data-key="${esc(it.key)}"${it.excluded ? '' : ' checked'}></td><td>${esc(it.time || '')}</td>
+      <td>${esc(it.label)} ×${it.weight}</td><td>${esc((it.decks || []).map((d, i) => `${d}${k[i] ? `(${kindName(k[i])})` : ''}`).join(' vs '))}</td><td>${esc(res)}</td>
+      <td class="n">${it.updates}</td><td class="n">${it.samples}</td></tr>`; }).join('') + '</table>'
+    : '<div class="hint">보이는 매치가 없습니다.</div>';
+  $('c-list').querySelectorAll('input[data-key]').forEach(cb => cb.onchange = () => setExcluded([cb.dataset.key], !cb.checked));
+}
+async function setExcluded(keys, excluded) {
+  if (!keys.length) return;
+  try { await api('learning/exclude', {keys, excluded}); } catch (e) { toast(e.message, 5000); }
+  await refreshLearning();
+}
+['c-src', 'c-state'].forEach(id => $(id).onchange = drawCuration); $('c-q').oninput = drawCuration;
+$('c-out').onclick = () => setExcluded(curationShown().filter(it => !it.excluded).map(it => it.key), true);
+$('c-in').onclick = () => setExcluded(curationShown().filter(it => it.excluded).map(it => it.key), false);
 // ── 신경망 학습 (머리 막대의 「🧠 신경망 학습」 — 홈 화면을 포함한 모든 화면에서 연다) ──
 const NN = {st: BOOT.nn, timer: null};
 const pct = v => v == null ? '–' : (v * 100).toFixed(1) + '%';
@@ -436,7 +473,8 @@ function nnRender() {
   const mu = Object.entries(sm.by_matchup || {}).sort((a, b) => b[1].samples - a[1].samples).slice(0, 6)
     .map(([k, v]) => `<div class="muted" style="font-size:12px">${esc(k)} · 매치 ${v.matches} · 판단 ${v.samples}</div>`).join('');
   $('nn-samples').innerHTML = `<div class="nnbig">${sm.samples || 0}<small>판단</small> ${sm.matches || 0}<small>매치</small></div>${mu}
-    <div class="muted" style="font-size:12px;margin-top:6px">학습에는 최소 ${st.min_samples}개가 필요합니다. 학습표 기록(「학습」 화면)과 따로 쌓입니다.</div>`;
+    <div class="muted" style="font-size:12px;margin-top:4px">${Object.entries(sm.by_source || {}).map(([k, v]) => `${k === 'ai' ? 'AI끼리' : '사람 대전'} ${v.matches}매치 · 판단 ${v.samples}개`).join(' · ')}</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">학습에는 최소 ${st.min_samples}개가 필요합니다. 학습표 기록(「학습」 화면)과 따로 쌓이고, 「학습 데이터 정리」에서 뺀 매치는 세지 않습니다. 사람 대전 표본은 AI끼리 표본보다 큰 가중치로 학습합니다.</div>`;
   const base = st.base, loc = st.local;
   const ev = base && base.eval ? Object.entries(base.eval).map(([k, v]) => `${k === 'table' ? '학습표 AI' : k === 'heuristic' ? '휴리스틱 AI' : k} 상대 ${v.win}% ±${v.ci95}`).join(' · ') : '';
   const npm = st.numpy || {};

@@ -72,10 +72,10 @@ def matchup_table(split_dir, decks, logs=(), exclude=()):
         """policy.Table 과 같은 값 계산(value) · 갱신(update). 갱신을 deltas 에 남긴다"""
         def __init__(self):   # Table.__init__ 은 learned/policy.json 을 읽으므로 부르지 않는다
             self.path = None; self.source = split_dir; self.L0 = {}; self.L1 = {}; self.L2 = {}; self.games = 0
-            self.deltas = []; self.recording = True
+            self.deltas = []; self.recording = True; self.live_w = 1   # live_w: 이번 대전에서 바로 배우는 갱신의 가중치(대전 출처 — session.LiveMatch)
 
-        def update(self, k1, k2, won, w=1):
-            Table.update(self, k1, k2, won, w)
+        def update(self, k1, k2, won, w=None):
+            Table.update(self, k1, k2, won, self.live_w if w is None else w)
             if self.recording: self.deltas.append([k1, k2, won])
 
     t = MatchupTable()
@@ -104,7 +104,7 @@ def matchup_table(split_dir, decks, logs=(), exclude=()):
     return t
 
 
-# ── 사람 대전 학습 기록 (jsonl, 한 줄 = 한 매치) ──
+# ── 학습 기록 (jsonl, 한 줄 = 한 매치 — 사람 대전 human_games.jsonl · AI끼리 ai_games.jsonl) ──
 def read_log(path):
     if not os.path.exists(path): return []
     out = []
@@ -134,6 +134,6 @@ def log_stats(path, exclude=()):
     by = {}
     for r in recs:
         k = ' vs '.join(r.get('decks', ['?', '?'])); s = by.setdefault(k, {'matches': 0, 'wins': 0, 'updates': 0})
-        s['matches'] += 1; s['wins'] += int(r.get('human_won') is True or r.get('winner') == 0); s['updates'] += len(r.get('updates', ()))   # P1(사람 대전은 나) 승
+        s['matches'] += 1; s['wins'] += int(r['human_won'] is True if 'human_won' in r else r.get('winner') == 0); s['updates'] += len(r.get('updates', ()))   # P1(사람 대전은 나) 승
     return {'matches': len(recs), 'updates': sum(len(r.get('updates', ())) for r in recs), 'by_matchup': by,
             'size': os.path.getsize(path) if os.path.exists(path) else 0}
