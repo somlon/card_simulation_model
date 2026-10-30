@@ -245,6 +245,8 @@
       ② 빈 학습표에서 split · matchup_table 동작 확인 ③ 기본 재생 기록 다시 녹화(데이터버그 대진 제외, 백지 AI, make_library --rerecord) ④ 통합 `claude/vibrant-euler-jekich` VERSION 1.3.3 · 읽어보기 →
       새 데이터로 v1.3.3 빌드 · wine 시험 · `exp/windows-app` 커밋 · 채팅창 전달 ⑤ PR data/reset-learning → data/main · model/databug-fixture → model/main(#110 위) · 앱 시험 PR
       ⑥ 보고(data/human-games-ksc 원격 브랜치는 지우지 않음 · DECK_POLICY/SPLIT_BY_MATCHUP 손 규칙 값은 기본값과 같아 둠 · 열린 PR #105 · #106 · #110 ~ #113) · 루틴 끄기.
+    - 2026-10-30 (새 세션 session_018FeffBC56PKX6NFvddesKB) ① ~ ③ 완료 — `app/databug-free-tests`(app/shared-zones 위) 2dcaed6(앱 시험 4개 데이터버그 덱 → 호박옥 덱, 5개 앱 시험 통과) ·
+      3cd0042(make_library --rerecord 가 없어진 덱 매치 건너뜀). ② 빈 학습표 split = 덱 0 · 키 0, matchup_table 정상. ③ 기본 재생 기록 53매치(65 − 데이터버그 12, 백지 AI, 체인 점검 0) /home/user/appsim/library133. 다음: ④ 빌드.
 
 - **【완료 — 2026-10-30, 후속 사용자 확인】 세트 카드 정보 감춤 · 학습 데이터 판단 단위 정리 · 공유 존 2칸 (사용자 지시 2026-10-30 「1. 대전에서 세트 카드의 정보가 보이는 걸 안보이게 2. 학습시킬 데이터를 … 판단 단위로 데이터를 빼고 고를 수 있게 3. 공유존을 두 칸으로 늘리고 각 플레이어의 2,4번 몬스터 존을 제거 … 공유 존 위치는 현재의 스킬 카드 존, 스킬 카드 존은 P1 시점 기준 1,5번 몬스터 존 위쪽, 원래 공유존 위치에는 필드 카드 존 / PR 올리고 .ZIP 업로드」, 세션 session_018FeffAgHCpKXV4XbwZTHqs):**
   - 매시 루틴 「세트 카드 감춤 · 판단 단위 정리 · 공유 존 2칸 자동 이어하기(매시)」(trig_016wacR5jEQBEjHV4xjvEy8N, 매시 31분).
