@@ -60,8 +60,8 @@
       <div class="panel">
         <h2 class="sec">새 AI 대전 녹화</h2>
         <div class="bigtxt muted" style="margin-bottom:8px">AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 자리마다 AI 종류를 고를 수 있어 다른 종류의 AI끼리도 대전합니다. 편집한 덱도 고를 수 있습니다.</div>
-        <div class="row2"><div class="field" style="flex:1"><span>P1 AI</span><select id="r-ai0" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic">휴리스틱 AI</option></select></div>
-          <div class="field" style="flex:1"><span>P2 AI</span><select id="r-ai1" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic">휴리스틱 AI</option></select></div></div>
+        <div class="row2"><div class="field" style="flex:1"><span>P1 AI</span><select id="r-ai0" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic" title="전술은 규칙, 전략 판단(시작 패 · 멀리건 · 드로우 덱 · 선후공 · 번식지)은 학습표로 고르고 학습">휴리스틱 AI</option></select></div>
+          <div class="field" style="flex:1"><span>P2 AI</span><select id="r-ai1" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic" title="전술은 규칙, 전략 판단(시작 패 · 멀리건 · 드로우 덱 · 선후공 · 번식지)은 학습표로 고르고 학습">휴리스틱 AI</option></select></div></div>
         <div class="field"><span>P1 덱</span><select id="r-a"></select></div>
         <div class="field"><span>P2 덱</span><select id="r-b"></select></div>
         <div class="row2"><span class="muted">매치 수</span><input type="number" id="r-n" value="1" min="1" max="20" style="width:70px">
@@ -80,8 +80,8 @@
         <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option></select></div>
         <div class="field"><span id="g-mylabel">내 덱</span><select id="g-deck"></select></div>
         <div class="field"><span>AI 덱</span><select id="g-ai"></select></div>
-        <div class="field" id="g-aikind0-f" hidden><span>P1 AI 종류</span><select id="g-aikind0" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic">휴리스틱 AI</option></select></div>
-        <div class="field"><span id="g-aikind-lab">AI 종류</span><select id="g-aikind" class="aikind" title="학습표 AI: 학습한 판단표로 고름 · 신경망 AI: 「신경망 학습」으로 학습한 내 모델(없으면 기본 모델) · 휴리스틱 AI: 학습 없이 덱 지침 · 카드 우선순위로 고름"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic">휴리스틱 AI</option></select></div>
+        <div class="field" id="g-aikind0-f" hidden><span>P1 AI 종류</span><select id="g-aikind0" class="aikind"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic" title="전술은 규칙, 전략 판단(시작 패 · 멀리건 · 드로우 덱 · 선후공 · 번식지)은 학습표로 고르고 학습">휴리스틱 AI</option></select></div>
+        <div class="field"><span id="g-aikind-lab">AI 종류</span><select id="g-aikind" class="aikind" title="학습표 AI: 학습한 판단표로 고름 · 신경망 AI: 「신경망 학습」으로 학습한 내 모델(없으면 기본 모델) · 휴리스틱 AI: 학습 없이 덱 지침 · 카드 우선순위로 고름"><option value="table">학습표 AI</option><option value="nn">신경망 AI</option><option value="heuristic" title="전술은 규칙, 전략 판단(시작 패 · 멀리건 · 드로우 덱 · 선후공 · 번식지)은 학습표로 고르고 학습">휴리스틱 AI</option></select></div>
         <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">나(P1)</option><option value="ai">AI(P2)</option><option value="random">무작위</option></select></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다(다음 대전부터 반영). AI끼리 관전도 학습 데이터(출처 「AI끼리」 — 사람 대전보다 낮은 가중치)로 남습니다"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
         <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
@@ -162,6 +162,7 @@
         <div class="bigtxt">
           <p>「AI 학습」을 켜고 대전하면(나 vs AI · AI끼리 관전, 녹화는 「학습 데이터로 남기기」), 매치가 끝날 때 AI와 내 판단 기록(어떤 상황에서 무엇을 골랐고 그 라운드를 이겼는지)이 학습표에 더해집니다.
           <b>사람 대전 기록은 AI끼리 기록보다 큰 가중치</b>로 학습합니다(학습표 · 신경망 · 저장소에서 합칠 때 모두). 「학습 데이터 정리」에서 뺀 매치는 학습 · 내보내기 · GitHub 올리기에서 모두 빠집니다.
+          <b>휴리스틱 AI</b>는 전술(발동 · 대응 · 공격 등)은 규칙대로 두고, 전략 판단(시작 패 배분 · 멀리건 · 드로우 덱 · 선후공 · 번식지)만 학습표로 고르고 학습합니다.
           <b>프로그램 안에서는 바로 반영</b>되어 다음 대전부터 AI가 그 결과를 씁니다. 기록은 내 컴퓨터의 사용자 폴더에 쌓입니다(인터넷 불필요).</p>
           <p><b>GitHub 반영은 인터넷이 있어야 합니다.</b> 인터넷 없이 GitHub에 즉시 올리는 것은 불가능하므로, 두 가지 방법을 둡니다.</p>
           <p>① <b>GitHub에 올리기</b>(아래): 인터넷과 git, GitHub 로그인이 있으면 학습 기록을 저장소의 데이터 브랜치에 올립니다.<br>
