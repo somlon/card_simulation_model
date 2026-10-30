@@ -61,7 +61,9 @@ $('w-toggle').onclick = () => setLists($('w-lists').style.display === 'none');
 function repLabel(r) {
   const win = r.winner == null ? (r.status === 'done' ? '무승부' : r.status) : (r.names[r.winner] + ' 승');
   const score = r.rounds && r.rounds.length ? ` (${r.rounds.filter(x => x[0] === 0).length}–${r.rounds.filter(x => x[0] === 1).length})` : '';
-  return {t: r.title, s: `${r.source === 'library' ? '기본 제공' : r.kind === 'human' ? '내 대전' : '내 녹화'} · ${win}${score} · ${r.created || ''}`};
+  // 학습표 AI가 아닌 AI가 둔 매치는 AI 종류를 덧붙인다(meta.ai = P1 · meta.ai2 = P2 — session.LiveMatch)
+  const kinds = [...new Set([r.kind === 'human' ? null : r.ai, r.ai2].filter(k => k && k !== 'table'))].map(k => k === 'heuristic' ? '휴리스틱 AI' : k.startsWith('nn') ? '신경망 AI' : k);
+  return {t: r.title, s: `${r.source === 'library' ? '기본 제공' : r.kind === 'human' ? '내 대전' : '내 녹화'}${kinds.length ? ' · ' + kinds.join(' · ') : ''} · ${win}${score} · ${r.created || ''}`};
 }
 function repById(id) { return BOOT.replays.find(r => r.id === id); }
 function renderReplays() {
@@ -139,7 +141,7 @@ function playlistNext(auto) { if (W.idx < 0 || !$('pl-auto').checked) return; se
 $('r-b').selectedIndex = Math.min(1, $('r-b').options.length - 1);
 let jobT = null;
 $('r-go').onclick = async () => {
-  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1}); W.job = j.id; watchJob(); }
+  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai_kind: $('r-ai').value}); W.job = j.id; watchJob(); }
   catch (e) { toast(e.message); }
 };
 $('r-stop').onclick = () => W.job && api('jobs/stop', {id: W.job});
@@ -173,7 +175,8 @@ $('g-start').onclick = async () => {
     stages.play.ended = false;
     stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, human);
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
-    $('g-status').textContent = `대전 중: ${r.title}` + ($('g-aikind').value === 'nn' ? ` · 신경망 AI(${BOOT.nn && BOOT.nn.using === 'local' ? '내 모델' : '기본 모델'})` : '')
+    const kind = $('g-aikind').value;
+    $('g-status').textContent = `대전 중: ${r.title}` + (kind === 'nn' ? ` · 신경망 AI(${BOOT.nn && BOOT.nn.using === 'local' ? '내 모델' : '기본 모델'})` : kind === 'heuristic' ? ' · 휴리스틱 AI' : '')
       + (human && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
