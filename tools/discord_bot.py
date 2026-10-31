@@ -146,7 +146,7 @@ def ask_claude(q):
         return f'(Claude 호출 실패: {e})'
 
 
-RUN_MINS = (7, 22, 37, 52)  # 클라우드 루틴 발화 분(15분 간격) — 분 단위라 시간대와 무관
+RUN_MINS = (7, 17, 27, 37, 47, 57)  # 클라우드 루틴 발화 분(10분 간격) — 분 단위라 시간대와 무관
 
 
 def 질문접수(author, text):
@@ -157,8 +157,8 @@ def 질문접수(author, text):
     cur = time.gmtime(now).tm_min
     mins = min((m - cur) % 60 or 60 for m in RUN_MINS)
     kst = time.gmtime(now + 9 * 3600 + mins * 60)  # 봇이 UTC 서버에서 돌아도 한국시간으로 표시
-    return (f'📨 질문 접수! Claude 루틴이 **매시 7·22·37·52분**(15분 간격)에 확인하고 이 채널에 답을 달아줘요.\n'
-            f'→ 다음 확인까지 약 **{mins}분** (한국시간 {kst.tm_hour:02d}:{kst.tm_min:02d}경). 밀리면 그다음 회차(+15분)로 넘어가요.')
+    return (f'📨 질문 접수! Claude 루틴이 **10분 간격**(매시 7·17·27·37·47·57분)으로 확인하고 이 채널에 답을 달아줘요.\n'
+            f'→ 다음 확인까지 약 **{mins}분** (한국시간 {kst.tm_hour:02d}:{kst.tm_min:02d}경). 밀리면 그다음 회차(+10분)로 넘어가요.')
 
 
 # ───────── 봇 본체 ─────────
