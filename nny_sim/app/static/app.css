@@ -286,6 +286,9 @@ table.t td.n{text-align:right;font-variant-numeric:tabular-nums}
 .chatlog .msg{padding:2px 0;word-break:break-word}
 .chatlog .msg .who{font-weight:700;color:var(--accent);margin-right:5px}
 .chatlog .msg .t{color:var(--dim);font-size:10.5px;margin-left:6px}
+.chatlog .msg .del{color:var(--dim);font-style:italic}
+.chatlog .msg .x{color:var(--dim);text-decoration:none;margin-left:4px;font-size:11px}
+.chatlog .msg .x:hover{color:var(--danger)}
 .chatlog .empty{color:var(--dim)}
 .progress{height:8px;background:#1d2538;border-radius:999px;overflow:hidden}
 .progress b{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}

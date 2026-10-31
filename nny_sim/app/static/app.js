@@ -295,10 +295,20 @@ $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $
 // ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
 // 보내기만 새 호출(/api/room/chat) 하나 추가. 매치별이 아니라 room 전체인 이유: "방 1·듀얼 1" 이라 나눌 의미가 없음.
 let chatCursor = 0;   // 마지막으로 화면에 그린 메시지 id — f_from/s_from/c_from 과 같은 커서 패턴
+const myChatIds = new Set();   // 이 화면(탭)에서 내가 보낸 메시지 id — 삭제(✕) 버튼은 내 글에만 보여준다(서버도 ip 기준으로 다시 확인함)
+function markChatDeleted(id) {
+  const row = $('chat-log') && $('chat-log').querySelector(`.msg[data-id="${id}"]`);
+  if (!row) return;   // 링버퍼에서 이미 밀려나 화면에 없으면 조용히 무시
+  const who = row.querySelector('.who').outerHTML, t = row.querySelector('.t').outerHTML;
+  row.innerHTML = `${who}<span class="del">(삭제됨)</span>${t}`;
+}
 function appendChatMsg(m) {
   const el = $('chat-log'); if (!el) return;
+  if (m.kind === 'delete') return markChatDeleted(m.target);   // 삭제 이벤트 자체는 줄로 안 그리고 대상만 갱신
   const hm = new Date(m.t).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'});
-  el.insertAdjacentHTML('beforeend', `<div class="msg"><span class="who">${esc(m.who)}</span>${esc(m.text)}<span class="t">${hm}</span></div>`);
+  const body = m.deleted ? `<span class="del">(삭제됨)</span>`
+    : `${esc(m.text)}${myChatIds.has(m.id) ? ` <a href="#" class="x" data-del="${m.id}" title="삭제">✕</a>` : ''}`;
+  el.insertAdjacentHTML('beforeend', `<div class="msg" data-id="${m.id}"><span class="who">${esc(m.who)}</span>${body}<span class="t">${hm}</span></div>`);
   el.scrollTop = el.scrollHeight;
 }
 function renderChatNew(list) {
@@ -306,10 +316,14 @@ function renderChatNew(list) {
 }
 $('chat-send').onclick = async () => {
   const text = $('chat-text').value.trim(); if (!text) return;
-  try { const m = await api('room/chat', {text}); $('chat-text').value = ''; appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
+  try { const m = await api('room/chat', {text}); $('chat-text').value = ''; myChatIds.add(m.id); appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
   catch (e) { toast(e.message); }
 };
 $('chat-text').addEventListener('keydown', e => { if (e.key === 'Enter') $('chat-send').click(); });
+$('chat-log').addEventListener('click', e => {
+  const a = e.target.closest('[data-del]'); if (!a) return; e.preventDefault();
+  api('room/chat/delete', {id: a.dataset.del}).then(() => markChatDeleted(a.dataset.del)).catch(err => toast(err.message));
+});
 renderChatNew(BOOT.chat);
 
 function beat() { api('heartbeat', {chat_from: chatCursor}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); renderChatNew(r.chat); }).catch(() => {}); }

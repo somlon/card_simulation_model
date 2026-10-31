@@ -246,5 +246,95 @@ class ChatPushGameTest(unittest.TestCase):
         self.assertEqual(next(x for x in reps if x['id'] == result['replay_id'])['chat'], 0)
 
 
+class ChatDeleteTest(unittest.TestCase):
+    """기능 v1 — 인게임 메신저 「메시지 삭제」(「다음 회차 지시」 2번 후보의 절반, 수정은 이번 범위 밖).
+    자신이 보낸 메시지만 삭제할 수 있고, 삭제하면 원본은 그 자리에서 (삭제됨)으로 바뀌면서 이미 그
+    원문을 받아 그려둔 화면에도 알릴 수 있도록 kind='delete' 이벤트가 새 id로 하나 더 올라간다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='nny_chatdel_')
+        cards = os.path.join(self.tmp, 'cards'); os.makedirs(cards, exist_ok=True)
+        with open(os.path.join(cards, 'index.json'), 'w', encoding='utf-8') as f:
+            json.dump({'ratio': 1.4, 'mat_size': [800, 600], 'faces': []}, f)
+        self.paths = {'sim': os.path.abspath('.'), 'split': os.path.join(self.tmp, 'split'),
+                      'cards': cards, 'library': os.path.join(self.tmp, 'library'),
+                      'user': os.path.join(self.tmp, 'user'), 'static': os.path.abspath('app/static'),
+                      'viewer': os.path.abspath('viewer')}
+        self.app = S.App(self.paths)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_delete_requires_room_membership(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m = self.app.chat_post('25.0.0.11', '안녕')
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.99', m['id'])   # 방에 없는 ip
+
+    def test_delete_rejects_unknown_message_id(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.11', 999999)
+
+    def test_delete_rejects_other_users_message(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        self.app.room_join('25.0.0.12', '관전자', 'spectator')
+        m = self.app.chat_post('25.0.0.11', '성창이 보낸 글')
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.12', m['id'])   # 남의 글은 못 지운다
+        after = self.app.chat_since(0)
+        self.assertFalse(after[-1].get('deleted'), '거부됐으면 원본이 그대로 남아야 한다')
+
+    def test_delete_marks_original_and_emits_event_once(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m = self.app.chat_post('25.0.0.11', '지울 메시지')
+        ev = self.app.chat_delete('25.0.0.11', m['id'])
+        self.assertEqual(ev['kind'], 'delete'); self.assertEqual(ev['target'], m['id'])
+        self.assertGreater(ev['id'], m['id'], '삭제 이벤트는 새 id를 받아야 한다(기존 메시지 id 재사용 금지)')
+        all_msgs = self.app.chat_since(0)
+        orig = next(x for x in all_msgs if x['id'] == m['id'])
+        self.assertTrue(orig['deleted']); self.assertEqual(orig['text'], '', '원본 텍스트는 그 자리에서 비워야 한다')
+        self.assertEqual([x['kind'] for x in all_msgs], ['msg', 'delete'])
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.11', m['id'])   # 두 번 지우기는 거부
+
+    def test_chat_owner_pruned_when_ring_buffer_evicts(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        first = self.app.chat_post('25.0.0.11', '첫 메시지')
+        for i in range(S.CHAT_BUFFER):   # 버퍼를 꽉 채워 first 를 밀어낸다
+            self.app.chat_post('25.0.0.11', f'메시지 {i}')
+        self.assertNotIn(first['id'], self.app.chat_owner, '링버퍼에서 밀려난 메시지의 소유자 기록도 같이 지워져야 한다')
+        self.assertLessEqual(len(self.app.chat_owner), S.CHAT_BUFFER, '소유자 dict 가 버퍼 크기보다 무한정 커지면 안 된다')
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.11', first['id'])   # 밀려난 메시지는 더 이상 삭제 대상이 아님
+
+    def test_delete_endpoint_over_http(self):
+        tmp = tempfile.mkdtemp(prefix='nny_chatdel_http_')
+        try:
+            cards = os.path.join(tmp, 'cards'); os.makedirs(cards, exist_ok=True)
+            with open(os.path.join(cards, 'index.json'), 'w', encoding='utf-8') as f:
+                json.dump({'ratio': 1.4, 'mat_size': [800, 600], 'faces': []}, f)
+            paths = {'sim': os.path.abspath('.'), 'split': os.path.join(tmp, 'split'),
+                     'cards': cards, 'library': os.path.join(tmp, 'library'),
+                     'user': os.path.join(tmp, 'user'), 'static': os.path.abspath('app/static'),
+                     'viewer': os.path.abspath('viewer')}
+            app, srv = S.serve(paths, port=0, host='127.0.0.1')
+            base = f'http://127.0.0.1:{srv.server_address[1]}'
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                app.room_join('127.0.0.1', '테스터', 'player')   # 테스트 클라이언트는 항상 127.0.0.1 로 옴
+                st, m = req(base, app.token, 'POST', '/api/room/chat', {'text': '지울 글'})
+                self.assertEqual(st, 200, m)
+                st, ev = req(base, app.token, 'POST', '/api/room/chat/delete', {'id': m['id']})
+                self.assertEqual(st, 200, ev); self.assertEqual(ev['kind'], 'delete')
+                st, again = req(base, app.token, 'POST', '/api/room/chat/delete', {'id': m['id']})
+                self.assertEqual(st, 400, again)   # 이미 지운 것을 또 지우면 400(ValueError)
+            finally:
+                if app.live: app.live.abort()
+                srv.shutdown(); srv.server_close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == '__main__':
     unittest.main()
