@@ -542,14 +542,12 @@ def do_search(g, c, p, l, k):
             nm = {y.name for y in ref_cards(g, c, p, l, k['name_ref'])}
             x = g.search(p, lambda y: y.name in nm and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
         else:
-            cs = g.search_cands(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc))
-            if not cs: g.L(f'{k.get("why") or c.name}: 대상 없음', 'sys'); x = None
-            else:
-                ai = g.p[p].ai
-                x = max(cs, key=lambda y: (round(hand_pick_val(g, p, y), 1), ai.card_pri(g, p, y)))
-                g.to_hand(x); g.shuffle(p)
-                if x.zone != 'hand': x = None
-                else: g.L(f'{g.pname(p)} {k.get("why") or c.name}: {x} 패에 넣음')
+            # soltop_ 제보(디스코드 ?, 2026-10-31) — 이 분기가 g.search()(엔진, ai.pick_search 거쳐 사람·AI가 직접 고름)
+            # 대신 하드코딩된 가치 휴리스틱(hand_pick_val+card_pri)으로 멋대로 한 장을 골라 패에 넣고 있었다 —
+            # 사람 자리에서도 "어떤 카드를 서치할지" 선택지 없이 엔진이 임의로 정해버려, 특정 카드(격투가 입장 등)를
+            # 노리고 서치했는데 다른 카드가 나와 의도한 플레이를 못 하는 문제. g.search()로 교체(동일 이름 서치
+            # 분기(name_ref, 541행)가 이미 쓰던 방식과 통일).
+            x = g.search(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
         if x is None: break
         got.append(x)
     if k.get('as') and got: refs(l)[k['as']] = got[0] if len(got) == 1 else got
