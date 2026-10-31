@@ -46,7 +46,7 @@ def put(g, name, owner, zone):
 
 
 def mon(g, name, owner, pos='atk', seals=0):
-    c = put(g, name, owner, None); g.place_monster(c, owner, pos, allow_shared=False)
+    c = put(g, name, owner, None); g.place_monster(c, owner, pos)
     if seals: g.add_counter(c, A.SEAL, seals)
     return c
 

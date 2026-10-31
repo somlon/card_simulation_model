@@ -642,7 +642,7 @@ def can_special(g, c, p, ev, k):
 
 
 def v_special(g, c, p, ev, k):
-    if not g.free_m(p) and g.shared is not None: return 0.0
+    if not g.free_m(p) and not g.free_shared(): return 0.0
     if 'ref' in k:
         xs = [c] if k['ref'] == 'SELF' else [ev['card']] if k['ref'] == 'EV' and isinstance(ev, dict) and ev.get('card') is not None else []
     else:
@@ -2009,7 +2009,7 @@ def v_joker(g, c, p, ev, k):
     return d * UNIT if d > 0.3 else 0.0
 
 
-@block('joker', can=lambda g, c, p, ev, k: (bool(g.free_m(p)) or g.shared is None) and not g.rule('no_special', c, p), val=v_joker, threat=400)
+@block('joker', can=lambda g, c, p, ev, k: (bool(g.free_m(p)) or bool(g.free_shared())) and not g.rule('no_special', c, p), val=v_joker, threat=400)
 def do_joker(g, c, p, l, k):
     """「레벨과 속성을 선언한다. 이 카드는 해당 레벨과 속성을 가진 몬스터로 취급되어 원하는 자신 필드에 특수소환한다」 — 선언은 족보 가치(cards8.plan_joker)"""
     import cards8

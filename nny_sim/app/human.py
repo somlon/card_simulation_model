@@ -68,12 +68,14 @@ class HumanAI(P.LearnedAI):
 
     # ── 놓을 존 · 소환 표시 형식 (사람이 직접) ──
     def choose_zone(self, g, p, c, kind, opts):
-        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'shared'(빈 공유 존) / 빈 마법 존 번호.
-        화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)"""
+        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'sharedN'(빈 공유 존 칸, 공유 존 2칸이라
+        N=0·1) / 빈 마법 존 번호. 화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)
+        (사용자 지시 2026-10-30 — 공유 존이 1칸→2칸이 되며 'shared' 단일 문자열이 'shared0'·'shared1'로 바뀜)"""
         if len(opts) == 1 or evaluating(): return opts[0]
         name = {'monster': '몬스터', 'spell': '마법'}[kind]
-        labels = ['공유 존' if z == 'shared' else f'{name} 존 {z + 1}' for z in opts]
-        zones = [{'seat': p, 'zone': 'shared' if z == 'shared' else ('m' if kind == 'monster' else 's'), 'i': None if z == 'shared' else z} for z in opts]
+        labels = [f'공유 존 {int(z[len("shared"):]) + 1}' if isinstance(z, str) else f'{name} 존 {z + 1}' for z in opts]
+        zones = [{'seat': p, 'zone': 'shared' if isinstance(z, str) else ('m' if kind == 'monster' else 's'),
+                  'i': int(z[len('shared'):]) if isinstance(z, str) else z} for z in opts]
         return opts[self._ask(g, p, f'놓을 존:{c.name}', labels, extra={'zones': zones, 'card': c.name})]
 
     def choose_summon_pos(self, g, p, c, how):

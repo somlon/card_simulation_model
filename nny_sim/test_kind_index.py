@@ -34,7 +34,7 @@ class KindIndexTest(unittest.TestCase):
     def test_card_put_directly_in_shared_zone(self):
         g = make('투기장의 규칙', '데이터버그 패키지 프로그램')
         x = Card(Impl.pool['세리 - 델레가토르'], 0); Impl.attach(x)
-        g.shared = x; x.zone = 'shared'; x.controller = 0; g.shared_owner = 0
+        g.shareds[0] = x; x.zone = 'shared'; x.controller = 0; g.shared_owners[0] = 0
         self.assertEqual(g.cost_payer(0), 1)                         # place_*를 거치지 않아도 조회 때 더한다
 
     def test_no_holder_on_field_is_empty(self):

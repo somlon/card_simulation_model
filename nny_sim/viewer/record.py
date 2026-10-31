@@ -85,9 +85,12 @@ class Recorder(list):
             to = [self.reg(x) for x in link_targets(l) if x is not l.card]
             if to: lk.append(to)
             ch.append(lk)
+        # 공유 존 2칸(사용자 지시 2026-10-30) — 'sh'·'so'는 칸마다 하나씩 담는 리스트로 바뀜(예전: 단일 값).
+        # 화면(board.js)의 공유 존 시각 표현은 다음 회차 몫 — 여기서는 기보 데이터만 어긋나지 않게 맞춘다.
         st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': ch,
-              'sh': self.cell(g, g.shared), 'so': g.shared_owner, 'fz': self.cell(g, g.fieldz)}
-        if g.shared is not None: st['sc'] = g.shared.controller
+              'sh': [self.cell(g, c) for c in g.shareds], 'so': list(g.shared_owners), 'fz': self.cell(g, g.fieldz)}
+        sc = [c.controller for c in g.shareds if c is not None]
+        if sc: st['sc'] = sc
         if g.fieldz is not None: st['fc'] = g.fieldz.controller
         return st
 

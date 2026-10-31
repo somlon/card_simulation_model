@@ -44,7 +44,7 @@ def put(g, name, owner, zone):
 
 
 def mon(g, name, owner, pos='atk'):
-    c = put(g, name, owner, None); g.place_monster(c, owner, pos, allow_shared=False); return c
+    c = put(g, name, owner, None); g.place_monster(c, owner, pos); return c
 
 
 def spell(g, name, owner, faceup=True):

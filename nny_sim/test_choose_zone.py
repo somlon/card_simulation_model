@@ -48,16 +48,17 @@ class ChooseZoneTest(unittest.TestCase):
         self.assertIs(g.p[0].m[opts[2]], c, '사람이 고른 존(첫 칸이 아닌)에 실제로 놓여야 함')
 
     def test_human_picks_shared_zone_even_when_monster_zone_free(self):
+        # 공유 존 2칸(사용자 지시 2026-10-30) — choose_zone의 opts = free_m + ['shared0', 'shared1']
         g, human, bridge = make_game()
-        self.assertIsNone(g.shared)
+        self.assertTrue(all(x is None for x in g.shareds))
         c = Card(Impl.pool['던전마스터 깜짝상자'], 0); Impl.attach(c)
         opts = g.free_m(0)
-        shared_idx = len(opts)   # choose_zone의 opts = free_m + ['shared'] — 'shared'는 맨 뒤
+        shared_idx = len(opts) + 1   # 뒤에서 두 칸 중 두 번째('shared1')를 고름 — 첫 칸이 아님을 확인
         bridge.queue = [shared_idx]
         ok = g.place_monster(c, 0, 'atk')
         self.assertTrue(ok)
         self.assertEqual(c.zone, 'shared', '몬스터 존이 비어 있어도 사람이 공유 존을 직접 고르면 그쪽에 놓여야 함(§10-2)')
-        self.assertIs(g.shared, c)
+        self.assertIs(g.shareds[1], c, '사람이 고른 칸(두 번째)에 실제로 놓여야 함')
 
     def test_default_without_queue_still_first_empty_zone(self):
         """큐가 비어 있으면(기존 테스트들의 FakeBridge.default=0 과 동일) 여전히 첫 빈칸 — 다른 사람-모드
