@@ -155,12 +155,22 @@ class HumanAI(P.LearnedAI):
     # ── 행동 목록: LearnedAI 와 같은 후보 · 실행이되, AI 운용 지침으로 빼는 후보는 빼지 않는다 ──
     # (AI만의 거름망: 손해로 보는 후보(VETO) 제외, 번성충 일반소환은 결착 때만, 결착 가능하면 자동 공격 — policy.LearnedAI 참고)
     def choose_triggers(self, g, p, cands):
-        out = []
+        """어느 효과를 발동할지(필수는 자동 포함)는 하나씩 묻고, 둘 이상 발동하게 되면 그 발동 순서도 묻는다
+        (soltop_ 제보 — 동시에 발동할 수 있는 효과가 여럿일 때 AI처럼 점수로 자동 정렬되거나 트리거 수집
+        순서 그대로 발동돼 사람에게 순서를 고를 기회가 없었다. 발동 여부와 순서는 규칙상 둘 다 그 효과를
+        가진 플레이어가 정한다 — ai.py HeuristicAI.choose_triggers 는 점수로만 자동 정렬해 그대로 둠)"""
+        chosen = []
         for c, e, ev in cands:
-            if e.mandatory: out.append((c, e, ev)); continue
+            if e.mandatory: chosen.append((c, e, ev)); continue
             if self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', act_score(g, c, e, p, ev, 1), True), ('안 함', 0, False)]):
-                out.append((c, e, ev))
-        return out
+                chosen.append((c, e, ev))
+        if len(chosen) <= 1: return chosen
+        remaining = list(chosen); order = []
+        while len(remaining) > 1:
+            opts = [(f'{c.name}#{e.num}', act_score(g, c, e, p, ev, 1), i) for i, (c, e, ev) in enumerate(remaining)]
+            order.append(remaining.pop(self.choose(g, p, '동시에 발동 — 먼저 발동할 효과', opts)))
+        order.extend(remaining)
+        return order
 
     def respond(self, g, p, opts):
         cand = [('패스', 0, None)]; seen = set()
