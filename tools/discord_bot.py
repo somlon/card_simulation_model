@@ -98,7 +98,8 @@ MENU = ('🗂 **4차원 주머니** — 명령은 전부 나한테만 보여요 
         '`/상태` 서버 켜짐? · `/접속` 접속법 · `/접속파일` 더블클릭 bat\n'
         '`/진행` 진행 상황 · `/업데이트` 최근 커밋 · `/재정` 재정질문 · `/덱` 덱 목록\n'
         '`/유저등록 <하마치IP>` 내 접속 등록 · `/질문 <내용>` 자유 질문\n'
-        '채널에 `?내용` 으로도 질문할 수 있어요.')
+        '채널에 `?내용` 으로도 질문할 수 있어요.\n'
+        '`!작업 <내용>` (서버장 전용) 게임/봇 수정 요청 — Claude 루틴이 직접 구현해요.')
 
 
 # ───────── 유저 등록 ─────────
@@ -224,6 +225,16 @@ async def on_message(m):
     if m.author.bot:
         return
     c = (m.content or '').strip()
+    if c.startswith('!작업') and len(c) > 3:
+        now = time.time()
+        cur = time.gmtime(now).tm_min
+        mins = (7 - cur) % 60 or 60  # 작업 요청은 본체 루틴(매시 7분)만 처리
+        try:
+            await m.channel.send(f'{m.author.mention} 🛠 작업 요청 접수! **서버장이 쓴 요청만** 유효해요. '
+                                 f'본체 루틴(매시 7분, 약 {mins}분 후)이 확인해서 구현하고, 반영되면 게임의 업데이트 패널에 떠요.')
+        except Exception:
+            pass
+        return
     if c.startswith('?') and len(c) > 1:
         try:
             await m.channel.send(f'{m.author.mention} ' + 질문접수(m.author.display_name, c[1:].strip()))
