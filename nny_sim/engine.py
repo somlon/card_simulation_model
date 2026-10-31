@@ -124,7 +124,7 @@ class Game:
         self.shareds = [None] * SHZ; self.shared_owners = [None] * SHZ   # 공유 존 칸마다 카드 · 마커 주인(마커는 칸이 비어도 남는다)
         self.fieldz = None
         self.turn = 0; self.turn_player = first; self.first = first; self.phase = '준비'
-        self.chain = []; self.events = []; self.floating = []; self.src = None; self.no_attack = {}; self.no_damage = {}
+        self.chain = []; self.events = []; self.floating = []; self.pending_leaves = []; self.src = None; self.no_attack = {}; self.no_damage = {}
         self.resolving = False
         self.locked = False       # 종료 단계 a 이후: 양쪽 모두 효과를 발동할 수 없다 (§5-5)
         self.decks = decks
@@ -477,7 +477,10 @@ class Game:
             for e in list(c.equips):
                 e.equip_to = None
                 h = getattr(e, 'on_host_leave', None)
-                if h: h(self, e, c)
+                # soltop_ 제보(디스코드 ?, 6번, 2026-10-31) — 여기서 곧바로 h(...)를 불러 처리하면, 호스트 c가
+                # '다른 처리'의 중간 단계로 떠난 경우 그 처리가 끝나기도 전에 서치가 먼저 끝나 버린다. [유언] 등
+                # 다른 「…했을 경우」 효과처럼 Game.triggers()(체인·처리가 다 끝난 체크포인트)까지 미룬다.
+                if h: self.pending_leaves.append((h, e, c))
                 if self.on_field(e):
                     self.L(f'장착 대상 {c} 이탈 → {e} 묘지로', 'sys')
                     self.send_grave(e, cause=('rule', None))
@@ -1356,6 +1359,9 @@ class Game:
             src.state_check(self, src)
 
     def triggers(self, depth=0):
+        if self.pending_leaves:   # 미뤄 둔 on_host_leave(맵시기생벌 등 — Game._remove) 처리, 체인·처리가 다 끝난 지금 실행
+            pending, self.pending_leaves = self.pending_leaves, []
+            for h, e, c in pending: h(self, e, c)
         self.state_check()
         if self.locked or depth > 12 or not self.events: self.events = []; return
         evs = self.events; self.events = []; self.cur_evs = evs
