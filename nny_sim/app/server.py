@@ -68,6 +68,7 @@ class App:
         self.live_ips = {}  # 로비에서 시작한 사람vs사람 매치의 ip -> 좌석(0|1) — 상대 화면이 매치 ID·참가 키를 수동으로 받지 않고 스스로 찾아 들어가게 함
         self.chat = deque(maxlen=CHAT_BUFFER)  # 인게임 메신저: 방 전체 공용 채팅 1개(매치별 구분 없음) — 최근 CHAT_BUFFER개만 메모리에(프로세스 수명 동안만)
         self.chat_seq = 0   # 끊기지 않고 늘어나는 메시지 id — 링버퍼에서 오래된 메시지가 밀려나도 커서(마지막으로 받은 id) 비교는 계속 올바름
+        self.chat_owner = {}  # msg id -> 보낸 ip(별도 dict, 응답 직렬화에 절대 안 실림) — 삭제 권한(자기 글만) 확인용
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
 
@@ -147,6 +148,12 @@ class App:
         return self.room_status()
 
     # ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — "방 1·듀얼 1"이라 매치별로 나눌 이유가 없다(room 참가자끼리) ──
+    def _chat_evict_owner(self):
+        """새 메시지를 append 하기 전에, 링버퍼가 이미 가득 차 있으면 밀려날 가장 오래된 항목의 소유자 기록도
+        같이 지운다(chat_owner 가 deque 와 별도 dict 라서 저절로 안 줄어듦 — 오래 켜 둔 서버에서 무한히
+        커지는 걸 막음, '삭제' 이벤트 자체는 chat_owner 에 안 들어가므로 지울 것이 없어도 안전)."""
+        if len(self.chat) >= self.chat.maxlen: self.chat_owner.pop(self.chat[0]['id'], None)
+
     def chat_post(self, ip, text):
         """방(room)에 있는 사람만(참가·관전 모두) 쓸 수 있다 — room_join 으로 먼저 들어와야 함.
         읽기는 따로 안 막는다(heartbeat/boot 로 누구나 받음 — 화면이 어차피 로비 패널 옆에 두므로 room 참가가 자연스러운 전제)."""
@@ -155,10 +162,34 @@ class App:
         text = (text or '').strip()
         if not text: raise ValueError('빈 메시지는 보낼 수 없습니다.')
         if len(text) > CHAT_MAX: raise ValueError(f'메시지가 너무 깁니다({CHAT_MAX}자 이하로 적어 주세요).')
+        self._chat_evict_owner()
         self.chat_seq += 1
-        msg = {'id': self.chat_seq, 'who': m['name'] or ip, 'text': text, 't': int(time.time() * 1000)}
+        msg = {'id': self.chat_seq, 'who': m['name'] or ip, 'text': text, 't': int(time.time() * 1000), 'kind': 'msg'}
         self.chat.append(msg)
+        self.chat_owner[msg['id']] = ip   # 응답에는 절대 안 실림(별도 dict) — 삭제 권한 확인에만 서버 내부에서 씀
         return msg
+
+    def chat_delete(self, ip, msg_id):
+        """자신이 보낸 메시지만 삭제(수정은 이번 범위 밖 — 「다음 과제」 메모의 절반). 원본은 그 자리에서
+        text 를 비우고 deleted 로 표시해 두어 처음부터 다시 받는 화면(chat_from=0)도 바로 '(삭제됨)'을 보고,
+        그와 별도로 kind='delete' 이벤트를 새 id 로 하나 더 올려서 이미 원문을 받아 그려둔 화면도 다음
+        증분 커서 조회에서 그 사실을 알고 지울 수 있게 한다(기존 f_from/chat_from 커서 패턴 그대로 재사용,
+        새 네트워크 호출 없음)."""
+        try: msg_id = int(msg_id)
+        except (TypeError, ValueError): raise ValueError('메시지를 찾을 수 없습니다.')
+        if not self.room.get(ip): raise ValueError('방에 참가해야 메시지를 삭제할 수 있습니다.')
+        owner = self.chat_owner.get(msg_id)
+        if owner is None: raise ValueError('메시지를 찾을 수 없습니다(이미 밀려났거나 없는 메시지입니다).')
+        if owner != ip: raise ValueError('자신이 보낸 메시지만 삭제할 수 있습니다.')
+        target = next((x for x in self.chat if x['id'] == msg_id), None)
+        if target is None or target.get('deleted'): raise ValueError('메시지를 찾을 수 없습니다(이미 삭제됐습니다).')
+        target['text'] = ''; target['deleted'] = True
+        self._chat_evict_owner()
+        self.chat_seq += 1
+        event = {'id': self.chat_seq, 'who': target['who'], 'text': '', 't': int(time.time() * 1000),
+                 'kind': 'delete', 'target': msg_id}
+        self.chat.append(event)
+        return event
 
     def chat_since(self, from_id=0):
         """heartbeat/boot 응답에 끼워 보낼 새 메시지만(기존 f_from/s_from/c_from 커서 패턴과 같음) — 매 호출마다 전체를 다시 보내지 않음."""
@@ -309,6 +340,7 @@ class App:
         if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'))
         if path == '/api/room/leave': return self.room_leave(ip)
         if path == '/api/room/chat': return self.chat_post(ip, body.get('text'))
+        if path == '/api/room/chat/delete': return self.chat_delete(ip, body.get('id'))
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)
