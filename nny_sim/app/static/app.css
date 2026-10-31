@@ -2,12 +2,12 @@
    게임 보드의 의미색(플레이어 색 --p1/--p2, 공격/대상/선택 등 --gold/--green/--danger/--cyan/--accent)은 세 테마 모두 공용 — 화면 톤만 바뀐다. */
 :root{
   --bg:#0a0d14; --panel:#111725; --panel2:#161e30; --panel3:#1c2640; --line:#243049; --text:#e7eaf2; --muted:#8e98ad; --dim:#5d6780; --headerbg:#0c1019;
-  --p1:#f2667a; --p2:#62aaff; --gold:#f3c84b; --green:#5fd38a; --danger:#ff5b5b; --cyan:#59e0ff; --accent:#7c9cff;
+  --p1:#f2667a; --p2:#62aaff; --gold:#f3c84b; --gold-text:#f3c84b; --green:#5fd38a; --danger:#ff5b5b; --cyan:#59e0ff; --accent:#7c9cff;
   --font:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Noto Sans CJK KR",system-ui,sans-serif;
   --dur:640ms;
 }
 :root[data-theme="white"]{
-  --bg:#f4f5f8; --panel:#ffffff; --panel2:#eef0f5; --panel3:#e3e7f0; --line:#d6dae3; --text:#1c2333; --muted:#5a6377; --dim:#8990a3; --headerbg:#ffffff;
+  --bg:#f4f5f8; --panel:#ffffff; --panel2:#eef0f5; --panel3:#e3e7f0; --line:#d6dae3; --text:#1c2333; --muted:#5a6377; --dim:#8990a3; --headerbg:#ffffff; --gold-text:#8a6410;
 }
 :root[data-theme="black"]{
   --bg:#000000; --panel:#0d0d0f; --panel2:#161618; --panel3:#1e1e22; --line:#2b2b30; --text:#f2f2f5; --muted:#9a9aa3; --dim:#68686f; --headerbg:#000000;
@@ -27,7 +27,7 @@ button{cursor:pointer}
 input[type=text],input[type=number],select,textarea{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
 input[type=checkbox]{accent-color:var(--gold)}
 label.chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
-.muted{color:var(--muted)} .dim{color:var(--dim)} .err{color:#ff9aa4} .ok{color:var(--green)} .warn{color:var(--gold)}
+.muted{color:var(--muted)} .dim{color:var(--dim)} .err{color:#ff9aa4} .ok{color:var(--green)} .warn{color:var(--gold-text)}
 h2.sec{font-size:12px;letter-spacing:.4px;color:var(--muted);margin:0 0 8px;font-weight:700}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
 /* 머리 막대 */
@@ -188,7 +188,7 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .chain .lk .tx{flex:1;min-width:0;display:flex;flex-direction:column}
 .chain .lk .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chain .lk small{color:var(--muted);font-size:11.5px}
-.chain .lk small.to{color:var(--gold)}
+.chain .lk small.to{color:var(--gold-text)}
 .chain .lk.new{border-color:var(--cyan);box-shadow:0 0 12px -4px var(--cyan)}
 .chain .lk.res{border-color:var(--gold);background:#2b2410}
 .chain .lk.res .no{background:var(--gold);color:#0a0d14}
@@ -202,7 +202,7 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .detail .dn{font-weight:800;font-size:15px}
 .detail .dm{color:var(--muted);font-size:12px;margin:2px 0 6px}
 .detail .dx{font-size:12.5px;white-space:pre-wrap;color:#d3d9e6}
-.detail .st{font-size:12px;margin-top:6px;color:var(--gold)}
+.detail .st{font-size:12px;margin-top:6px;color:var(--gold-text)}
 .hint{color:var(--dim);font-size:12.5px}
 .thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .thumbs .th{width:54px;cursor:pointer}
@@ -213,7 +213,7 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .log .row:hover{background:var(--panel2)}
 .log .row.cur{background:#2a3350;box-shadow:inset 3px 0 0 var(--gold)}
 .log .row .ic{flex:0 0 16px;text-align:center;color:var(--muted)}
-.log .row.k-turn{margin-top:8px;font-weight:800;color:var(--gold)}
+.log .row.k-turn{margin-top:8px;font-weight:800;color:var(--gold-text)}
 .log .row.k-round{margin-top:10px;font-weight:900;font-size:13.5px;color:#fff;background:#1b2440}
 .log .row.k-end{font-weight:800;color:#fff}
 .log .row.k-res{padding-left:20px;color:#d9cfa8}
@@ -223,7 +223,7 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .log .row .memo-btn{flex:0 0 auto;margin-left:auto;opacity:0;border:0;background:none;cursor:pointer;font-size:12px;padding:0 2px;color:var(--muted)}
 .log .row:hover .memo-btn{opacity:.7}
 .log .row .memo-btn:hover{opacity:1}
-.log .row .memo-badge{flex:0 0 auto;font-size:10.5px;color:var(--gold);cursor:help}
+.log .row .memo-badge{flex:0 0 auto;font-size:10.5px;color:var(--gold-text);cursor:help}
 /* 판단 패널 */
 .decision{background:#141c33;border:2px solid var(--gold);border-radius:12px;padding:10px 12px;box-shadow:0 0 24px -8px var(--gold)}
 .decision .q{font-weight:800;margin-bottom:8px}
@@ -234,7 +234,7 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .decision .opt img{width:34px;border-radius:3px;flex:0 0 34px}
 .decision .opt .t{flex:1;min-width:0}
 .decision .opt .t small{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.decision .opt .v{color:var(--gold);font-size:12px;font-variant-numeric:tabular-nums}
+.decision .opt .v{color:var(--gold-text);font-size:12px;font-variant-numeric:tabular-nums}
 .decision.wait{border-color:var(--line);box-shadow:none}
 .decision.side .fixed{display:flex;gap:6px;margin-bottom:6px}
 .decision.side .fixed .opt{flex:1;justify-content:center}
