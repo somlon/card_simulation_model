@@ -98,8 +98,7 @@ MENU = ('🗂 **4차원 주머니** — 명령은 전부 나한테만 보여요 
         '`/상태` 서버 켜짐? · `/접속` 접속법 · `/접속파일` 더블클릭 bat\n'
         '`/진행` 진행 상황 · `/업데이트` 최근 커밋 · `/재정` 재정질문 · `/덱` 덱 목록\n'
         '`/유저등록 <하마치IP>` 내 접속 등록 · `/질문 <내용>` 자유 질문\n'
-        '채널에 `?내용` 으로도 질문할 수 있어요.\n'
-        '`!작업 <내용>` (서버장 전용) 게임/봇 수정 요청 — Claude 루틴이 직접 구현해요.')
+        '채널에 `?내용` 하나면 끝 — 질문이면 답해주고, 수정/기능 요청이면(서버장 전용) Claude 루틴이 직접 구현해요.')
 
 
 # ───────── 유저 등록 ─────────
@@ -157,8 +156,9 @@ def 질문접수(author, text):
     cur = time.gmtime(now).tm_min
     mins = min((m - cur) % 60 or 60 for m in RUN_MINS)
     kst = time.gmtime(now + 9 * 3600 + mins * 60)  # 봇이 UTC 서버에서 돌아도 한국시간으로 표시
-    return (f'📨 질문 접수! Claude 루틴이 **10분 간격**(매시 7·17·27·37·47·57분)으로 확인하고 이 채널에 답을 달아줘요.\n'
-            f'→ 다음 확인까지 약 **{mins}분** (한국시간 {kst.tm_hour:02d}:{kst.tm_min:02d}경). 밀리면 그다음 회차(+10분)로 넘어가요.')
+    return (f'📨 접수! Claude 루틴이 **10분 간격**(매시 7·17·27·37·47·57분)으로 확인해요 — 질문이면 답을 달아주고, '
+            f'수정/기능 요청이면(서버장 전용) 직접 구현해서 결과를 달아줘요.\n'
+            f'→ 다음 확인까지 약 **{mins}분** (한국시간 {kst.tm_hour:02d}:{kst.tm_min:02d}경).')
 
 
 # ───────── 봇 본체 ─────────
@@ -225,16 +225,6 @@ async def on_message(m):
     if m.author.bot:
         return
     c = (m.content or '').strip()
-    if c.startswith('!작업') and len(c) > 3:
-        now = time.time()
-        cur = time.gmtime(now).tm_min
-        mins = (7 - cur) % 60 or 60  # 작업 요청은 본체 루틴(매시 7분)만 처리
-        try:
-            await m.channel.send(f'{m.author.mention} 🛠 작업 요청 접수! **서버장이 쓴 요청만** 유효해요. '
-                                 f'본체 루틴(매시 7분, 약 {mins}분 후)이 확인해서 구현하고, 반영되면 게임의 업데이트 패널에 떠요.')
-        except Exception:
-            pass
-        return
     if c.startswith('?') and len(c) > 1:
         try:
             await m.channel.send(f'{m.author.mention} ' + 질문접수(m.author.display_name, c[1:].strip()))
