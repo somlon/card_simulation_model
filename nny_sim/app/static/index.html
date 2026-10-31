@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nny-token" content="__TOKEN__">
+<title>뉴 네오 유희왕 시뮬레이터</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="nav">
+  <span class="logo">뉴 네오 유희왕 <small>시뮬레이터</small></span>
+  <button class="tab on" data-v="watch">관전 · 재생 목록</button>
+  <button class="tab" data-v="play">AI 대전</button>
+  <button class="tab" data-v="deck">덱 편집</button>
+  <button class="tab" data-v="learn">학습</button>
+  <span class="sp"></span><span class="muted" id="online" title=""></span><span class="muted" id="ver"></span>
+  <select id="theme-select" class="btn sm" title="화면 테마"><option value="neo">뉴 네오</option><option value="white">화이트</option><option value="black">블랙</option></select>
+  <button class="btn sm" id="quit" title="프로그램 끄기">종료</button>
+</header>
+<main>
+  <!-- 관전 · 재생 목록 -->
+  <section class="view on" id="v-watch">
+    <div class="row2" style="margin-bottom:8px">
+      <button class="btn sm" id="w-toggle">목록 접기</button>
+      <span class="muted" id="w-now"></span>
+    </div>
+    <div class="cols c3" id="w-lists" style="margin-bottom:12px">
+      <div class="panel">
+        <h2 class="sec">재생 기록</h2>
+        <div class="row2" style="margin-bottom:6px">
+          <input type="text" id="w-filter" placeholder="덱 이름으로 찾기" style="flex:1">
+          <select id="w-src"><option value="">전체</option><option value="library">기본 제공</option><option value="user">내 기록</option></select>
+        </div>
+        <div class="list" id="w-replays"></div>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn sm" id="w-addsel">선택한 기록을 재생 목록에 추가</button>
+          <button class="btn sm" id="w-selall">모두 선택</button>
+          <button class="btn sm danger" id="w-del" title="내 기록만 지울 수 있습니다">선택 삭제</button>
+          <button class="btn sm" id="w-push" title="자동 수집(설정)이 꺼져 있어도, 선택한 내 기록을 지금 online/data-games 에 올립니다(인터넷 · git 필요)">선택 지금 올리기</button>
+        </div>
+        <div class="muted" id="w-pushstate" style="margin-top:4px"></div>
+      </div>
+      <div class="panel">
+        <h2 class="sec">재생 목록</h2>
+        <div class="row2" style="margin-bottom:6px">
+          <select id="pl-select" style="flex:1"></select>
+          <button class="btn sm" id="pl-new">새 목록</button>
+        </div>
+        <div class="row2" style="margin-bottom:6px">
+          <input type="text" id="pl-name" placeholder="재생 목록 이름" style="flex:1">
+          <button class="btn sm primary" id="pl-save">저장</button>
+          <button class="btn sm danger" id="pl-delete">삭제</button>
+        </div>
+        <div class="list" id="pl-items"></div>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn primary" id="pl-play">▶ 처음부터 재생</button>
+          <label class="chk"><input type="checkbox" id="pl-auto" checked> 끝나면 다음 매치</label>
+          <label class="chk"><input type="checkbox" id="pl-loop"> 반복</label>
+        </div>
+      </div>
+      <div class="panel">
+        <h2 class="sec">새 AI 대전 녹화</h2>
+        <div class="bigtxt muted" style="margin-bottom:8px">학습표 AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 편집한 덱도 고를 수 있습니다.</div>
+        <div class="field"><span>P1 덱</span><select id="r-a"></select></div>
+        <div class="field"><span>P2 덱</span><select id="r-b"></select></div>
+        <div class="row2"><span class="muted">매치 수</span><input type="number" id="r-n" value="1" min="1" max="20" style="width:70px">
+          <button class="btn primary" id="r-go">녹화 시작</button><button class="btn sm" id="r-stop">멈춤</button></div>
+        <div style="margin-top:10px"><div class="progress"><b id="r-bar"></b></div><div class="muted" id="r-msg" style="margin-top:4px"></div></div>
+      </div>
+    </div>
+    <div id="w-stage"></div>
+  </section>
+
+  <!-- AI 대전 -->
+  <section class="view" id="v-play">
+    <div class="panel" id="g-lobby" style="margin-bottom:12px">
+      <h2 class="sec">로비(방)</h2>
+      <div class="row2" style="gap:8px;align-items:center;margin-bottom:6px">
+        <input type="text" id="lobby-name" placeholder="내 이름" style="width:120px">
+        <button class="btn sm" id="lobby-join">참가</button>
+        <button class="btn sm" id="lobby-watch">관전</button>
+        <button class="btn sm" id="lobby-leave">나가기</button>
+        <button class="btn sm primary" id="lobby-start" disabled title="방에 참가자가 2명이 되면 눌러 시작할 수 있습니다(상대는 자동으로 들어옵니다)">매치 시작(로비)</button>
+      </div>
+      <div class="muted" id="lobby-list"></div>
+    </div>
+    <div class="panel" id="g-chat" style="margin-bottom:12px">
+      <h2 class="sec">채팅(방 전체 — 참가·관전 모두)</h2>
+      <div class="chatlog" id="chat-log"></div>
+      <div class="row2" style="margin-top:6px">
+        <input type="text" id="chat-text" placeholder="메시지(방에 참가·관전 중이어야 보낼 수 있습니다, 최대 200자)" maxlength="200" style="flex:1">
+        <button class="btn sm primary" id="chat-send">보내기</button>
+      </div>
+    </div>
+    <div class="panel" id="g-setup" style="margin-bottom:12px">
+      <div class="row2" style="gap:14px;align-items:flex-end">
+        <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option><option value="pvp">사람 대 사람</option></select></div>
+        <div class="field"><span id="g-mylabel">내 덱</span><select id="g-deck"></select></div>
+        <div class="field"><span id="g-oplabel">AI 덱</span><select id="g-ai"></select></div>
+        <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">나(P1)</option><option value="ai">AI(P2)</option><option value="random">무작위</option></select></div>
+        <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다(다음 대전부터 반영)"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
+        <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
+        <div class="field"><span>&nbsp;</span><button class="btn primary" id="g-start">대전 시작</button></div>
+        <div class="field"><span>&nbsp;</span><button class="btn danger" id="g-abort" disabled>그만두기</button></div>
+      </div>
+      <div class="muted" id="g-status" style="margin-top:6px"></div>
+      <div class="muted" id="g-pvpinfo" style="margin-top:6px"></div>
+      <div class="row2" style="margin-top:8px;gap:8px;align-items:flex-end">
+        <div class="field"><span>참가 키로 들어가기(상대가 받은 키)</span>
+          <div class="row2"><input type="text" id="g-join-id" placeholder="매치 ID" style="width:90px"><input type="text" id="g-join-key" placeholder="참가 키" style="width:160px"></div>
+        </div>
+        <button class="btn sm" id="g-join">참가</button>
+      </div>
+    </div>
+    <div id="g-stage"></div>
+  </section>
+
+  <!-- 덱 편집 -->
+  <section class="view" id="v-deck">
+    <div class="cols c3">
+      <div class="panel">
+        <h2 class="sec">덱 목록</h2>
+        <div class="list" id="d-list"></div>
+        <div class="row2" style="margin-top:8px"><button class="btn sm primary" id="d-new">새 덱</button></div>
+        <div class="bigtxt muted" style="margin-top:10px">기본 덱을 고르면 복사본으로 엽니다. 저장한 덱은 AI 대전 · 녹화에서 고를 수 있습니다.</div>
+      </div>
+      <div class="panel">
+        <div class="row2" style="margin-bottom:8px">
+          <input type="text" id="d-name" placeholder="덱 이름" style="flex:1;font-weight:700">
+          <select id="d-skill" title="스킬 카드"></select>
+        </div>
+        <div class="row2" style="margin-bottom:6px">
+          <button class="btn primary" id="d-save">저장</button>
+          <button class="btn" id="d-saveas">다른 이름으로 저장</button>
+          <button class="btn danger" id="d-delete">삭제</button>
+          <span class="muted" id="d-state"></span>
+        </div>
+        <div id="d-secs"></div>
+        <div class="msgs" id="d-msgs"></div>
+      </div>
+      <div class="panel">
+        <h2 class="sec">카드 풀</h2>
+        <div class="row2" style="margin-bottom:6px">
+          <input type="text" id="p-q" placeholder="이름 · 텍스트 찾기" style="flex:1">
+          <select id="p-theme"></select>
+          <select id="p-type"><option value="">종류 전체</option><option>몬스터</option><option>마법</option><option>필드</option><option>스킬</option></select>
+        </div>
+        <div class="row2" style="margin-bottom:6px">
+          <label class="chk"><input type="checkbox" id="p-fit" checked> 이 스킬로 쓸 수 있는 카드만</label>
+          <label class="chk" title="켜면 누른 카드를 전략 덱에 넣습니다"><input type="checkbox" id="p-strat"> 전략 덱에 넣기</label>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:6px">누르기: 덱에 1장 추가(스킬 카드는 덱 스킬로) · 오른쪽 누르기: 1장 빼기 · 카드에 올리면 아래에 설명</div>
+        <div class="pool" id="p-grid"></div>
+        <div class="detail" id="p-detail" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 학습 -->
+  <section class="view" id="v-learn">
+    <div class="cols c2">
+      <div class="panel">
+        <h2 class="sec">사람 대전 학습 기록</h2>
+        <div id="l-stats"></div>
+        <div class="row2" style="margin-top:10px">
+          <button class="btn primary" id="l-export">학습 기록 내보내기</button>
+          <button class="btn" id="l-open">내보낸 폴더 열기</button>
+        </div>
+        <div class="muted" id="l-exported" style="margin-top:6px"></div>
+      </div>
+      <div class="panel">
+        <h2 class="sec">어떻게 학습하나요</h2>
+        <div class="bigtxt">
+          <p>「AI 학습」을 켜고 대전하면, 매치가 끝날 때 AI와 내 판단 기록(어떤 상황에서 무엇을 골랐고 그 라운드를 이겼는지)이 학습표에 더해집니다.
+          <b>프로그램 안에서는 바로 반영</b>되어 다음 대전부터 AI가 그 결과를 씁니다. 기록은 내 컴퓨터의 사용자 폴더에 쌓입니다(인터넷 불필요).</p>
+          <p><b>GitHub 반영은 인터넷이 있어야 합니다.</b> 인터넷 없이 GitHub에 즉시 올리는 것은 불가능하므로, 두 가지 방법을 둡니다.</p>
+          <p>① <b>GitHub에 올리기</b>(아래): 인터넷과 git, GitHub 로그인이 있으면 학습 기록을 저장소의 데이터 브랜치에 올립니다.<br>
+          ② <b>내보내기</b>: 파일을 만들어 두었다가, GitHub 웹에서 <code>nny_sim/learned/human_games/</code> 폴더에 올립니다.</p>
+          <p>저장소에서는 <code>merge_learning.py</code>가 이 기록을 학습표에 합쳐(같은 매치는 한 번만) 다음 학습 · 리그 · 프로그램 빌드에 쓰게 합니다.</p>
+        </div>
+        <h2 class="sec" style="margin-top:14px">GitHub에 올리기 (인터넷 필요)</h2>
+        <div class="field"><span>저장소 주소</span><input type="text" id="l-url"></div>
+        <div class="row2">
+          <div class="field" style="flex:1"><span>기준 브랜치</span><input type="text" id="l-base"></div>
+          <div class="field" style="flex:1"><span>올릴 브랜치(비우면 data/human-games-컴퓨터이름)</span><input type="text" id="l-branch"></div>
+        </div>
+        <div class="row2"><button class="btn" id="l-savegit">설정 저장</button><button class="btn primary" id="l-git">GitHub에 올리기</button>
+          <label class="chk" title="인터넷과 git이 있을 때만 동작합니다. 실패하면 다음 대전 때 쌓인 기록을 다시 올립니다"><input type="checkbox" id="l-auto"> 대전이 끝날 때마다 자동으로 올리기</label></div>
+        <div class="muted" id="l-last" style="margin-top:6px"></div>
+        <pre class="muted" id="l-gitlog" style="white-space:pre-wrap;font-size:12px;max-height:240px;overflow:auto"></pre>
+        <label class="chk" style="margin-top:10px" title="대전이 끝나거나 룰미스 메모가 붙을 때마다 재생 기록을 online/data-games 브랜치에 올립니다 — 수정 고리(1순위)가 이 기보로 재현합니다. 인터넷 · git 필요, 실패하면 다음 기회에 다시 올림">
+          <input type="checkbox" id="l-pushgames"> 기보(재생+메모)도 자동으로 수집에 올리기</label>
+        <div class="muted" id="l-gamepush" style="margin-top:4px"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="board.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,522 @@
+"""휴리스틱 판단 정책 v0.1 — 사용자 검토용 초안.
+모든 판단은 로그에 '판단' 항목으로 남는다(후보와 점수, 선택).
+덱별 지침은 DECK_POLICY에 모은다: 시작 패 배분 / 드로우 덱 선택 / 멀리건 / 서치 우선순위.
+"""
+from cards import value, VETO, act_score
+import json, os, random as _r
+
+LEARN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'learned')
+
+class Learner:
+    """판단별 승률표(문맥 밴딧). 시뮬레이션이 끝날 때마다 그 판에서 내린 판단에 승패를 반영하고 파일에 누적한다."""
+    def __init__(self, name):
+        self.path = os.path.join(LEARN_DIR, name + '.json')
+        try: self.t = json.load(open(self.path, encoding='utf-8'))
+        except Exception: self.t = {}
+        self.eps = 0.0          # 탐색 비율 (학습 실행 시 train.py가 올림)
+    def stat(self, key, opt):
+        w, n = self.t.get(key, {}).get(opt, [0, 0]); return (w + 1) / (n + 2), n
+    def choose(self, key, opts, rng):
+        if self.eps and rng.random() < self.eps: return rng.choice(opts), '탐색'
+        best = max(opts, key=lambda o: self.stat(key, o)[0]); return best, '학습값'
+    def update(self, key, opt, won):
+        d = self.t.setdefault(key, {}).setdefault(opt, [0, 0]); d[0] += int(won); d[1] += 1
+    def save(self):
+        os.makedirs(LEARN_DIR, exist_ok=True)
+        json.dump(self.t, open(self.path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1, sort_keys=True)
+
+BREEDING = Learner('breeding_ground')
+
+# 상대 턴 견제 카드 (상대 턴에 패에서 쓸 수 있는 번성충 카드)
+INTERFERE = ['번성충-노린재', '번성충-하루살이대군', '번성충-먹이바구미', '번성충-장수말벌여왕', '번성충-메뚜기여왕', '번성충-사충보복']
+
+def p_skill(g, p): return g.p[p].skill.name if g.p[p].skill else None
+
+DECK_POLICY = {
+    '번성충-대발생': dict(
+        split=5,
+        split_table={},                                    # 상대 스킬별 고정 배분표 (SPLIT_BY_MATCHUP)
+        upper_in_hand=(1, 2),         # 패에 상급 카드를 1~2장 유지하려 함
+        search=['번성충-메뚜기여왕', '번성충-넓적배사마귀', '번성충-노린재', '번성충-하루살이대군', '번성충-장수말벌여왕',
+                '번성충-시체송장벌레', '번성충-번식지', '번성충-군체이동', '번성충-사충보복', '번성충-맵시기생벌',
+                '번성충-대장정', '번성충-병정흰개미', '번성충-먹이바구미'],
+        mull_dead=[]),
+    '솔루나 아츠': dict(
+        split=5,
+        split_table={'first': 5, 'second': 5},   # 학습 1단계 결과 (2026-09-22, 대 번성충-대발생, 각 400판)
+        upper_in_hand=(0, 0),
+        search=['솔루나 시엘', '솔루나 시아', '솔루나 인카운터', '솔루나 아츠 - 태양과 달의 가호', '솔루나 아츠 - 이클립스 하모니',
+                '시아 아츠 - 일광정화', '시엘 아츠 - 월광허상', '솔루나 아츠 - 이클립스 오버드라이브', '시아 아츠 - 성광난무',
+                '시엘 아츠 - 잔월의 유산', '시엘 아츠 - 월영침식', '시아 아츠 - 일광', '시엘 아츠 - 월영', '솔루나 아츠 - 듀얼 컴뱃',
+                '솔루나 아츠 - 여명과 황혼의 궤적', '시아 아츠 - 여명신광', '시아 아츠 - 성광소각', '시아 아츠 - 일광지로',
+                '솔루나 아츠 - 천체정렬'],
+        mull_dead=['솔루나 시아 - 코로나 이그니스', '솔루나 시엘 - 블러드문 리퍼']),
+    # 2026-10-11 새 덱 (시제품 지침 — 학습의 사전값. 학습표 데이터가 쌓이면 학습값이 대신한다)
+    '소원의 분수': dict(
+        split=5, split_table={}, upper_in_hand=(0, 1),
+        search=['행운의 도박사', '꿈이 가득한 아이', '코인 - 행운의 네잎클로버', '희생의 의사', '용기의 모험가',
+                '영웅의 조건 - 행운', '영웅의 조건 - 희생', '영웅의 조건 - 용기', '영웅의 조건 - 지혜', '행운의 카드 - 조커',
+                '간절한 마음', '기적의 전조', '코인 - 희생의 펜던트', '코인 - 용기의 검', '코인 - 지혜의 서', '지혜의 사서',
+                '희생의 상징 - 펜던트', '용기의 무기 - 검', '지혜의 원천 - 마도서', '행운의 도적', '희생의 성녀', '용기의 전사',
+                '지혜의 마법사', '기적의 영웅'],
+        mull_dead=['기적의 영웅']),                       # 스킬 효과로만 특수소환 — 패에서는 쓸 수 없다
+    '희생제': dict(
+        split=5, split_table={}, upper_in_hand=(0, 1),
+        search=['저주인형 - 애나벨', '저주인형 마들렌', '저주 - 위저보드', '저주 - 재앙', '저주인형 - 쿠로하', '저주 - 강령',
+                '저주 - 불문율', '저주 - 빙의', '저주 - 타락', '저주인형 - 비비안', '저주 - 의심', '저주 - 탐욕', '저주 - 원한의 굴레',
+                '저주인형 - 저주인형', '저주인형 - 처키', '저주인형 - 조리아드'],
+        mull_dead=['퇴마의 부적']),                       # 희생제 1번이 상대에게 놓는 카드 — 자신이 쓰면 손해
+    # 호박옥 (2026-10-12 시제품 지침): 에이스는 스킬이 라운드 시작 시 필드에 낸다 — 패에 온 에이스는 제물 2장이 드는 최상급
+    '호박옥 - 봉인의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['호박옥 - 침전', '호박옥 - 결정충', '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '호박옥 - 각성의 태동',
+                '호박옥 - 수액정', '호박옥 - 잔편', '호박옥 - 태고의 수해', '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 균열',
+                '호박옥의 수호자 - 레시나', '호박옥의 수호자 - 실렉스', '호박옥 - 임시 봉인', '봉인을 푸는 자',
+                '호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스'],
+        mull_dead=['호박옥 - 아우렘 티라누스']),
+    '호박옥 - 몽식의 계약': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['봉인을 푸는 자', '호박옥 - 침전', '호박옥 - 결정충', '호박옥 - 각성의 태동', '월식', '호박옥 - 수액정', '호박옥 - 잔편',
+                '호박옥의 수호자 - 카르분쿨루스', '호박옥의 수호자 - 마르모르', '깨어남의 종', '몽마의 도래', '호박옥 - 태고의 수해',
+                '호박옥 - 황금봉랍', '호박옥 - 반혼체', '호박옥 - 임시 봉인', '호박옥 - 균열', '호박옥의 수호자 - 레시나',
+                '호박옥의 수호자 - 실렉스', '꿈의 파열', '호박옥 - 아우렘 티라누스', '호박옥 - 녹스 솜니페르'],
+        mull_dead=['호박옥 - 녹스 솜니페르', '호박옥 - 아우렘 티라누스']),
+    # 던전마스터 (2026-10-12 시제품 지침): 스킬 3번이 패의 레벨 5 이상을 특수소환 — 패에 상급 몬스터를 1~3장 유지 (시작 패 메인 3 / 상급 2).
+    # 서치 우선순위: 컨트롤러(덱 · 묘지에서 보스 특수소환 + 서치) > 보스 > 율법(강제 [유언] 상쇄) > 상대 턴 견제 카드 순
+    '던전마스터 셔플!': dict(
+        split=3, split_table={}, upper_in_hand=(1, 3),
+        search=['던전마스터 컨트롤러', '던전마스터 데스 칠 드래곤', '던전마스터 인페르노 드래곤', '암흑의 율법', '던전마스터 헬',
+                '트랩: 깜짝상자', '던전마스터 다크엘프 어새신', '던전마스터 다크 엠퍼러', '던전마스터 트랩퍼', '트랩: 가시바늘',
+                '던전마스터 다크 매지션', '던전마스터 새크리파이스', '던전마스터 망령', '트랩: 거짓 샘물', '던전마스터 다크나이트',
+                '트랩 리페어 시스템', '던전마스터 깜짝상자'],
+        mull_dead=[]),                                   # 패에서 쓸 수 없는 카드 없음 (레벨 10도 스킬 3번 · 엠퍼러 1번으로 특수소환)
+    # 데이터버그 (2026-10-12 시제품 지침): 패의 상급 「데이터버그」는 「데이터버그」 소환 트리거로 패에서 특수소환 — 1~2장 유지 (시작 패 메인 4 / 상급 1).
+    # 서치 우선순위: 패에 넣으면 바로 나오는 플라이 > 시동 리틀버그 · 앤트 > 덱 특수소환 콜로니 > 강한 상급 > 나머지 (상황별 선택은 cards10.pick)
+    '데이터버그 패키지 프로그램': dict(
+        split=4, split_table={}, upper_in_hand=(1, 2),
+        search=['데이터버그 플라이', '데이터버그 리틀버그', '데이터버그 앤트', '데이터버그 콜로니', '데이터버그 디지털 웜', '데이터버그 습격',
+                '데이터버그 퀸 비', '데이터버그 버터플라이', '데이터버그 헤라클레스', '데이터버그 캐터필러', '데이터버그 로딩',
+                '데이터버그 쌍살벌', '데이터버그 웜', '데이터버그 백업', '데이터버그 유니온 마스터', '데이터버그 다운로드',
+                '데이터버그 아로마', '데이터버그 더 바이러스', '데이터버그 더 딜리트', '데이터버그 리벤지', '데이터버그 코쿤',
+                '데이터버그 에볼루션 마스터'],
+        mull_dead=[]),                                   # 더 바이러스 · 더 딜리트도 소환 절차로 패에서 특수소환
+    # 포커짐승들 (2026-10-12 시제품 지침): 시작 패 7장(올인 1번) — 메인 5 / 상급 2. 패의 상급 늑대 · 강아지 · 고양이는 「보여주고 덱으로 → 같은 동물 서치」.
+    # 서치 우선순위: 족보 시동 몬스터(부르는 토끼 · 노리는 늑대 · 찾는 강아지 · 보는 고양이) > 실패 몬스터([유언] 서치) > 마법
+    '올인': dict(
+        split=5, split_table={}, upper_in_hand=(1, 2),
+        search=['♥ 풀 하우스를 찾는 강아지', '♠ 스트레이트를 부르는 토끼', '◆ 플러쉬를 노리는 늑대', '♣ 포카드를 보는 고양이',
+                '♣ 메이드에 실패한 고양이', '♥ 메이드에 실패한 강아지', '◆ 메이드에 실패한 늑대', '♠ 메이드에 실패한 토끼',
+                '짐승조커', '포커짐승들의 도박장', '표시목', '밑장빼기', '포커짐승들의 쇠망치',
+                '◆ 플러쉬 늑대', '♥ 풀 하우스 강아지', '♣ 포카드 고양이', '♠ 스트레이트 토끼', '스트플을 원하는 도시쥐', '스트플을 원하는 시골쥐'],
+        mull_dead=[]),                                   # 상급 몬스터도 제물 소환 · 공개 서치로 패에서 쓸 수 있다
+    # 격투가 (2026-10-13 시제품 지침): 테마 몬스터가 모두 상급 덱 — 자신 필드가 비었을 때 패에서 특수소환하므로 시작 패 메인 3 / 상급 2, 패의 상급 1~3장 유지.
+    # 서치 우선순위: 대상 파괴가 붙은 특수소환(엘리펀트 노즈 · 라이노 혼) > 자기 소생 몬스터 > 필드 카드(투기장 — 반격 조건 · 덱에서 소환) > 나머지
+    '투기장의 규칙': dict(
+        split=3, split_table={}, upper_in_hand=(1, 3),
+        search=['격투가 엘리펀트 노즈', '격투가 라이노 혼', '격투가 타이거팽', '격투가 라이온하트', '격투가의 투기장', '격투가 래빗 풋',
+                '격투가 스네이크 스케일', '격투가 입장', '격투가 반격', '격투가 세레모니'],
+        mull_dead=[]),                                   # 상급 몬스터도 필드가 비면 패에서 특수소환할 수 있다
+}
+
+
+# 매치업별 고정 시작 패 배분: (내 스킬, 상대 스킬) -> {'first': 메인 장수, 'second': 메인 장수}
+SPLIT_BY_MATCHUP = {
+    # 2026-09-22 선후공별 전수 측정(각 1000판) 후 상위 2개를 4000판 재측정: 선공 5=29.0% / 4=26.9%, 후공 5=45.3% / 4=41.5%
+    ('번성충-대발생', '솔루나 아츠'): {'first': 5, 'second': 5},
+}
+
+class HeuristicAI:
+    def __init__(self, skill, split_override=None):
+        self.pol = dict(DECK_POLICY.get(skill, dict(split=5, upper_in_hand=(0, 1), search=[], mull_dead=[])))
+        self.split_override = split_override
+        self._seen = set()
+        self.decisions = []      # {'first': k, 'second': k} — 학습된 배분표
+
+    def cont_apply(self, g, p, src, num, why=''):
+        """1턴 1번 [지속]을 지금 적용할지(카드의 주인 p가 고른다 — 사용자 답변 2026-10-22). 기본: 적용한다"""
+        return True
+
+    # ── 기록 ──
+    def note(self, g, p, what, cands, pick):
+        cs = ', '.join(f'{n}={s:.0f}' for n, s in cands[:8])
+        g.L(f'판단[{g.pname(p)}] {what}: 후보 {{{cs}}} → {pick}', 'decision')
+
+    # ── 우선순위 ──
+    def card_pri(self, g, p, c):
+        lst = self.pol['search']
+        base = (len(lst) - lst.index(c.name)) if c.name in lst else 0
+        dup = sum(1 for x in g.p[p].hand if x.name == c.name)
+        return base - 4 * dup
+
+    # ── 시작 패 · 드로우 ──
+    def split_default(self, g, p, n):
+        """지침 · 측정표의 시작 패 배분 → (메인 장수, 출처)"""
+        pos = 'first' if g.first == p else 'second'
+        opp_skill = g.p[1 - p].skill.name if g.p[1 - p].skill else None
+        table = self.split_override or SPLIT_BY_MATCHUP.get((g.p[p].skill.name, opp_skill)) or self.pol.get('split_table')
+        if table and pos in table:
+            return min(table[pos], n), f'학습 배분표({"선공" if pos=="first" else "후공"})'
+        return min(self.pol['split'], n), '임시 고정값'
+
+    def choose_split(self, g, p, n):
+        k, src = self.split_default(g, p, n)
+        g.L(f'판단[{g.pname(p)}] 시작 패 배분: 메인 {k} / 상급 {n-k} ({src})', 'decision'); return k
+
+    def mulligan(self, g, p, hand):
+        back = [c for c in hand if c.name in self.pol['mull_dead']]
+        lo, hi = self.pol['upper_in_hand']
+        ups = [c for c in hand if c.deck_kind() == '상급' and c not in back]
+        if len(ups) > hi: back += sorted(ups, key=lambda c: self.card_pri(g, p, c))[:len(ups) - hi]
+        return back
+
+    def mulligan_split(self, g, p, back):
+        """멀리건으로 다시 뽑을 때 메인 덱에서 뽑을 매수. 규칙상 배분을 바꿀 수 있으나(§4 STEP 6) 기본값은 되돌린 카드와 같은 배분"""
+        return sum(1 for c in back if c.deck_kind() == '메인')
+
+    def wants_first(self, opp_skill):
+        """이전 라운드 패자로서 선후공을 결정 (정본 4, §11-2). 덱별 지침 go_first가 없으면 선공"""
+        return self.pol.get('go_first', True)
+
+    def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
+        """rnd라운드(2 · 3)의 선후공 결정 — 이전 라운드 패자가 한다. 반환 True = 선공"""
+        return self.wants_first(opp_skill)
+
+    def first_result(self, won):
+        """choose_first로 정한 라운드의 승패 (학습형 정책이 결과를 반영)"""
+
+    def choose_mill_deck(self, g, chooser, target, n):
+        """「덱의 위에서부터」(덱 미지정) 제외: 메인 · 상급 중 한쪽을 고른다 (§6-7). 메인 덱에 n장 이상 있으면 메인, 아니면 많은 쪽"""
+        pl = g.p[target]
+        return 'main' if len(pl.main) >= n or len(pl.main) >= len(pl.upper) else 'upper'
+
+    def choose_draw_deck(self, g, p):
+        lo, hi = self.pol['upper_in_hand']
+        ups = sum(1 for c in g.p[p].hand if c.deck_kind() == '상급')
+        pick = 'upper' if ups < lo and g.p[p].upper else 'main'
+        g.L(f'판단[{g.pname(p)}] 드로우 덱: {"상급" if pick=="upper" else "메인"} (패의 상급 {ups}장, 목표 {lo}~{hi})', 'decision')
+        return pick
+
+    # ── 선택 ──
+    def pick_search(self, g, p, cands, why):
+        return max(cands, key=lambda c: self.card_pri(g, p, c))
+
+    def prefers_place(self, g, p, conts): return len(g.spells(p)) < 2
+
+    def pick_target(self, g, p, cands, purpose='remove', any_side=False):
+        if not cands: return None
+        if purpose == 'banish_grave':
+            return max(cands, key=lambda c: (c.type == '몬스터', c.level))
+        if any_side:
+            opp = [c for c in cands if c.controller != p]
+            cands = opp or cands
+        if purpose == 'equip_leave':
+            return min(cands, key=lambda c: value(g, c))
+        return max(cands, key=lambda c: value(g, c) + (0.5 if c.flags.get('effect_only') else 0))
+
+    def pick_discard(self, g, p, hand):
+        return min(hand, key=lambda c: (self.card_pri(g, p, c), value(g, c)))
+
+    def keep_trigger(self, g, p, c, e):
+        """함께 고른 트리거를 차례로 발동하기 직전에 다시 확인한다: 앞의 발동으로 덱이 줄어 이 발동의 행동 세금으로 바로 지게 되었으면
+        발동하지 않는다(강제 효과는 그대로 — cards.act_score와 같은 판단, engine.Game.triggers)"""
+        return e.mandatory or not g.tax_ruin(p, c, e)
+
+    def choose_triggers(self, g, p, cands):
+        out = []; sc = []
+        for c, e, ev in cands:
+            s = 100 if e.mandatory else act_score(g, c, e, p, ev, 1)
+            sc.append((f'{c.name}#{e.num}', s))
+            if s > 0: out.append((s, c, e, ev))
+        out.sort(key=lambda x: -x[0])
+        if sc: self.note(g, p, '트리거 발동', sc, ', '.join(f'{c.name}#{e.num}' for _, c, e, _ in out) or '없음')
+        return [(c, e, ev) for _, c, e, ev in out]
+
+    # ── 종료 · 패스의 평가: 보유 가치(기회비용) ──
+    # 후보 점수는 「그 행동으로 얻는 것」만 세고 「그 카드를 지금 써서 잃는 것」을 빼지 않아, 종료 · 패스(0점)가 늘 졌다.
+    # 상대 턴에 쓸 수 있는 카드를 남겨 두는 가치(보유 가치)를 정의해, 행동 = 즉시 이득 − 쓰는 카드의 보유 가치,
+    # 종료 · 패스 = 남겨 둔 선택지의 가치로 같은 척도에서 비교한다.
+    PASS_EVAL = True      # False면 예전 점수(종료 · 패스 = 0). DRLAI는 False — 학습 당시 후보 특징(h) 분포 유지
+    HOLD_SCALE = 50.0     # 효과 위협도(threat) → 점수: 위협도 500 = 10점 (「세트」 후보 8점과 같은 크기)
+    HOLD_CAP = 20.0
+
+    def hold_value(self, g, p, c):
+        """카드 c를 지금 쓰지 않고 남겨 둘 때의 가치. 상대 턴에도 쓸 수 있는 효과가 있을 때만 양수:
+        패의 몬스터 [신속] · 대응 · 트리거(패에서 발동), 패의 신속 · 트리거 마법(세트해 두고 상대 턴에 발동), 세트한 신속 · 트리거 마법.
+        일반 · 지속 · 필드 마법과 자신 턴 전용 효과만 있는 카드는 0 — 지금 쓰지 않아도 얻는 것이 없다"""
+        if c is None: return 0.0
+        v = 0.0
+        sub = c.d.get('subtype', '')
+        for e in c.effects:
+            if e.kind not in ('quick', 'resp', 'trigger'): continue
+            if c.zone == 'hand':
+                if 'hand' not in e.zones and not (e.spell_act and sub in ('신속', '트리거')): continue
+                if e.spell_act and sub not in ('신속', '트리거'): continue
+            elif c.zone == 's' and not c.faceup:
+                if not (e.spell_act and sub in ('신속', '트리거')): continue
+            else:
+                continue
+            v = max(v, min(self.HOLD_CAP, e.threat / self.HOLD_SCALE))
+        return v
+
+    def reserve(self, g, p):
+        """지금 남겨 둔 선택지의 가치 합 (패 + 세트한 마법) — 종료 · 패스의 평가 점수"""
+        return sum(self.hold_value(g, p, c) for c in g.p[p].hand) + sum(self.hold_value(g, p, c) for c in g.p[p].s if c)
+
+    def urgency(self, g, p):
+        """대응 중인 상대 효과의 위협도(0~1): 위협이 클수록 지금 카드를 쓰는 기회비용이 줄어든다"""
+        if g.chain and g.chain[-1].player != p:
+            return max(0.0, min(1.0, g.chain[-1].eff.threat / 1000.0))
+        return 0.0
+
+    def spend_cost(self, g, p, c, respond=False):
+        """행동이 패 · 세트에서 카드를 쓰면 그 카드의 보유 가치를 잃는다 (대응이면 위협도만큼 할인)"""
+        if not self.PASS_EVAL or c is None or c.zone not in ('hand', 's'): return 0.0
+        h = self.hold_value(g, p, c)
+        return h * (1.0 - self.urgency(g, p)) if respond else h
+
+    def respond(self, g, p, opts):
+        best = None; sc = []
+        for c, e in opts:
+            s = act_score(g, c, e, p, g.chain, 0)
+            if s > 0: s -= self.spend_cost(g, p, c, respond=True)
+            if s > 0: sc.append((f'{c.name}#{e.num}', s))
+            if s > 0 and (best is None or s > best[0]): best = (s, c, e)
+        if sc:
+            self.note(g, p, '대응' if g.chain else '우선권', sc, f'{best[1].name}#{best[2].num}')
+        return (best[1], best[2]) if best else None
+
+    # ── 진행/정비 단계 ──
+    def main_phase(self, g, p, ph):
+        failed = set()   # 이 단계에서 코스트/대상 불가로 취소된 발동 (카드 uid, 효과 번호) — 다시 고르지 않는다
+        for _ in range(40):
+            acts = []
+            if ph == '진행' and g.can_normal(p):   # 기본 1회 또는 추가 일반소환 권리 (포커짐승들) — 권리가 없으면 예전과 같음
+                for c in g.p[p].hand:
+                    if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
+                    if g.rule('no_special', c, p) or not g.can_place(c, p) or not g.can_normal(p, c): continue
+                    s = 20 + g.atk(c) / 100 + (40 if c.has('솔루나') else 0) + (10 if 'direct_attack' in getattr(c, 'rules', {}) else 0)
+                    if c.has('번성충'):
+                        # 지침: 번성충 몬스터는 이번 턴 결착(상대 HP 0)이 되는 경우에만 효과 대신 일반소환
+                        dmg = self.lethal_damage(g, p, c)
+                        s = 95 if dmg >= g.p[1 - p].hp else 0
+                        key = (g.turn, ph, c.uid, s)
+                        if key not in self._seen:
+                            self._seen.add(key)
+                            g.L(f'판단[{g.pname(p)}] {c.name} 일반소환 검토: 소환 후 직접공격 합계 {dmg} / 상대 HP {g.p[1-p].hp} → {"결착 가능, 허용" if s else "결착 불가, 보류"}', 'decision')
+                    if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): s = 0
+                    acts.append((s, 'summon', c, None))
+            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph):   # 제물 · 수비 소환, 표시 형식 변경
+                acts.append((s, lab.split(':')[0], pay[1], pay))
+            for c, e in g.options(p, ('ignition', 'quick')):
+                if (c.uid, e.num) in failed: continue
+                s = act_score(g, c, e, p, None, 0)
+                acts.append((s, 'act', c, e))
+            if g.free_s(p):
+                for c in g.p[p].hand:
+                    if c.type == '마법' and c.d.get('subtype') in ('트리거', '신속') and not getattr(c.effects[0], 'hand_ok', False) \
+                       and any(e.kind in ('resp', 'trigger', 'quick') for e in c.effects):
+                        acts.append((8, 'set', c, None))
+            if self.PASS_EVAL:   # 패의 카드를 쓰는 행동은 그 카드의 보유 가치만큼 뺀다 (세트는 보유 가치를 지킨다)
+                acts = [(s - (self.spend_cost(g, p, c) if kind in ('summon', 'act', '소환') and s > 0 else 0), kind, c, e) for s, kind, c, e in acts]
+            acts = [a for a in acts if a[0] > 0]
+            if not acts: return
+            acts.sort(key=lambda a: -a[0])
+            self.note(g, p, f'{ph} 행동', [(f'{a[1]}:{a[2].name}' + (f'#{a[3].num}' if a[1] == 'act' else ''), a[0]) for a in acts],
+                      f'{acts[0][1]}:{acts[0][2].name}')
+            s, kind, c, e = acts[0]
+            if kind == 'summon':
+                g.normal_summon(c, p); g.after_action(p)
+            elif kind == 'act':
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
+            elif kind == 'set':
+                g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
+            else:
+                self.do_extra(g, p, e)
+
+    # ── 번식지 서치 (학습) ──
+    def breeding_pick(self, g, p, cands):
+        opp_skill = g.p[1 - p].skill.name if g.p[1 - p].skill else '?'
+        k = sum(1 for x in g.p[p].hand if x.name in INTERFERE)
+        when = '자신 턴 종료' if g.turn_player == p else '상대 턴 종료'
+        key = f'{g.p[p].skill.name} vs {opp_skill}|{when}|견제패 {min(k, 3)}장'
+        inter = [x for x in cands if x.name in INTERFERE]
+        opts = ['견제'] + (['엔진'] if any(x.name not in INTERFERE for x in cands) else []) if inter else ['엔진']
+        choice, why = BREEDING.choose(key, opts, g.rng) if len(opts) > 1 else (opts[0], '선택지 1개')
+        pool = inter if choice == '견제' else [x for x in cands if x.name not in INTERFERE] or cands
+        pick = max(pool, key=lambda c: self.card_pri(g, p, c))
+        self.decisions.append(('breeding', key, choice))
+        sts = ', '.join(f'{o} {BREEDING.stat(key, o)[0]*100:.0f}%(n={BREEDING.stat(key, o)[1]})' for o in opts)
+        g.L(f'판단[{g.pname(p)}] 번식지: {key} — {sts} → {choice} ({why}) → {pick.name}', 'decision')
+        return pick
+
+    def end_game(self, g, p, winner):
+        if winner is None: return
+        for kind, key, choice in self.decisions:
+            if kind == 'breeding': BREEDING.update(key, choice, winner == p)
+        self.decisions = []
+
+    # ── 공유 존 ──
+    def use_shared(self, g, p, c, full=True):
+        """빈 공유 존에 놓을지. 규칙상 언제든 고를 수 있으나(§10-2) 지침상 몬스터 존이 가득 찼을 때만 검토하고, 필요할 때만 사용:
+        ① 비어 있는 공유 존의 마커가 상대 것 → 놓는 순간 마커가 뒤집혀 상대에게 페널티 (마커는 비어도 남는다, 사용자 재정 2026-09-30)
+        ② 이 몬스터를 더해야 이번 턴 결착이 된다
+        ③ 스킬이 공유 존을 필요로 하는 조건 — 스킬 카드의 훅 wants_shared(g, p, c)가 이유를 돌려줄 때
+           (데이터버그 패키지 프로그램 「「데이터버그」 몬스터 6장」, 2026-10-12 추가 — 훅이 없는 스킬은 그대로)"""
+        if not full: return False
+        sk = g.p[p].skill; hook = getattr(sk, 'wants_shared', None) if sk is not None else None
+        if any(g.shared_owners[i] not in (None, p) for i in g.free_shared()): why = '마커가 상대 소유(상대 페널티)'
+        elif self.lethal_damage(g, p, c) >= g.p[1 - p].hp: why = '이번 턴 결착에 필요'
+        elif hook is not None and hook(g, p, c): why = hook(g, p, c)
+        else: return False
+        g.L(f'판단[{g.pname(p)}] 공유 존 사용 허용 — {why}', 'decision'); return True
+
+    # ── 소환 표시 형식 (§5-2) — 모든 일반소환 · 특수소환에서 엔진이 묻는다(Game.summon_pos) ──
+    def summon_pos_heuristic(self, g, p, c, how):
+        """→ ('atk' | 'def', 이유)
+        ① 이번 턴 아직 공격 선언을 할 수 있고(자신 턴 · 전투 단계 이전 · 선공 1턴 아님) 이 몬스터로 이득 보는 공격
+           (직접공격 또는 이기는 전투)이 있으면 공격 표시
+        ② 그 밖에는 공격력이 0이거나, 수비력이 공격력보다 높거나, 상대 필드에 이 몬스터보다 공격력이 높은 몬스터가 있으면 수비 표시
+           — 수비 표시는 공격받아도 HP 피해가 없다(정본 3-3)
+        ③ 나머지는 공격 표시"""
+        a, d = g.atk(c), g.df(c)
+        o = 1 - p
+        opp = [m for m in g.monsters(o) if m.faceup]
+        if g.can_declare_attack(p) and a > 0 and not g.attack_banned(c):
+            direct = not g.blockers(o) or 'direct_attack' in getattr(c, 'rules', {})
+            wins = any(a > (g.atk(t) if t.pos == 'atk' else g.df(t)) for t in opp)
+            if direct or wins: return 'atk', '이번 턴 공격 가능'
+        if a == 0: return 'def', '공격력 0'
+        if d > a: return 'def', '수비력이 더 높음'
+        if any(g.atk(m) > a for m in opp): return 'def', '상대에 더 강한 몬스터'
+        return 'atk', '공격력 우위'
+
+    def choose_summon_pos(self, g, p, c, how):
+        pos, why = self.summon_pos_heuristic(g, p, c, how)
+        g.L(f'판단[{g.pname(p)}] {c.name} 소환 표시 형식: {"공격" if pos == "atk" else "수비"} 표시 ({why})', 'decision')
+        return pos
+
+    # ── 일반소환 확장 · 표시 형식 변경 (§5-2, §8-1) ──
+    def pick_tributes(self, g, p, c):
+        """일반소환에 필요한 제물을 고른다: 자신 필드의 몬스터 중 가치가 낮은 순. 제물이 모자라거나 소환할 자리가 없으면 None"""
+        n = g.tributes_needed(c.level)
+        if n == 0: return ()
+        cands = sorted(g.release_cands(p), key=lambda x: (value(g, x), x.uid))
+        if len(cands) < n: return None
+        ts = tuple(cands[:n])
+        if not g.free_m(p) and not any(t.zone == 'm' for t in ts): return None
+        return ts
+
+    def extra_summon_options(self, g, p):
+        """무제물 일반소환 외의 일반소환 후보: 제물 소환. 반환 [(label, score, ('summon', card, tributes, None))].
+        표시 형식(공격 · 수비)은 소환할 때 choose_summon_pos가 정한다 — 예전의 별도 「수비 소환」 후보는 여기에 합쳤다.
+        기존 지침(번성충은 결착 시에만 · 솔루나 몬스터 1장) 유지"""
+        out = []
+        if g.phase != '진행' or not g.can_normal(p): return out
+        for c in g.p[p].hand:
+            if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.rule('no_special', c, p): continue
+            if c.has('솔루나') and any(x.has('솔루나') and x.is_monster() for x in g.monsters(p)): continue
+            if not g.can_normal(p, c): continue   # 추가 일반소환 권리는 카드군 제한이 있을 수 있다 (포커짐승들)
+            ts = self.pick_tributes(g, p, c)
+            if not ts: continue   # 무제물 소환은 main_phase의 「소환:」 후보
+            cost = sum(value(g, t) for t in ts)
+            if c.has('번성충') and self.lethal_damage(g, p, c) < g.p[1 - p].hp: continue   # 지침: 번성충은 결착 시에만 일반소환
+            nv = getattr(c, 'ns_value', None)   # 카드가 정한 제물 소환 가치 ([소환] 효과가 본체인 상급 몬스터 — 포커짐승들). 없으면 공격력 기준
+            if nv is not None:
+                out.append((f'소환:{c.name}', nv(g, p, ts, cost), ('summon', c, ts, None))); continue
+            gain = g.atk(c) - sum(g.atk(t) for t in ts if t.is_monster())
+            out.append((f'소환:{c.name}', 20 + g.atk(c) / 100 - 12 * cost if gain > 0 else VETO, ('summon', c, ts, None)))
+        return out
+
+    def position_options(self, g, p, ph):
+        """표시 형식 변경 후보 (§8-1): 정비 단계에 약한 몬스터를 수비로, 진행 단계에 공격할 수 있으면 공격으로"""
+        out = []
+        opp = [m for m in g.monsters(1 - p) if m.faceup]
+        opp_atk = max([g.atk(m) for m in opp] or [0])
+        wall = max([g.df(m) if m.pos == 'def' else g.atk(m) for m in opp] or [0])
+        for m in g.monsters(p):
+            if not g.can_change_pos(m, p): continue
+            if m.pos == 'atk':
+                s = 15 if ph == '정비' and opp_atk > g.atk(m) and g.df(m) > g.atk(m) else VETO
+                out.append((f'수비 표시로:{m.name}', s, ('pos', m, None, None)))
+            else:
+                s = 15 if ph == '진행' and g.can_declare_attack(p) and g.atk(m) > wall else VETO
+                out.append((f'공격 표시로:{m.name}', s, ('pos', m, None, None)))
+        return out
+
+    def do_extra(self, g, p, pay):
+        kind, c, ts, pos = pay
+        if kind == 'summon': g.normal_summon(c, p, ts, pos); g.after_action(p)
+        else: g.change_position(c, p); g.triggers()   # 표시 형식 변경은 발동 · 소환이 아니므로 우선권이 넘어가지 않는다 (§6-1)
+
+    def lethal_damage(self, g, p, extra=None):
+        """이번 턴 남은 전투로 줄 수 있는 직접공격 대미지 추정 (extra: 추가로 필드에 낼 몬스터)"""
+        if g.turn_player != p or g.turn == 1 or g.phase not in ('준비', '진행') or g.no_attack.get(p) == g.turn: return 0
+        bonus = 100 if (extra is not None and extra.has('번성충') and p_skill(g, p) == '번성충-대발생') else 0
+        tot = 0
+        for m in g.monsters(p):
+            if m.faceup and m.pos == 'atk' and not g.attack_banned(m) and m.attacks_made < self.max_attacks(g, m) and g.can_direct(m):
+                tot += (g.atk(m) + (bonus if m.has('번성충') else 0)) * (self.max_attacks(g, m) - m.attacks_made)
+        if extra is not None:
+            direct_ok = 'direct_attack' in getattr(extra, 'rules', {}) or not g.blockers(1 - p)
+            if direct_ok: tot += g.atk(extra) + bonus + (g.atk_bonus_if_on_field(extra, p) if hasattr(g, 'atk_bonus_if_on_field') else 0)
+        return tot
+
+    # ── 전투 ──
+    def lethal_attack(self, g, p, attackers):
+        """결착 우선 지침 (사용자 지시 2026-09-30): 이 공격 한 번의 전투 대미지로 상대 HP가 0 이하가 되는 공격을 찾는다.
+        직접공격(공격력 ≥ 상대 HP) 또는 공격 표시 몬스터 공격(공격력 차 ≥ 상대 HP). 이 턴 대미지를 줄 수 없으면 없음"""
+        o = 1 - p; hp = g.p[o].hp
+        if g.no_damage.get(p, -1) >= g.turn: return None
+        for a in attackers:
+            av = g.atk(a)
+            if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.monsters(o)) and av >= hp: return (a, None)
+            for t in g.attack_targets(a):
+                if t.pos == 'atk' and av - g.atk(t) >= hp: return (a, t)
+        return None
+
+    def take_lethal(self, g, p, attackers):
+        """결착 공격이 있으면 학습값과 무관하게 그 공격을 한다. 반환: 공격했는가"""
+        hit = self.lethal_attack(g, p, attackers)
+        if not hit: return False
+        a, t = hit
+        g.L(f'판단[{g.pname(p)}] 결착 공격 (지침): {a.name}→{t.name if t else "직접"} — 상대 HP {g.p[1-p].hp}', 'decision')
+        g.attack(a, t); return True
+
+    def battle_phase(self, g, p):
+        for _ in range(20):
+            if p in g.no_attack and g.no_attack[p] == g.turn: g.L('공격 봉인 상태', 'sys'); return
+            attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and not g.attack_banned(m)
+                         and m.summon_turn <= g.turn and m.attacks_made < self.max_attacks(g, m)]   # 몬스터로 취급되는 마법 포함 (Game.battle_cards)
+            if not attackers: return
+            if self.take_lethal(g, p, attackers): continue
+            plan = []
+            for a in attackers:
+                av = g.atk(a)
+                if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
+                    plan.append((av + 500, a, None))
+                for t in g.attack_targets(a):
+                    tv = g.atk(t) if t.pos == 'atk' else g.df(t)
+                    if av > tv: plan.append((200 + value(g, t) * 400 + (av - tv if t.pos == 'atk' else 0), a, t))
+                    elif av == tv and t.pos == 'atk' and value(g, t) > value(g, a): plan.append((50, a, t))
+            if not plan and g.rule('must_attack', p):   # 반드시 공격해야 하는데 지는 공격만 남음(격투가의 투기장 1번): 잃는 것이 가장 적은 짝
+                for a in [x for x in attackers if g.must_attack(x)]:   # 투기장의 효과를 받지 않는 몬스터는 공격하지 않아도 된다
+                    av = g.atk(a)
+                    for t in g.attack_targets(a):
+                        tv = g.atk(t) if t.pos == 'atk' else g.df(t)
+                        if t.pos != 'atk': loss = tv - av                                  # 수비 표시: 반사 대미지만
+                        elif av == tv: loss = 1000 * (value(g, a) - value(g, t))             # 서로 파괴
+                        else: loss = (tv - av) + 1000 * value(g, a)                          # 자신 몬스터 파괴 + 대미지
+                        plan.append((-1 - loss / 1e4, a, t))
+            if not plan: return
+            plan.sort(key=lambda x: -x[0])
+            self.note(g, p, '공격', [(f'{a.name}→{t.name if t else "직접"}', s) for s, a, t in plan], f'{plan[0][1].name}→{plan[0][2].name if plan[0][2] else "직접"}')
+            _, a, t = plan[0]
+            g.attack(a, t)
+
+    def max_attacks(self, g, m):
+        n = 1 + m.extra_attacks
+        if g.rule('double_attack', m): n += 1   # 용기의 전사 2번: 「2회 공격할 수 있다」
+        if g.cont_flag(m, 'attack_all'):   # [지속] — 무효가 되면 적용하지 않는다 (사용자 답변 2026-10-22)
+            t, k = m.flags.get('attack_all_cap', (None, 0))
+            n = max(n, k if t == g.turn else len(g.battle_cards(1 - m.controller)))   # 몬스터로 취급되는 마법 포함 (사용자 답변 2026-10-22)
+        return n
