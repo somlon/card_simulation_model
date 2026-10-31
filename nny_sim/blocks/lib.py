@@ -1019,7 +1019,10 @@ def w_to_grave(g, c, p, ev, k):
     if k.get('not_from_field') and ev['prev'] in FIELD_Z: return False
     if k.get('not_from_deck') and ev['prev'] in ('main', 'upper'): return False
     ca = ev.get('cause') or ('', None)
-    if k.get('not_cost') and ca[0] == 'cost' and ca[1] is c: return False
+    # not_cost: 「자신의 효과를 발동하기 위해 묘지로 보내졌을 경우」 — 이 카드를 코스트로 낸 경우(ca[0]=='cost')뿐 아니라, 마법 카드가
+    # 자신의 발동 효과(§8-2)를 처리하고 그 결과로 바로 묘지에 가는 경우(ca[0]=='self_resolve', engine.resolve_chain)도 포함한다
+    # — 둘 다 「이 카드 자신의 발동」이 원인이라는 점이 같다(soltop_ 제보, 행운의 카드 - 조커 · 용기의 무기 - 검 등 WSFT 시리즈 점검).
+    if k.get('not_cost') and ca[0] in ('cost', 'self_resolve') and ca[1] is c: return False
     if k.get('released') and not ev.get('released'): return False
     if k.get('by_opp'):   # 「이 카드가 상대에 의해 자신의 묘지로 보내진 경우」 — 원인 카드(효과 · 코스트 · 전투)의 컨트롤러가 상대
         src = ca[1] if len(ca) > 1 else None

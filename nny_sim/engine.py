@@ -1281,7 +1281,7 @@ class Game:
             if e.spell_act and self.on_field(c) and c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') \
                and not c.flags.get('stay'):
                 if c.flags.get('banish_on_resolve'): self.L(f'{c} 발동 후 제외', 'sys'); self.banish(c, ('rule', None))
-                else: self.send_grave(c, ('rule', None))
+                else: self.send_grave(c, ('self_resolve', c))   # 마법 카드 자신의 발동 처리가 끝나 묘지로 (not_cost 단서가 보는 「자신의 효과를 발동하기 위해」 포함, lib.w_to_grave)
             if link.negated and e.spell_act and self.on_field(c) and c.type != '마법':
                 pass
             # [지속] 상태 점검(인페르노 드래곤 · 격투가의 투기장)은 체인 처리가 끝나기를 기다리지 않고 링크마다 바로 적용한다 (사용자 답변 2026-10-23 Q55)
