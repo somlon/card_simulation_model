@@ -227,10 +227,23 @@ class HumanAI(P.LearnedAI):
         """어느 효과를 발동할지(필수는 자동 포함)는 하나씩 묻고, 둘 이상 발동하게 되면 그 발동 순서도 묻는다
         (soltop_ 제보 — 동시에 발동할 수 있는 효과가 여럿일 때 AI처럼 점수로 자동 정렬되거나 트리거 수집
         순서 그대로 발동돼 사람에게 순서를 고를 기회가 없었다. 발동 여부와 순서는 규칙상 둘 다 그 효과를
-        가진 플레이어가 정한다 — ai.py HeuristicAI.choose_triggers 는 점수로만 자동 정렬해 그대로 둠)"""
+        가진 플레이어가 정한다 — ai.py HeuristicAI.choose_triggers 는 점수로만 자동 정렬해 그대로 둠)
+
+        같은 이름 카드의 같은 효과 번호가 cands 에 여러 장 있을 때(1턴 1회는 engine.py Game.opt_key 로
+        카드명×효과번호 단위로 공유됨)는 그 공유 한도(남은 횟수)만큼만 묻는다 — soltop_ 제보 7번: "여러
+        장 중 1장만 응답 물어보면 됨"(한도가 보통 1장이라 사실상 한 번만 묻는다). 한도를 넘는 나머지
+        장은 물어볼 필요 없이 그대로 건너뜀(답이 같을 게 뻔한 질문을 또 하지 않음) — 실제 발동 시 어느
+        장을 쓰는지는 중요하지 않다(같은 이름·같은 번호라 효과는 동일)."""
         chosen = []
+        remaining_by_key = {}
         for c, e, ev in cands:
             if e.mandatory: chosen.append((c, e, ev)); continue
+            opt = getattr(e, 'opt', None)   # FakeEffect(test_trigger_order.py)처럼 opt 필드가 없으면 공유 한도 없음(기존 동작)
+            if opt is not None:
+                key = g.opt_key(c, e)
+                if key not in remaining_by_key: remaining_by_key[key] = opt - g.p[p].opt.get(key, 0)
+                if remaining_by_key[key] <= 0: continue   # 이 이름×번호의 이번 턴 한도를 이미 다 물었다
+                remaining_by_key[key] -= 1
             if self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', act_score(g, c, e, p, ev, 1), True), ('안 함', 0, False)]):
                 chosen.append((c, e, ev))
         if len(chosen) <= 1: return chosen
