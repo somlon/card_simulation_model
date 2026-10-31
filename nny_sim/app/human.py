@@ -238,26 +238,39 @@ class HumanAI(P.LearnedAI):
         else: g.change_position(c, p); g.triggers()
 
     def battle_phase(self, g, p):
+        failed = set()
         for _ in range(MAX_ATTACKS):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]
-            if not attackers: return
-            opts = [('공격 종료', 0, None)]; seen = set()
+            atk_opts = []; seen = set()
             for a in attackers:
                 av = g.atk(a)
                 if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
                     lab = f'{a.name}→직접'
-                    if lab not in seen: seen.add(lab); opts.append((lab, av + 500, (a, None)))
+                    if lab not in seen: seen.add(lab); atk_opts.append((lab, av + 500, (a, None)))
                 for t in g.attack_targets(a):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
                     lab = f'{a.name}→{t.name}'
-                    if lab not in seen: seen.add(lab); opts.append((lab, av - tv, (a, t)))
-            if len(opts) > 1 and any(g.must_attack(o[2][0]) for o in opts[1:]):
-                opts = opts[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료 불가 (규칙)
+                    if lab not in seen: seen.add(lab); atk_opts.append((lab, av - tv, (a, t)))
+            # soltop_ 제보(4번) — 전투 단계도 발동 시점 제한이 없다(engine.py spell_speed_ok 주석) — 공격 명령만
+            # 만들고 ignition/quick 발동 후보를 넣지 않아 전투 단계에서는 사람이 효과를 아예 발동할 수 없었다.
+            # main_phase(208~209행)와 같은 방식으로 더한다 — 우선권을 포기(공격 종료 선택 가능)해도 그대로 있어야 함
+            act_opts = [(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e))
+                        for c, e in g.options(p, ('ignition', 'quick')) if (c.uid, e.num) not in failed]
+            act_opts = [o for o in act_opts if o[0] not in seen]
+            if atk_opts and any(g.must_attack(o[2][0]) for o in atk_opts):
+                opts = atk_opts   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료·발동 불가 (규칙)
+            else:
+                opts = [('공격 종료', 0, None)] + atk_opts + act_opts
+            if not atk_opts and not act_opts: return
             pick = self.choose(g, p, '공격', opts, scale=400)
             if pick is None: return
-            g.attack(*pick)
+            if isinstance(pick, tuple) and len(pick) == 3 and pick[0] == 'act':
+                _, c, e = pick
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
+            else:
+                g.attack(*pick)
 
 
 MAX_ACTIONS = 60   # 한 단계에서 행동을 고르는 최대 횟수(무한 반복 방지 — LearnedAI 는 40)
