@@ -87,6 +87,60 @@ class ChatBufferTest(unittest.TestCase):
         self.assertEqual(self.app.chat_between(t0, t1), [m1])
         self.assertEqual(self.app.chat_between(t1 + 1, t1 + 2), [], '구간 밖의 메시지는 걸러져야 한다')
 
+    def test_edit_own_message(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m1 = self.app.chat_post('25.0.0.11', '오타남')
+        edited = self.app.chat_edit('25.0.0.11', m1['id'], '오타 고침')
+        self.assertEqual(edited['text'], '오타 고침'); self.assertTrue(edited['edited'])
+        self.assertEqual(self.app.chat_since(0)[0]['text'], '오타 고침', '원래 id 자리의 내용이 그대로 바뀌어야 한다')
+
+    def test_edit_rejects_other_authors_message(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        self.app.room_join('25.0.0.12', '관전자', 'spectator')
+        m1 = self.app.chat_post('25.0.0.11', '내 글')
+        with self.assertRaises(ValueError):
+            self.app.chat_edit('25.0.0.12', m1['id'], '남의 글 고치기')
+
+    def test_edit_validates_text_like_post(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m1 = self.app.chat_post('25.0.0.11', '글')
+        with self.assertRaises(ValueError):
+            self.app.chat_edit('25.0.0.11', m1['id'], '   ')
+        with self.assertRaises(ValueError):
+            self.app.chat_edit('25.0.0.11', m1['id'], 'ㅁ' * (S.CHAT_MAX + 1))
+
+    def test_edit_missing_message_rejected(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        with self.assertRaises(ValueError):
+            self.app.chat_edit('25.0.0.11', 999999, '없는 메시지 고치기')
+
+    def test_delete_own_message_clears_text_but_keeps_slot(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m1 = self.app.chat_post('25.0.0.11', '지울 글')
+        deleted = self.app.chat_delete('25.0.0.11', m1['id'])
+        self.assertEqual(deleted['text'], ''); self.assertTrue(deleted['deleted'])
+        self.assertEqual(deleted['id'], m1['id'], '자리는 그대로 남고 내용만 비워야 한다(다른 화면이 같은 id로 찾아 지움표시)')
+
+    def test_delete_rejects_other_authors_message(self):
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        self.app.room_join('25.0.0.12', '관전자', 'spectator')
+        m1 = self.app.chat_post('25.0.0.11', '내 글')
+        with self.assertRaises(ValueError):
+            self.app.chat_delete('25.0.0.12', m1['id'])
+
+    def test_edit_and_delete_rebump_cursor_for_already_delivered_messages(self):
+        """화면이 이미 받아간(커서를 지나간) 메시지라도, 나중에 고치거나 지우면 'touch' 가 올라가서
+        chat_since 가 그 메시지를 다시 한 번 내려준다 — 안 그러면 다른 화면은 수정·삭제를 영영 못 본다."""
+        self.app.room_join('25.0.0.11', '성창', 'player')
+        m1 = self.app.chat_post('25.0.0.11', '첫 글')
+        self.app.chat_post('25.0.0.11', '둘째 글')
+        cursor = max(m['touch'] for m in self.app.chat_since(0))   # 둘 다 받아간 뒤의 커서
+        self.assertEqual(self.app.chat_since(cursor), [], '커서를 지난 뒤엔 새로 올 게 없어야 한다(아직 안 고쳤으니)')
+        self.app.chat_edit('25.0.0.11', m1['id'], '첫 글(고침)')
+        again = self.app.chat_since(cursor)
+        self.assertEqual([m['id'] for m in again], [m1['id']], '고친 메시지만 커서 뒤로 다시 와야 한다')
+        self.assertEqual(again[0]['text'], '첫 글(고침)')
+
 
 class ChatHttpTest(unittest.TestCase):
     """실제 HTTP(서버 기동) — boot/heartbeat 의 chat_from 커서, /api/room/chat 엔드포인트."""
@@ -135,6 +189,22 @@ class ChatHttpTest(unittest.TestCase):
         st, body = req(self.base, self.token, 'POST', '/api/room/chat', {'text': '   '})
         self.assertEqual(st, 400, body)
         st, body = req(self.base, self.token, 'POST', '/api/room/chat', {'text': 'ㅁ' * (S.CHAT_MAX + 1)})
+        self.assertEqual(st, 400, body)
+
+    def test_edit_and_delete_endpoints(self):
+        self.app.room_join('127.0.0.1', '테스터', 'player')
+        st, m1 = req(self.base, self.token, 'POST', '/api/room/chat', {'text': '오타남'})
+        self.assertEqual(st, 200, m1)
+        st, edited = req(self.base, self.token, 'POST', '/api/room/chat/edit', {'id': m1['id'], 'text': '고침'})
+        self.assertEqual(st, 200, edited); self.assertEqual(edited['text'], '고침')
+        st, boot = req(self.base, self.token, 'GET', '/api/boot')
+        self.assertEqual([x['text'] for x in boot['chat']], ['고침'], '한 자리에서만 보였어야 한다(새 메시지로 또 안 늘어남)')
+        st, deleted = req(self.base, self.token, 'POST', '/api/room/chat/delete', {'id': m1['id']})
+        self.assertEqual(st, 200, deleted); self.assertEqual(deleted['text'], ''); self.assertTrue(deleted['deleted'])
+
+    def test_edit_endpoint_rejects_missing_or_foreign_message(self):
+        self.app.room_join('127.0.0.1', '테스터', 'player')
+        st, body = req(self.base, self.token, 'POST', '/api/room/chat/edit', {'id': 999999, 'text': '없음'})
         self.assertEqual(st, 400, body)
 
 

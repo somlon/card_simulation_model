@@ -293,23 +293,51 @@ $('lobby-leave').onclick = async () => {
 $('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
 
 // ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
-// 보내기만 새 호출(/api/room/chat) 하나 추가. 매치별이 아니라 room 전체인 이유: "방 1·듀얼 1" 이라 나눌 의미가 없음.
-let chatCursor = 0;   // 마지막으로 화면에 그린 메시지 id — f_from/s_from/c_from 과 같은 커서 패턴
-function appendChatMsg(m) {
-  const el = $('chat-log'); if (!el) return;
+// 보내기·수정·삭제만 새 호출(/api/room/chat[/edit|/delete]) 추가. 매치별이 아니라 room 전체인 이유: "방 1·듀얼 1" 이라 나눌 의미가 없음.
+let chatCursor = 0;   // 커서는 'id' 대신 'touch' 기준 — 수정·삭제로 바뀐 오래된 메시지도 서버가 다시 내려주게 하려고(서버 쪽 주석 참고)
+const myChatIds = new Set();   // 이 화면에서 내가 보낸 메시지 id — 수정·삭제 버튼을 보여줄지 판단(새로고침하면 비워짐, 알려진 한계)
+const chatTexts = {};   // id -> 가장 최근 원문(수정 누르면 이 값을 기본으로 prompt — DOM에서 다시 긁어오지 않음)
+function chatRow(m) {
   const hm = new Date(m.t).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'});
-  el.insertAdjacentHTML('beforeend', `<div class="msg"><span class="who">${esc(m.who)}</span>${esc(m.text)}<span class="t">${hm}</span></div>`);
-  el.scrollTop = el.scrollHeight;
+  const body = m.deleted ? `<span class="del">(삭제된 메시지)</span>`
+    : `${esc(m.text)}${m.edited ? '<span class="ed"> (수정됨)</span>' : ''}`;
+  const actions = (myChatIds.has(m.id) && !m.deleted)
+    ? `<span class="chat-actions"><a data-act="edit" data-id="${m.id}">수정</a><a data-act="del" data-id="${m.id}">삭제</a></span>` : '';
+  return `<div class="msg" data-id="${m.id}"><span class="who">${esc(m.who)}</span>${body}<span class="t">${hm}</span>${actions}</div>`;
+}
+function appendOrUpdateChatMsg(m) {
+  const el = $('chat-log'); if (!el) return;
+  if (!m.deleted) chatTexts[m.id] = m.text;
+  const prev = el.querySelector(`.msg[data-id="${m.id}"]`);
+  if (prev) prev.outerHTML = chatRow(m);
+  else { el.insertAdjacentHTML('beforeend', chatRow(m)); el.scrollTop = el.scrollHeight; }
 }
 function renderChatNew(list) {
-  for (const m of (list || [])) { if (m.id <= chatCursor) continue; appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
+  for (const m of (list || [])) { if (m.touch <= chatCursor) continue; appendOrUpdateChatMsg(m); chatCursor = Math.max(chatCursor, m.touch); }
 }
 $('chat-send').onclick = async () => {
   const text = $('chat-text').value.trim(); if (!text) return;
-  try { const m = await api('room/chat', {text}); $('chat-text').value = ''; appendChatMsg(m); chatCursor = Math.max(chatCursor, m.id); }
-  catch (e) { toast(e.message); }
+  try {
+    const m = await api('room/chat', {text}); $('chat-text').value = '';
+    myChatIds.add(m.id); appendOrUpdateChatMsg(m); chatCursor = Math.max(chatCursor, m.touch);
+  } catch (e) { toast(e.message); }
 };
 $('chat-text').addEventListener('keydown', e => { if (e.key === 'Enter') $('chat-send').click(); });
+$('chat-log').addEventListener('click', async e => {
+  const a = e.target.closest('a[data-act]'); if (!a) return;
+  const id = Number(a.dataset.id);
+  try {
+    let m;
+    if (a.dataset.act === 'del') {
+      if (!confirm('이 메시지를 지울까요?')) return;
+      m = await api('room/chat/delete', {id});
+    } else {
+      const text = prompt('메시지 수정', chatTexts[id] || ''); if (text === null) return;
+      m = await api('room/chat/edit', {id, text});
+    }
+    appendOrUpdateChatMsg(m); chatCursor = Math.max(chatCursor, m.touch);
+  } catch (e2) { toast(e2.message); }
+});
 renderChatNew(BOOT.chat);
 
 function beat() { api('heartbeat', {chat_from: chatCursor}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); renderChatNew(r.chat); }).catch(() => {}); }

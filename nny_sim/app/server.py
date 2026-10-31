@@ -156,19 +156,56 @@ class App:
         if not text: raise ValueError('빈 메시지는 보낼 수 없습니다.')
         if len(text) > CHAT_MAX: raise ValueError(f'메시지가 너무 깁니다({CHAT_MAX}자 이하로 적어 주세요).')
         self.chat_seq += 1
-        msg = {'id': self.chat_seq, 'who': m['name'] or ip, 'text': text, 't': int(time.time() * 1000)}
+        # '_ip': 쓴 사람(수정·삭제 권한 확인용, 클라이언트에는 절대 안 보냄 — _public_chat 이 '_'로 시작하는 키를 뺀다).
+        # 'touch': 이 메시지가 마지막으로 바뀐 시점의 seq — 처음엔 'id'와 같다. 수정·삭제 때만 올라간다(아래 chat_edit·chat_delete).
+        # chat_since 는 'touch' 기준으로 거르므로, 이미 받아간 오래된 id라도 그 뒤에 수정·삭제되면 커서가 그 지점을 지나도 다시 한 번 내려간다.
+        msg = {'id': self.chat_seq, 'who': m['name'] or ip, 'text': text, 't': int(time.time() * 1000),
+               'touch': self.chat_seq, '_ip': ip}
         self.chat.append(msg)
-        return msg
+        return self._public_chat(msg)
+
+    def _chat_find(self, msg_id):
+        for m in self.chat:
+            if m['id'] == msg_id: return m
+        return None
+
+    def chat_edit(self, ip, msg_id, text):
+        """자기(같은 ip)가 쓴 메시지만 고칠 수 있다. 너무 오래돼 링버퍼(CHAT_BUFFER)에서 밀려났으면 못 고친다."""
+        m = self._chat_find(int(msg_id))
+        if not m: raise ValueError('메시지를 찾을 수 없습니다(너무 오래됐을 수 있습니다).')
+        if m.get('_ip') != ip: raise ValueError('자기가 쓴 메시지만 고칠 수 있습니다.')
+        if m.get('deleted'): raise ValueError('삭제된 메시지는 고칠 수 없습니다.')
+        text = (text or '').strip()
+        if not text: raise ValueError('빈 메시지는 보낼 수 없습니다.')
+        if len(text) > CHAT_MAX: raise ValueError(f'메시지가 너무 깁니다({CHAT_MAX}자 이하로 적어 주세요).')
+        self.chat_seq += 1
+        m['text'] = text; m['edited'] = True; m['touch'] = self.chat_seq
+        return self._public_chat(m)
+
+    def chat_delete(self, ip, msg_id):
+        """자기(같은 ip)가 쓴 메시지만 지울 수 있다 — 실제로는 안 지우고 내용만 비우고 'deleted' 표시만 남긴다
+        (다른 화면이 이미 받아간 id를 그대로 두고 "삭제됨"으로만 바꿔 보여주게 하려고, touch 로 다시 내려보낸다)."""
+        m = self._chat_find(int(msg_id))
+        if not m: raise ValueError('메시지를 찾을 수 없습니다(너무 오래됐을 수 있습니다).')
+        if m.get('_ip') != ip: raise ValueError('자기가 쓴 메시지만 지울 수 있습니다.')
+        self.chat_seq += 1
+        m['text'] = ''; m['deleted'] = True; m['touch'] = self.chat_seq
+        return self._public_chat(m)
+
+    def _public_chat(self, m):
+        """'_'로 시작하는 내부용 키(_ip 등)는 빼고 클라이언트에 보낸다."""
+        return {k: v for k, v in m.items() if not k.startswith('_')}
 
     def chat_since(self, from_id=0):
-        """heartbeat/boot 응답에 끼워 보낼 새 메시지만(기존 f_from/s_from/c_from 커서 패턴과 같음) — 매 호출마다 전체를 다시 보내지 않음."""
+        """heartbeat/boot 응답에 끼워 보낼 새 메시지만(기존 f_from/s_from/c_from 커서 패턴과 같음) — 매 호출마다 전체를 다시 보내지 않음.
+        'touch' 기준이라 수정·삭제로 바뀐 오래된 메시지도 다시 내려간다(화면은 받은 메시지를 id로 찾아 덮어써야 함)."""
         from_id = from_id or 0
-        return [m for m in self.chat if m['id'] > from_id]
+        return [self._public_chat(m) for m in self.chat if m['touch'] > from_id]
 
     def chat_between(self, start_ts, end_ts):
         """기능 v1⑥ 기보 수집 경로 재사용 — 그 매치가 돌고 있던 시간(초, time.time()) 사이에 온 채팅만 묶어 같이 올린다."""
         lo, hi = int(start_ts * 1000), int(end_ts * 1000)
-        return [m for m in self.chat if lo <= m['t'] <= hi]
+        return [self._public_chat(m) for m in self.chat if lo <= m['t'] <= hi]
 
     def my_match(self, ip):
         """로비(방)에서 짝지어 시작한 매치라면, 이 ip 가 매치 ID·참가 키를 묻지 않고도 자기 좌석을 그대로 받는다.
@@ -309,6 +346,8 @@ class App:
         if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'))
         if path == '/api/room/leave': return self.room_leave(ip)
         if path == '/api/room/chat': return self.chat_post(ip, body.get('text'))
+        if path == '/api/room/chat/edit': return self.chat_edit(ip, body.get('id'), body.get('text'))
+        if path == '/api/room/chat/delete': return self.chat_delete(ip, body.get('id'))
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)
