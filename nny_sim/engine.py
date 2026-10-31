@@ -1567,10 +1567,11 @@ class Game:
         self.set_phase('종료')
         # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다).
         # 「턴 종료 시」 트리거와의 처리 순서는 그 카드의 플레이어가 정한다(c.end_order(g, c) → 'after'면 트리거 뒤에, 사용자 답변 2026-10-21)
-        late = []
+        late = []; phase_c = []
         for c in self.continuous_sources():
             f = getattr(c, 'end_process', None)
             if not (f and (self.on_field(c) or c.zone == 'skill')): continue
+            if getattr(c, 'end_phase', 'a') == 'c': phase_c.append((c, f)); continue   # 카드별 지정 — c단계(패 7장 확인 뒤)로 미룸, 예: SWRM-019(soltop_ 요청)
             order = getattr(c, 'end_order', None)
             if order and order(self, c) == 'after': late.append((c, f)); self.L(f'판단[{self.pname(c.controller)}] {c} 종료 시 처리를 「턴 종료 시」 트리거 뒤에', 'decision'); continue
             if self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
@@ -1587,6 +1588,10 @@ class Game:
         for _ in range(30):
             if len(pl.hand) <= 7: break
             c = pl.ai.pick_discard(self, tp, pl.hand); self.L(f'패 상한 — {c} 버림'); self.send_grave(c, ('rule', None))
+        self.events = []
+        # c. 종료 단계 c단계로 지정된 종료 시 처리(soltop_ 요청 — 패 7장 확인(b) 뒤에 처리)
+        for c, f in phase_c:
+            if (self.on_field(c) or c.zone == 'skill') and self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
         self.events = []
         # c. 턴 종료 시까지 효과 해제
         for c in self.all_field() + [x.skill for x in self.p if x.skill]:
