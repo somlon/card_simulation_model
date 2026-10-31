@@ -112,9 +112,11 @@ def k_stat_mod(c, num, k, notes, kw):
 
 @kind('end_process')
 def k_end_process(c, num, k, notes, kw):
-    """[지속] 「(각 턴 · 자신 턴)의 종료 시에, …한다」 — 발동이 아닌 종료 단계 처리(Game.play_turn의 end_process, 체인 · 1턴 1회 발동 없음)"""
+    """[지속] 「(각 턴 · 자신 턴)의 종료 시에, …한다」 — 발동이 아닌 종료 단계 처리(Game.play_turn의 end_process, 체인 · 1턴 1회 발동 없음).
+    phase='a'(기본, §5-5 a단계) 또는 'c'(soltop_ 요청 반영 — 패 7장 확인(b) 뒤 처리하도록 지정된 카드만, SWRM-019 참고)"""
     steps, whose = tuple(k['steps']), k.get('whose', 'both')
     c.end_steps = (steps, whose)   # AI 가치(lib.counter_effects)가 읽는다
+    c.end_phase = k.get('phase', 'a')   # engine.play_turn 종료 단계가 a/c단계 중 어디서 돌릴지 읽는다
     def end_process(g, c):
         p = c.controller
         if whose != 'both' and (g.turn_player == p) != (whose == 'own'): return

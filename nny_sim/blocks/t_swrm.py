@@ -58,8 +58,9 @@ fx('SWRM-017', '1', '자신의 상급 덱 위에서 카드 {n}장을 확인하�
    cond=[cnt(S('own', 'upper'))],
    do=[look('TOP', '$n'), to_hand(scope=S(among='TOP', group=BSC, look_n='$n'), n='$a', harm=False, soft=True),
        send_grave(scope=S(among='TOP', kind='monster', group=BSC, look_n='$n'), n='$b', soft=True), to_bottom('TOP')])
+# 처리 시점: 종료 단계 c(패 7장 확인 뒤) — soltop_ 요청(2026-10-31, 디스코드 `?`)으로 a→c 변경, engine.py play_turn 참고
 fx('SWRM-019', '1', '[지속] 각 턴의 종료 시에, 덱에서 「번성충」 카드 {n}장을 패에 넣는다.',
-   cont=[end_process([search(S('own', 'deck', group=BSC), '$n', picker='breeding')])])
+   cont=[end_process([search(S('own', 'deck', group=BSC), '$n', picker='breeding')], phase='c')])
 # 대발생 — 자신 필드는 앞면만 센다(재정 Q48)
 fx('SWRM-020', '1', '[지속] 자신 필드 및 자신 묘지의 「번성충」 카드의 수 × {amt} 만큼, 자신 필드의 「번성충」 몬스터의 공격력을 올린다.',
    cont=[stat_mod(S('own', 'field', 'monster', group=BSC, faceup=True), '$amt',
