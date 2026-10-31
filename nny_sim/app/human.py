@@ -61,10 +61,33 @@ class HumanAI(P.LearnedAI):
         super().__init__(skill, learn=learn, table=table)
         self.bridge = bridge; self.hints = hints
 
-    def _ask(self, g, p, decision, labels, values=None):
+    def _ask(self, g, p, decision, labels, values=None, extra=None):
         opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {})} for i, lab in enumerate(labels)]
         return self.bridge.ask({'kind': 'choose', 'p': p, 'decision': decision, 'opts': opts,
-                                'turn': getattr(g, 'turn', 0), 'phase': getattr(g, 'phase', '')})
+                                'turn': getattr(g, 'turn', 0), 'phase': getattr(g, 'phase', ''), **(extra or {})})
+
+    # ── 놓을 존 · 소환 표시 형식 (사람이 직접) ──
+    def choose_zone(self, g, p, c, kind, opts):
+        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'shared'(빈 공유 존) / 빈 마법 존 번호.
+        화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)"""
+        if len(opts) == 1 or evaluating(): return opts[0]
+        name = {'monster': '몬스터', 'spell': '마법'}[kind]
+        labels = ['공유 존' if z == 'shared' else f'{name} 존 {z + 1}' for z in opts]
+        zones = [{'seat': p, 'zone': 'shared' if z == 'shared' else ('m' if kind == 'monster' else 's'), 'i': None if z == 'shared' else z} for z in opts]
+        return opts[self._ask(g, p, f'놓을 존:{c.name}', labels, extra={'zones': zones, 'card': c.name})]
+
+    def choose_summon_pos(self, g, p, c, how):
+        """소환 표시 형식(앞면 공격 · 앞면 수비) — 학습표 AI 와 같은 판단 키(「소환 표시 형식:일반|특수」)로 사람에게 묻는다
+        (LearnedAI.choose_summon_pos 는 LearnedAI.choose 를 직접 불러 사람 자리의 choose 를 거치지 않았다)"""
+        heur, _ = self.summon_pos_heuristic(g, p, c, how)
+        if evaluating(): return heur
+        opts = [(f'공격 표시:{c.name}', 5 if heur == 'atk' else 0, 'atk'), (f'수비 표시:{c.name}', 5 if heur == 'def' else 0, 'def')]
+        return self.choose(g, p, f'소환 표시 형식:{"일반" if how == "normal" else "특수"}', opts)
+
+    def use_shared(self, g, p, c, full=True):
+        """공유 존은 규칙상 언제든 고를 수 있다(§10-2) — 몬스터 존이 가득 찼을 때도 사람은 공유 존에 놓을 수 있다(Game.can_place).
+        빈 몬스터 존이 있을 때 공유 존을 고르는 것은 choose_zone 의 후보로 묻는다(엔진이 choose_zone 을 부르면 여기는 쓰지 않음)"""
+        return bool(full)
 
     def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps'):
         if not opts: return None

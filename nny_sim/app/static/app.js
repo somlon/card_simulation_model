@@ -356,7 +356,7 @@ async function pollLive() {
     st.appendLive(d);
     G.pending = d.pending;
     if (d.pending && st.caughtUp()) drawDecision();
-    if (!d.pending && decBox().dataset.rid) { decBox().innerHTML = ''; delete decBox().dataset.rid; st.setHighlight([]); }
+    if (!d.pending && decBox().dataset.rid) { decBox().innerHTML = ''; delete decBox().dataset.rid; st.setHighlight([]); st.clearZonePick(); }
     if (d.result && !G.done) {
       if (st.caughtUp()) { finishLive(d); return; }
     }
@@ -378,7 +378,7 @@ function finishLive(d) {
 // 판단 패널
 const DEC_TITLE = [[/^진행 행동$/, '진행 단계 — 할 행동을 고르세요'], [/^정비 행동$/, '정비 단계 — 할 행동을 고르세요'], [/^우선권$/, '우선권 — 효과를 발동할까요?'],
   [/^대응$/, '체인 대응 — 응답할까요?'], [/^공격$/, '전투 — 공격할 몬스터와 대상'], [/^대상:(.+)$/, '대상 고르기 ($1)'], [/^트리거:(.+)#(\d+)$/, '「$1」 $2번 트리거 — 발동할까요?'],
-  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식/, '소환 표시 형식'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
+  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
 function decTitle(q) { for (const [re, t] of DEC_TITLE) if (re.test(q)) return q.replace(re, t); return q; }
 function optText(lab) {
   let m;
@@ -408,10 +408,11 @@ function drawDecision() {
     b.onmouseleave = () => stages.play.setHighlight([]);
     b.onclick = () => answerDec(p, box, +b.dataset.i);
   });
+  if (p.zones) { stages.play.setZonePick(p.zones, i => answerDec(p, box, i)); if (p.card) stages.play.showName(p.card); }   // 놓을 존: 보드에서 눌러 고르기
   stages.play.fit();
 }
 async function answerDec(p, box, i) {
-  box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]);
+  box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]); stages.play.clearZonePick();
   try { await api('match/answer', {rid: p.id, idx: i, seat: G.seat, key: G.key}); } catch (e) { toast(e.message); }
   G.pending = null; delete box.dataset.rid; box.innerHTML = '';
 }

@@ -546,6 +546,19 @@ class Stage {
     this.q('.dbody').querySelectorAll('.th').forEach(x => x.addEventListener('click', () => this.select(+x.dataset.u)));
     this.selected = null;
   }
+  // 놓을 존 고르기(사람 자리): 고를 수 있는 빈 존을 보드에 표시하고 누르면 onPick(후보 번호)
+  setZonePick(zones, onPick) {
+    this.clearZonePick();
+    this.zp = zones.map((z, i) => {
+      const pos = z.zone === 'shared' ? SHARED : z.zone === 'm' ? Z[z.seat].m(z.i) : Z[z.seat].s(z.i);
+      const b = document.createElement('button'); b.className = 'zpick' + (z.zone === 'shared' ? ' sh' : '');
+      Object.assign(b.style, {left: (pos.x - SLOT.w / 2) + 'px', top: (pos.y - SLOT.h / 2) + 'px', width: SLOT.w + 'px', height: SLOT.h + 'px'});
+      b.innerHTML = `<span>${z.zone === 'shared' ? '공유 존' : z.i + 1}</span>`; b.title = z.zone === 'shared' ? '공유 존에 놓기' : `${z.zone === 'm' ? '몬스터' : '마법'} 존 ${z.i + 1}에 놓기`;
+      b.onclick = ev => { ev.stopPropagation(); this.clearZonePick(); onPick(i); };
+      this.board.appendChild(b); return b;
+    });
+  }
+  clearZonePick() { (this.zp || []).forEach(b => b.remove()); this.zp = null; }
   setHighlight(names) { this.hl = new Set(names); if (this.lastRendered >= 0) this.render(this.lastRendered, true); }
   // ── 재생 ──
   visible(i) { const fr = this.F[i]; return !this.hidden(fr) && (this.showDec || fr.k !== 'decision'); }
