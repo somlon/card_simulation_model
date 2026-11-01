@@ -108,9 +108,9 @@ fx('WSFT-015', '1', '자신의 메인 덱 위에서부터 카드를 {n}장 묘�
 recycle_lw('WSFT-015', '2', '행운', note=NOT_COST)
 fx('WSFT-016', '1', '[신속] 상대 필드의 카드 {n}장을 파괴한다.', do=[destroy(scope=OPP_FIELD, n='$n')])
 recycle_lw('WSFT-016', '2', '용기', where='묘지의', note=NOT_COST)
-# 지혜의 원천 - 마도서 — 「상대가 카드를 발동했을 때」는 카드의 발동만(사용자 답변 2026-10-20)
-fx('WSFT-017', '1', '[트리거] 상대가 카드를 발동했을 때 자신 필드의 카드 {n}장을 묘지로 보내고 발동. 그 효과를 무효로 한다.',
-   when=[when('activated', who='opp', card_only=True)], cost=[send_grave(scope=S('own', 'field'), n='$n')], do=[negate_link()])
+# 지혜의 원천 - 마도서 — 「상대가 효과를 발동했을 때」는 몬스터 효과까지 응답(재정질문/003 — 세창 2026-11-01, 2026-10-20 재정을 뒤집음)
+fx('WSFT-017', '1', '[트리거] 상대가 효과를 발동했을 때 자신 필드의 카드 {n}장을 묘지로 보내고 발동. 그 효과를 무효로 한다.',
+   when=[when('activated', who='opp')], cost=[send_grave(scope=S('own', 'field'), n='$n')], do=[negate_link()])
 recycle_lw('WSFT-017', '2', '지혜', where='묘지의', note=NOT_COST)
 fx('WSFT-018', '1', '[트리거] 자신 필드의 카드가 묘지로 보내졌을 때 발동. 자신 묘지에서 레벨 {lv} 이하의 몬스터를 {n}장 특수소환한다.',
    when=[OWN_FIELD_TO_GRAVE], do=[special(scope=S('own', 'grave', 'monster', level=('<=', '$lv')), n='$n')])
