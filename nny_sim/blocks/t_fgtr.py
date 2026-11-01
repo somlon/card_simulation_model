@@ -33,11 +33,12 @@ fx('FGTR-005', '2', '[전투] 상대 필드의 카드를 {n}장 파괴한다.', 
 fx('FGTR-006', '2', '[전투] 상대 필드의 카드 {n}장을 대상으로 하고 발동. 그 카드를 파괴한다. 상대에게 {amt} 대미지를 준다.',
    cost=[target('T', OPP_FIELD, n='$n')], do=[destroy(ref='T'), damage('$amt')])
 
-# 격투가 세레모니 — 부여는 영구 · 중첩(재정): 매 턴 공격 횟수 +1, 부여 [전투]는 부여마다 효과 번호 30 + k(부여마다 별개의 1턴 1번, 재정 G3)
+# 격투가 세레모니 — 부여는 영구 · 중첩(재정): 매 턴 공격 횟수 +1, 부여 [전투]는 받는 카드의 효과 번호 최댓값 + 1부터
+# 부여마다 하나씩 더(부여마다 별개의 1턴 1번, 재정 G3 — 효과 번호 기준은 재정질문 002 ②)
 fx('FGTR-007', '1', '[전투] 자신 필드의 「격투가」 몬스터 {n}장을 대상으로 하고 발동. 그 카드는 {a}회 더 공격할 수 있으며, 다음의 효과를 얻는다.',
    when=[when('battle_win', any_own=True)],
    cost=[target('T', S('own', 'field', 'monster', group='격투가', faceup=True), n='$n', harm=False)],
-   do=[extra_attack('$a', ref='T', perm=True), grant('1-a', ref='T', base=30, stack=True)])
+   do=[extra_attack('$a', ref='T', perm=True), grant('1-a', ref='T', stack=True)])
 fx('FGTR-007', '1-a', '[전투] 필드의 카드 {n}장을 대상으로 하고 발동. 상대에게 {amt} 대미지를 주고, 그 카드를 파괴한다.',
    granted=True, grant_name='격투가 세레모니',
    cost=[target('T', S('both', 'field'), n='$n')], do=[damage('$amt'), destroy(ref='T')])

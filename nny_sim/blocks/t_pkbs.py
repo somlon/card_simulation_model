@@ -2,7 +2,7 @@
 몬스터의 레벨을 숫자로, 속성(스페이드 · 다이아 · 하트 · 클로버)을 문양으로 족보를 완성하는 테마. 족보 코스트(combo)의 재료 고르기 ·
 레벨/속성 부여 계획은 조합 탐색 공용 함수(cards8 — 재료 풀 · 족보 찾기 · 부여 계획)를 쓰고, 재료 매수 · 상대 카드 사용 여부는 효과 문장에서 읽는다.
 「상급 덱에서 「X」를 소환한다」 = 특수소환(ASSUME, 예전과 같음). 올인 2번 [지속]의 부여 효과(「-」 항목)는 포커짐승들 카드마다 붙고 부여가 적용될 때만 쓴다
-(build.cont_granted_effect — 번호 21 · 22, 카드마다 1턴 1번)."""
+(build.cont_granted_effect — 효과 번호는 받는 카드마다 동적으로 매긴다, 카드마다 1턴 1번)."""
 from blocks.dsl import *   # noqa: F401,F403
 
 PK = '포커짐승들'
@@ -105,5 +105,5 @@ fx('PKBS-016', '2-a', '[신속] 자신을 포함하는 패, 필드의 레벨이 
 fx('PKBS-016', '2-b', '[신속] 자신의 몬스터를 포함하는 자신 패, 필드, 상대 필드의 같은 레벨의 몬스터 {n}장을 릴리스하고 발동. 덱에서 {lv}레벨 이하의 「포커짐승들」 몬스터 {m}장을 소환한다.',
    granted=True, zones=FIELD, pk_kind='triple', pk_granted=1, cost=[combo('triple')],
    do=[special(scope=S('own', 'deck', 'monster', group=PK, level=('<=', '$lv')), n='$m')])
-cont_grant('PKBS-016', '2-a', PK, 21)
-cont_grant('PKBS-016', '2-b', PK, 22)
+cont_grant('PKBS-016', '2-a', PK)
+cont_grant('PKBS-016', '2-b', PK)
