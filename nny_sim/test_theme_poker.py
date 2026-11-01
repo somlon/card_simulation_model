@@ -54,6 +54,14 @@ def spell(g, name, owner, faceup=True):
 def eff(c, num): return next(e for e in c.effects if e.num == num)
 
 
+def grant_eff(c, which):
+    """올인 2번(스킬)이 「포커짐승들」 카드마다 부여하는 두 효과(2-a 페어, 2-b 트리플) — 효과 번호는 고정값이
+    아니라 받는 카드 기준으로 매겨지므로(재정질문 002 ②, build.cont_grant) 카드의 효과 번호 최댓값 쪽에서
+    찾는다. which: 'pair'(2-a, 먼저 부여돼 번호가 더 작음) 또는 'triple'(2-b, 번호가 더 큼)."""
+    lo, hi = sorted(e.num for e in c.effects)[-2:]
+    return eff(c, lo if which == 'pair' else hi)
+
+
 def run(g):
     g.triggers()
     if g.chain: g.resolve_chain()
@@ -194,7 +202,7 @@ class AllInTest(unittest.TestCase):
         g = make()
         a = mon(g, WOLF, 0); b = put(g, WOLF_F, 0, 'hand')
         t = mon(g, '솔루나 시아', 1)
-        e = eff(a, 21)
+        e = grant_eff(a, 'pair')
         self.assertTrue(g.legal(0, a, e))
         g.act(0, a, e)
         self.assertEqual(t.controller, 0); self.assertIn(t, g.monsters(0))
@@ -205,21 +213,21 @@ class AllInTest(unittest.TestCase):
         # 「다른 카드의 효과를 받지 않는」 몬스터는 자기편 스킬(올인 2번)의 부여 효과도 받지 않는다 (사용자 답변 2026-10-27)
         g = make()
         a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand'); mon(g, '솔루나 시아', 1)
-        self.assertTrue(g.legal(0, a, eff(a, 21)))
+        self.assertTrue(g.legal(0, a, grant_eff(a, 'pair')))
         a.flags['immune_all_until'] = g.turn   # 고대의 봉인이 남기는 표시: 턴 종료 시까지 다른 카드의 효과를 받지 않는다
-        self.assertFalse(g.legal(0, a, eff(a, 21)))
+        self.assertFalse(g.legal(0, a, grant_eff(a, 'pair')))
 
     def test_pair_needs_skill(self):
         g = make()
         a = mon(g, WOLF, 0); put(g, WOLF_F, 0, 'hand'); mon(g, '솔루나 시아', 1)
         g.p[0].skill.negated = True
-        self.assertFalse(g.legal(0, a, eff(a, 21)))
+        self.assertFalse(g.legal(0, a, grant_eff(a, 'pair')))
 
     def test_triple_summons_from_deck(self):
         g = make(); filler(g, 0, 3)
         x = put(g, '스트플을 원하는 도시쥐', 0, 'upper')
         a = mon(g, DOG, 0); put(g, DOG_F, 0, 'hand'); mon(g, DOG_F, 1)
-        e = eff(a, 22)
+        e = grant_eff(a, 'triple')
         self.assertTrue(g.legal(0, a, e))
         g.act(0, a, e)
         self.assertEqual(x.zone, 'm')

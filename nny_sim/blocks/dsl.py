@@ -174,8 +174,9 @@ def combo(kind, hand_ok=False): return B('combo', kind=kind, hand_ok=hand_ok)
 def stat_per(amt, count, to=None, stat='atk', self_only=False): return B('stat_per', amt=amt, count=count, to=to, stat=stat, self_only=self_only)
 
 
-CONT_GRANTS = {}   # 카드군 → [(부여하는 카드 코드, 효과 키, 효과 번호)] — 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속] (build.attach)
+CONT_GRANTS = {}   # 카드군 → [(부여하는 카드 코드, 효과 키)] — 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속]
+# 효과 번호는 고정값이 아니라 받는 카드 기준으로 매긴다(build.attach — 재정질문 002 ②)
 
 
-def cont_grant(code, key, group, num):
-    CONT_GRANTS.setdefault(group, []).append((code, key, num))
+def cont_grant(code, key, group):
+    CONT_GRANTS.setdefault(group, []).append((code, key))

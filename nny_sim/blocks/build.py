@@ -48,7 +48,9 @@ def attach(c):
     from cards import grp
     for group, lst in D.CONT_GRANTS.items():   # 「자신 필드의 「X」 몬스터는 다음의 효과를 얻는다」 [지속] — 그 카드군 카드마다 붙이고, 발동은 부여가 적용될 때만
         if grp(c, group):
-            effects += [cont_granted_effect(code, key, num) for code, key, num in lst]
+            for gcode, gkey in lst:   # 번호는 고정값이 아니라 이 카드의 그때까지 효과 번호 최댓값 + 1(재정질문 002 ②)
+                num = max([e.num for e in effects] + [0]) + 1
+                effects.append(cont_granted_effect(gcode, gkey, num))
     if c.type == '몬스터' and (c.d.get('level') or 0) >= 5 and any(e.kind == 'summon' for e in effects):
         c.ns_value = ns_value_of(c)   # 제물 일반소환의 가치(ai.extra_summon_options): [소환] 효과 가치를 더한다(B안)
     import cards
@@ -375,7 +377,9 @@ def granted_effect(code, key, n, num):
 
 
 def do_grant(g, c, p, l, k):
-    """A22 효과 부여 — ref의 카드가 조립표 (이 카드 코드, k['key'])의 효과를 얻는다. stack: 다시 받으면 효과가 하나 더(번호 base + n).
+    """A22 효과 부여 — ref의 카드가 조립표 (이 카드 코드, k['key'])의 효과를 얻는다. stack: 다시 받으면 효과가 하나 더.
+    효과 번호는 고정값(base)이 아니라 받는 카드의 그때까지 효과 번호 최댓값 + 1로 매긴다(재정질문 002 ②) — 한 번 매긴 번호는
+    m.flags에 남겨 재부여 때도 그대로 쓴다(받는 카드가 그 사이 효과를 더 얻어도 이미 받은 부여 번호가 흔들리지 않게).
     필드를 벗어나면 부여가 사라진다(flags['clear_on_leave'])"""
     xs = L.subjects(g, c, p, l, k)
     done = False
@@ -385,9 +389,17 @@ def do_grant(g, c, p, l, k):
         n = m.flags.get(flag, 0) + 1
         col = dict(m.flags.get('clear_on_leave') or {}); col.setdefault(flag, None); m.flags['clear_on_leave'] = col
         m.flags[flag] = n
-        num = k.get('base', 20) + (n if k.get('stack') else 1)
+        n_eff = n if k.get('stack') else 1
+        nums_flag = f'{flag}:nums'
+        nums = dict(m.flags.get(nums_flag) or {})
+        num = nums.get(n_eff)
+        if num is None:
+            num = max([e.num for e in m.effects] + [0]) + 1
+            nums[n_eff] = num
+            m.flags[nums_flag] = nums
+            col = dict(m.flags.get('clear_on_leave') or {}); col.setdefault(nums_flag, None); m.flags['clear_on_leave'] = col
         if not any(e.num == num for e in m.effects):
-            m.effects = list(m.effects) + [granted_effect(c.d['code'], k['key'], n if k.get('stack') else 1, num)]
+            m.effects = list(m.effects) + [granted_effect(c.d['code'], k['key'], n_eff, num)]
         g.L(f'{m}: {c.name}의 효과를 얻음' + (f' ({n}중첩)' if k.get('stack') else ''))
         done = True
     return done
