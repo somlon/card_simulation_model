@@ -247,6 +247,12 @@ def codegen(spec, whens, conds, costs, dos, kind, f, notes, kw, follows=(), num=
     # cost
     src += ['def cost(g, c, p, l):']
     if notes.get('cooldown'): src.append(f'    L.cool_set(g, c, p, {num})')
+    for i, b in enumerate(costs):
+        if i > 0 and b.name == 'pick' and b.k.get('targeted'):
+            # 재정질문/001-②(2026-11-01): 이 대상이 앞선 코스트보다 먼저 있었는지 미리 적어 둔다 — 앞선
+            # 코스트의 부수효과로 나중에 대상이 사라져도 발동 전체를 취소하지 않고 그 대상만 불발 처리하게(blocks/lib.py pick())
+            src.append(f"    l.ctx.setdefault('pre_cost_ok', {{}})[{b.k['ref']!r}] = "
+                       f"len(L.pick_pool(g, c, p, {G.const(b.k['scope'])})) >= 1")
     for b in costs:
         k = dict(b.k); k['cost'] = b.name != 'pick'
         call = f'{G.fn(L.BLOCKS[b.name].run)}(g, c, p, l, {G.const(k)})'

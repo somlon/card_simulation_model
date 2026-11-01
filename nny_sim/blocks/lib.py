@@ -252,19 +252,24 @@ def can_pick(g, c, p, ev, k):
 
 @block('pick', can=can_pick)
 def pick(g, c, p, l, k):
-    """S1 고르기 — 대상(발동 시)은 l.ctx[ref], 그 밖은 l.ctx['refs'][ref]. 후보가 모자라면 False(발동 취소 · 뒤 처리 없음)"""
+    """S1 고르기 — 대상(발동 시)은 l.ctx[ref], 그 밖은 l.ctx['refs'][ref]. 후보가 모자라면 False(발동 취소 · 뒤 처리 없음).
+    재정질문/001-②(2026-11-01): 이 대상(targeted)이 앞선 코스트보다 먼저는 있었는데(l.ctx['pre_cost_ok']) 그 코스트의
+    부수효과로 지금 모자라게 된 경우는 예외 — 발동(과 이미 치른 코스트)은 취소하지 않고, 있는 만큼만 대상으로 한다(없으면 불발)"""
     pool = pick_pool(g, c, p, k['scope'], l)
     n = pick_n(g, c, p, l, k)
     upto = k.get('upto') or 'n_count' in k
-    if n <= 0 or len(pool) < (1 if upto else n): return False
-    if k.get('picker') == 'mark':   # 레벨 · 속성 부여의 대상: 족보 계획(cards8.plan_mark)이 고른 카드, 쓸 곳이 없으면 이 카드(뒤에 릴리스해 드로우)
+    if n <= 0: return False
+    if len(pool) < (1 if upto else n):
+        if not (k.get('targeted') and l is not None and l.ctx.get('pre_cost_ok', {}).get(k['ref'])): return False
+        g.L(f'{c} {k["ref"]}: 코스트의 부수효과로 대상이 모자라짐 — 있는 만큼만(불발 가능)', 'sys')
+    if pool and k.get('picker') == 'mark':   # 레벨 · 속성 부여의 대상: 족보 계획(cards8.plan_mark)이 고른 카드, 쓸 곳이 없으면 이 카드(뒤에 릴리스해 드로우)
         t = _mark_plan(g, p)[1]
         xs = [t if t in pool else c if c in pool else pool[0]]
     else:
         xs = pick_cards(g, c, p, pool, min(n, len(pool)), k)
     dst = l.ctx if k.get('targeted') else refs(l)
-    dst[k['ref']] = xs[0] if n == 1 and not upto else xs
-    g.L(('대상: ' if k.get('targeted') else '고름: ') + ', '.join(map(str, xs)))
+    dst[k['ref']] = (xs[0] if xs else None) if n == 1 and not upto else xs
+    g.L(('대상: ' if k.get('targeted') else '고름: ') + (', '.join(map(str, xs)) if xs else '없음'))
     return True
 
 
