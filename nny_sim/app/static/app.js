@@ -45,19 +45,33 @@ function showOnline(list) {
 }
 showOnline(BOOT.online || []);
 
-// ── 탭 ──
+// ── 탭(화면 이동) — 상시 노출 버튼 대신 Esc 메뉴 안에서만(「원하는 화면으로 이동」 요청, 2026-11-02 디스코드) ──
+const VIEW_LABEL = {watch: '관전 · 재생 목록', play: 'AI 대전', deck: '덱 편집', learn: '학습'};
 let stages = {};
 function showView(v) {
-  document.querySelectorAll('header .tab').forEach(t => t.classList.toggle('on', t.dataset.v === v));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.v === v));
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  const cv = $('cur-view'); if (cv) cv.textContent = VIEW_LABEL[v] || '';
   activeStage = v === 'watch' ? stages.watch : v === 'play' ? stages.play : null;
   if (activeStage) setTimeout(() => activeStage.fit(), 0);
   if (v === 'learn') refreshLearning();
   if (v === 'deck' && !ED.loaded) newDeck();
 }
 let activeStage = null;
-document.querySelectorAll('header .tab').forEach(t => t.onclick = () => showView(t.dataset.v));
-document.addEventListener('keydown', e => { if (activeStage) activeStage.key(e); });
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { showView(t.dataset.v); setEscMenu(false); });
+// ── Esc 메뉴(화면 이동 · 게임 종료) ──
+function setEscMenu(show) { $('esc-menu').classList.toggle('on', show); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (e.target.closest && e.target.closest('input,select,textarea')) e.target.blur();
+    setEscMenu(!$('esc-menu').classList.contains('on'));
+    return;
+  }
+  if ($('esc-menu').classList.contains('on')) return;   // 메뉴가 열려 있으면 보드 키 입력(스페이스·화살표)은 받지 않음
+  if (activeStage) activeStage.key(e);
+});
+$('esc-menu').addEventListener('click', e => { if (e.target.id === 'esc-menu') setEscMenu(false); });
+$('esc-close').onclick = () => setEscMenu(false);
 $('quit').onclick = async () => { if (!confirm('프로그램을 끌까요?')) return; await api('quit', {}).catch(() => {}); document.body.innerHTML = '<p style="padding:40px">프로그램을 껐습니다. 이 창을 닫아도 됩니다.</p>'; };
 
 function deckOptions(sel, withOfficialFirst = true, keep) {

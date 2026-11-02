@@ -10,14 +10,27 @@
 <body>
 <header class="nav">
   <span class="logo">뉴 네오 유희왕 <small>시뮬레이터</small></span>
-  <button class="tab on" data-v="watch">관전 · 재생 목록</button>
-  <button class="tab" data-v="play">AI 대전</button>
-  <button class="tab" data-v="deck">덱 편집</button>
-  <button class="tab" data-v="learn">학습</button>
+  <span class="muted" id="cur-view"></span>
   <span class="sp"></span><span class="muted" id="online" title=""></span><span class="muted" id="ver"></span>
   <select id="theme-select" class="btn sm" title="화면 테마"><option value="neo">뉴 네오</option><option value="white">화이트</option><option value="black">블랙</option></select>
-  <button class="btn sm" id="quit" title="프로그램 끄기">종료</button>
+  <span class="muted" title="Esc 키를 누르면 화면 이동 · 종료 메뉴가 열립니다">Esc: 메뉴</span>
 </header>
+<!-- Esc 메뉴 — 화면 이동(원하는 화면으로 이동)과 프로그램 종료를 상시 노출 버튼 대신 Esc로 여는 메뉴에 모음 -->
+<div class="esc-overlay" id="esc-menu">
+  <div class="panel esc-panel">
+    <h2 class="sec">메뉴</h2>
+    <div class="esc-tabs">
+      <button class="tab on" data-v="watch">관전 · 재생 목록</button>
+      <button class="tab" data-v="play">AI 대전</button>
+      <button class="tab" data-v="deck">덱 편집</button>
+      <button class="tab" data-v="learn">학습</button>
+    </div>
+    <div class="row2" style="margin-top:14px;justify-content:center">
+      <button class="btn" id="esc-close">닫기(Esc)</button>
+      <button class="btn danger" id="quit" title="프로그램 끄기">게임 종료</button>
+    </div>
+  </div>
+</div>
 <main>
   <!-- 관전 · 재생 목록 -->
   <section class="view on" id="v-watch">
