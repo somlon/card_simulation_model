@@ -54,7 +54,7 @@ function showView(v) {
   const cv = $('cur-view'); if (cv) cv.textContent = VIEW_LABEL[v] || '';
   activeStage = v === 'watch' ? stages.watch : v === 'play' ? stages.play : null;
   if (activeStage) setTimeout(() => activeStage.fit(), 0);
-  if (v === 'learn') refreshLearning();
+  if (v === 'learn') { refreshLearning(); refreshDecisions(); }
   if (v === 'deck' && !ED.loaded) newDeck();
 }
 let activeStage = null;
@@ -565,6 +565,12 @@ async function refreshLearning() {
   $('l-pushgames').checked = !!s.push_games;
   const gp = L.last_game_push; $('l-gamepush').textContent = gp ? `마지막 기보 수집(${gp.time}): ${gp.ok ? '성공' : '실패'} — ${gp.msg}` : '';
 }
+async function refreshDecisions() {
+  $('l-decisions').textContent = '뽑는 중…';
+  try { const r = await api('analysis/decisions'); $('l-decisions').textContent = r.report; }
+  catch (e) { $('l-decisions').textContent = '리포트를 뽑지 못했습니다: ' + e.message; }
+}
+$('l-decisions-refresh').onclick = refreshDecisions;
 $('l-export').onclick = async () => { const r = await api('learning/export', {}); $('l-exported').textContent = r.ok ? '내보냄: ' + r.path : '아직 학습 기록이 없습니다.'; };
 $('l-open').onclick = async () => { const r = await api('open', {what: 'export'}); if (!r.ok) toast('폴더를 열 수 없습니다.'); else toast('폴더: ' + r.path); };
 $('l-savegit').onclick = async () => { BOOT.settings = await api('settings', {git_url: $('l-url').value.trim(), git_base: $('l-base').value.trim(), git_branch: $('l-branch').value.trim(), auto_push: $('l-auto').checked}); toast('저장했습니다.'); };
