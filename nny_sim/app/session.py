@@ -7,7 +7,7 @@ LiveMatch: 엔진 스레드에서 Bo3 매치 1개를 돌리며 기록기(viewer/
   매치가 끝나면(그만둔 경우도) 재생 기록으로 저장한다.
 Store: 사용자 폴더의 파일들.
 """
-import gzip, json, os, random, re, secrets, shutil, subprocess, threading, time, traceback, uuid
+import gzip, json, os, random, re, secrets, shutil, subprocess, sys, threading, time, traceback, uuid
 
 import deck as D
 import match as M
@@ -196,6 +196,23 @@ class Store:
         try: os.remove(os.path.join(base, key + '.json.gz'))
         except OSError: pass
         return True
+
+    # ── AI 실력 트랙 ──
+    def decision_report(self, min_n=5, top=None):
+        """online_analysis/{extract,aggregate,report}_decisions.py 파이프라인을 현재 쌓인 재생
+        기록(library+내 기록) 전체에 돌려 한국어 판단 리포트 문자열을 낸다. 기보가 없으면 그 사실을
+        적은 한 줄짜리 리포트(report_decisions.render_report 쪽에서 처리)."""
+        oa_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'online_analysis')
+        if oa_dir not in sys.path: sys.path.insert(0, oa_dir)
+        from extract_decisions import extract_decisions
+        from aggregate_decisions import aggregate
+        from report_decisions import render_report
+        rows = []
+        for meta in self.replays():
+            try: rec = self.replay(meta['id'])
+            except (OSError, ValueError, EOFError): continue
+            rows.extend(extract_decisions(rec))
+        return render_report(aggregate(rows), min_n=min_n, top=top)
 
     # ── 재생 목록 ──
     def playlists(self):

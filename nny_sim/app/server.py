@@ -332,6 +332,8 @@ class App:
             if j: j.stop = True
             return {'ok': bool(j)}
         if path == '/api/learning': return self.learning()
+        if path == '/api/analysis/decisions':
+            top = g('top'); return {'report': self.store.decision_report(top=int(top) if top not in (None, '') else None)}
         if path == '/api/learning/export':
             out = self.store.export_learning(); return {'ok': bool(out), 'path': out}
         if path == '/api/learning/git': return self.store.git_push()
