@@ -3,7 +3,7 @@
 학습형 AI(policy.LearnedAI)의 판단은 거의 모두 choose(결정 이름, 후보 [(이름, 휴리스틱 점수, 실행값)])를 지난다.
 HumanAI 는 choose 에서 후보를 화면(Bridge)으로 보내 사람이 고른 것을 돌려준다. 고른 후보의 학습표 키는 AI와 똑같이 trace 에 남기므로,
 라운드가 끝나면 사람의 판단도 그 덱의 학습표 값으로 쌓인다(LearnedAI.end_game).
-choose 를 거치지 않는 판단 중 선후공 선택 · 덱 위 제외할 덱 · 1턴 1번 [지속] 적용 여부도 사람에게 묻는다.
+choose 를 거치지 않는 판단 중 선후공 선택 · 덱 위 제외할 덱 · 1턴 1번 [지속] 적용 여부 · 간절한 마음 추가 묘지행 여부도 사람에게 묻는다.
 카드 블록 안에서 엔진이 블록 가치로 자동으로 고르는 하위 선택(J2 선택지 · 코스트로 버릴 카드 · 특수소환할 몬스터 · 카운터 등)도
 고르는 쪽이 사람이면 화면에서 묻는다(install_block_hooks — 엔진은 고치지 않고 감싼다).
 """
@@ -197,19 +197,62 @@ class HumanAI(P.LearnedAI):
                         [f'메인 덱 ({len(pl.main)}장)', f'상급 덱 ({len(pl.upper)}장)'])
         return ('main', 'upper')[idx]
 
+    def pick_tribute_set(self, g, p, c, n):
+        """제물 일반소환: 릴리스할 몬스터 n장을 사람이 직접 고른다 — 1장씩 n번 물어서 조합을 만든다
+        (ai.py HeuristicAI.pick_tributes 는 가치가 낮은 순으로 AI가 자동으로 고른다 — 사람은 직접 고름)"""
+        chosen = []; remaining = list(g.release_cands(p))
+        for i in range(n):
+            if not remaining: return None
+            idx = self._ask(g, p, f'{c.name} 제물 {i + 1}/{n} — 릴리스할 몬스터', [f'{x}' for x in remaining])
+            chosen.append(remaining.pop(idx))
+        ts = tuple(chosen)
+        if not g.free_m(p) and not any(t.zone == 'm' for t in ts): return None
+        return ts
+
     def cont_apply(self, g, p, src, num, why=''):
         idx = self._ask(g, p, f'「{src.name}」 {num}번 [지속]을 지금 적용할까요? ({why})', ['적용', '적용 안 함'])
+        return idx == 0
+
+    def choose_extra_dump(self, g, p, n):
+        """[지속] 간절한 마음(WSFT-026) 「메인 덱 위에서부터 카드를 묘지로 보낼 때, 1장을 추가로 보낼 수 있다」—
+        낼지는 사람이 직접 고른다(soltop_ 제보 2026-10-31 — 이 메서드가 없으면 engine.py Game.dump가 AI와
+        같은 고정 휴리스틱(len(main) - n >= 8)로 조용히 정해 버려, 텍스트는 「보낼 수 있다」인데 사람에게는
+        물어본 적이 없어 무조건 강제로 보이는 문제였다. AI 쪽은 그 휴리스틱을 그대로 쓴다 — 변경 없음)"""
+        idx = self._ask(g, p, '메인 덱 위에서 1장을 추가로 더 묘지로 보낼까요? (간절한 마음)', ['추가로 보냄', '보내지 않음'])
         return idx == 0
 
     # ── 행동 목록: LearnedAI 와 같은 후보 · 실행이되, AI 운용 지침으로 빼는 후보는 빼지 않는다 ──
     # (AI만의 거름망: 손해로 보는 후보(VETO) 제외, 번성충 일반소환은 결착 때만, 결착 가능하면 자동 공격 — policy.LearnedAI 참고)
     def choose_triggers(self, g, p, cands):
-        out = []
+        """어느 효과를 발동할지(필수는 자동 포함)는 하나씩 묻고, 둘 이상 발동하게 되면 그 발동 순서도 묻는다
+        (soltop_ 제보 — 동시에 발동할 수 있는 효과가 여럿일 때 AI처럼 점수로 자동 정렬되거나 트리거 수집
+        순서 그대로 발동돼 사람에게 순서를 고를 기회가 없었다. 발동 여부와 순서는 규칙상 둘 다 그 효과를
+        가진 플레이어가 정한다 — ai.py HeuristicAI.choose_triggers 는 점수로만 자동 정렬해 그대로 둠)
+
+        같은 이름 카드의 같은 효과 번호가 cands 에 여러 장 있을 때(1턴 1회는 engine.py Game.opt_key 로
+        카드명×효과번호 단위로 공유됨)는 그 공유 한도(남은 횟수)만큼만 묻는다 — soltop_ 제보 7번: "여러
+        장 중 1장만 응답 물어보면 됨"(한도가 보통 1장이라 사실상 한 번만 묻는다). 한도를 넘는 나머지
+        장은 물어볼 필요 없이 그대로 건너뜀(답이 같을 게 뻔한 질문을 또 하지 않음) — 실제 발동 시 어느
+        장을 쓰는지는 중요하지 않다(같은 이름·같은 번호라 효과는 동일)."""
+        chosen = []
+        remaining_by_key = {}
         for c, e, ev in cands:
-            if e.mandatory: out.append((c, e, ev)); continue
+            if e.mandatory: chosen.append((c, e, ev)); continue
+            opt = getattr(e, 'opt', None)   # FakeEffect(test_trigger_order.py)처럼 opt 필드가 없으면 공유 한도 없음(기존 동작)
+            if opt is not None:
+                key = g.opt_key(c, e)
+                if key not in remaining_by_key: remaining_by_key[key] = opt - g.p[p].opt.get(key, 0)
+                if remaining_by_key[key] <= 0: continue   # 이 이름×번호의 이번 턴 한도를 이미 다 물었다
+                remaining_by_key[key] -= 1
             if self.choose(g, p, f'트리거:{c.name}#{e.num}', [('발동', act_score(g, c, e, p, ev, 1), True), ('안 함', 0, False)]):
-                out.append((c, e, ev))
-        return out
+                chosen.append((c, e, ev))
+        if len(chosen) <= 1: return chosen
+        remaining = list(chosen); order = []
+        while len(remaining) > 1:
+            opts = [(f'{c.name}#{e.num}', act_score(g, c, e, p, ev, 1), i) for i, (c, e, ev) in enumerate(remaining)]
+            order.append(remaining.pop(self.choose(g, p, '동시에 발동 — 먼저 발동할 효과', opts)))
+        order.extend(remaining)
+        return order
 
     def respond(self, g, p, opts):
         cand = [('패스', 0, None)]; seen = set(); subs = [None]; marks = [None]
@@ -260,12 +303,25 @@ class HumanAI(P.LearnedAI):
             elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
 
+    def do_extra(self, g, p, pay):
+        """HeuristicAI.do_extra 와 같되, 제물 일반소환(kind == 'summon')은 AI가 자동으로 고른 제물 대신
+        사람이 pick_tribute_set 으로 직접 골라 g.normal_summon 을 그대로 호출한다(룰 불가침 — 엔진은 안 건드림)"""
+        kind, c, ts, pos = pay
+        if kind == 'summon':
+            if ts:
+                chosen = self.pick_tribute_set(g, p, c, len(ts))
+                if chosen is None:
+                    g.L(f'{g.pname(p)} {c} 제물 소환 취소 (제물 선택 불가)', 'sys'); return
+                ts = chosen
+            g.normal_summon(c, p, ts, pos); g.after_action(p)
+        else: g.change_position(c, p); g.triggers()
+
     def battle_phase(self, g, p):
+        failed = set()
         for _ in range(MAX_ATTACKS):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]
-            if not attackers: return
             # 공격하는 몬스터 · 공격 대상은 카드마다 따로 낸다 — 같은 이름 카드가 여러 장이어도 어느 카드로 · 어느 카드를 공격할지 고른다(사용자 지시 2026-10-30).
             # 학습 키(라벨)는 카드 이름 그대로, 화면 설명(subs)은 칸 · 빛낼 카드(marks)는 그 카드들
             opts = [('공격 종료', 0, None)]; subs = [None]; marks = [None]
@@ -277,11 +333,24 @@ class HumanAI(P.LearnedAI):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
                     opts.append((f'{a.name}→{t.name}', av - tv, (a, t))); subs.append(f'{slot_label(g, p, a)} → {slot_label(g, p, t)}')
                     marks.append(rec_uids(g, a, t))
+            # soltop_ 제보(4번) — 전투 단계도 발동 시점 제한이 없다(engine.py spell_speed_ok 주석) — 공격 명령만
+            # 만들고 ignition/quick 발동 후보를 넣지 않아 전투 단계에서는 사람이 효과를 아예 발동할 수 없었다.
+            # main_phase와 같은 방식으로 더한다 — 우선권을 포기(공격 종료 선택 가능)해도 그대로 있어야 함
+            act_opts = [(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e), c)
+                        for c, e in g.options(p, ('ignition', 'quick')) if (c.uid, e.num) not in failed]
             if len(opts) > 1 and any(g.must_attack(o[2][0]) for o in opts[1:]):
-                opts, subs, marks = opts[1:], subs[1:], marks[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료 불가 (규칙)
+                opts, subs, marks = opts[1:], subs[1:], marks[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료·발동 불가 (규칙)
+            else:
+                for lab, s, pay, c in act_opts:
+                    opts.append((lab, s, pay)); subs.append(slot_label(g, p, c) if g.on_field(c) else None); marks.append(rec_uids(g, c))
+            if len(opts) == 1 and opts[0][2] is None: return   # 공격할 몬스터도 발동할 효과도 없음
             pick = self.choose(g, p, '공격', opts, scale=400, subs=subs, marks=marks)
             if pick is None: return
-            g.attack(*pick)
+            if isinstance(pick, tuple) and len(pick) == 3 and pick[0] == 'act':
+                _, c, e = pick
+                if not g.act(p, c, e): failed.add((c.uid, e.num))
+            else:
+                g.attack(*pick)
 
 
 MAX_ACTIONS = 60   # 한 단계에서 행동을 고르는 최대 횟수(무한 반복 방지 — LearnedAI 는 40)
