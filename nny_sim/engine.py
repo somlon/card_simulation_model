@@ -574,6 +574,7 @@ class Game:
     def send_grave(self, c, cause=None, destroyed=False, from_battle=False, released=False):
         """released: 릴리스로 묘지에 보냄 (Game.tribute) — to_grave · leave_field 사건에 released=True (「이 카드가 릴리스되었을 때」, 포커짐승들)"""
         cause = cause or ('effect', self.src)
+        if c.zone == 'skill': self.L(f'{c}은(는) 스킬 카드라 묘지로 가지 않음', 'sys'); return
         if self.blocked(c, cause): return
         if self.stays(c, cause, destroyed): return
         prev = c.zone; ctrl = c.controller
@@ -591,6 +592,7 @@ class Game:
 
     def destroy(self, c, cause=None, battle=False):
         cause = cause or ('effect', self.src)
+        if c.zone == 'skill': self.L(f'{c}은(는) 스킬 카드라 파괴되지 않음', 'sys'); return False
         if not battle and self.blocked(c, cause): return False
         if self.rule('indestructible', c, battle, use=True, why='파괴되지 않음'):
             self.L(f'{c} 파괴되지 않음', 'sys'); return False
@@ -609,6 +611,7 @@ class Game:
 
     def to_deck(self, c, cause=None):
         cause = cause or ('effect', self.src)
+        if c.zone == 'skill': self.L(f'{c}은(는) 스킬 카드라 덱으로 가지 않음', 'sys'); return
         if self.blocked(c, cause): return
         if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
@@ -617,6 +620,7 @@ class Game:
 
     def to_hand(self, c, cause=None, p=None):
         cause = cause or ('effect', self.src)
+        if c.zone == 'skill': self.L(f'{c}은(는) 스킬 카드라 패로 가지 않음', 'sys'); return
         if self.blocked(c, cause): return
         if c.zone in ('main', 'upper') and cause[0] == 'effect' and self.rule('no_deck_to_hand', c.owner if p is None else p, use=True, why='덱에서 패에 넣지 못하게 함'):
             self.L(f'{c}: 효과로 덱에서 패에 넣을 수 없음 (그 효과는 무효가 아님 — 횟수는 그대로 소모)', 'sys'); return
@@ -632,6 +636,7 @@ class Game:
 
     def banish(self, c, cause=None):
         cause = cause or ('effect', self.src)
+        if c.zone == 'skill': self.L(f'{c}은(는) 스킬 카드라 제외되지 않음', 'sys'); return
         if self.blocked(c, cause): return
         if self.stays(c, cause): return
         prev = c.zone; ctrl = c.controller
