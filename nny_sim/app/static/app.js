@@ -44,6 +44,15 @@ function showOnline(list) {
   el.textContent = '접속중 ' + list.length + '명'; el.title = list.map(c => c.name).join(', ');
 }
 showOnline(BOOT.online || []);
+// 로그인 게이트(입장 암호)로 들어온 사람은 서버가 이름을 이미 안다 — 대기실 이름칸을 채워 두고 머리 막대에 로그아웃을 단다
+api('whoami').then(w => {
+  if (w.name) { const n = $('lobby-name'); if (n && !n.value) n.value = w.name; }
+  if (w.login_gate && w.name) {
+    const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = w.name + ' · 로그아웃'; b.title = '이 브라우저의 입장 쿠키를 지운다';
+    b.onclick = async () => { await api('logout', {}).catch(() => {}); document.cookie = 'nny_sid=; Path=/; Max-Age=0'; location.href = '/login'; };
+    $('theme-select').before(b);
+  }
+}).catch(() => {});
 
 // ── 탭(화면 이동) — 상시 노출 버튼 대신 Esc 메뉴 안에서만(「원하는 화면으로 이동」 요청, 2026-11-02 디스코드) ──
 const VIEW_LABEL = {home: '', play: '방', watch: '리플레이', deck: '덱 편집', cards: '카드 목록', learn: '학습'};

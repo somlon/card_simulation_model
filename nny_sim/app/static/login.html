@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>뉴 네오 유희왕 — 입장</title>
+<link rel="stylesheet" href="app.css">
+<style>
+.login{max-width:380px;margin:14vh auto 0}
+.login h1{font-size:24px;margin:0 0 4px}
+.login p{color:var(--muted);margin:0 0 18px;font-size:13px}
+.login .field input{width:100%}
+.login .err{min-height:18px;font-size:12.5px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<main>
+  <div class="login panel">
+    <h1>뉴 네오 유희왕 <small class="muted" style="font-size:14px">시뮬레이터</small></h1>
+    <p>입장 암호를 받은 사람만 들어온다. 하마치로 들어온 등록 유저는 이 화면 없이 바로 열린다.</p>
+    <form id="f">
+      <div class="field"><span>이름</span><input type="text" id="name" maxlength="40" autocomplete="username" autofocus></div>
+      <div class="field"><span>입장 암호</span><input type="password" id="pw" autocomplete="current-password"></div>
+      <div class="err" id="err"></div>
+      <button class="btn primary" type="submit" style="width:100%">들어가기</button>
+    </form>
+  </div>
+</main>
+<script>
+(function(){
+  var f=document.getElementById('f'), err=document.getElementById('err');
+  try{ var n=localStorage.getItem('nny-login-name'); if(n) document.getElementById('name').value=n; }catch(e){}
+  f.onsubmit=async function(ev){
+    ev.preventDefault(); err.textContent='';
+    var name=document.getElementById('name').value.trim(), pw=document.getElementById('pw').value;
+    try{
+      var r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,password:pw})});
+      var j=null; try{ j=await r.json(); }catch(e){}
+      if(!r.ok){ err.textContent=(j&&j.error)||('HTTP '+r.status); return; }
+      try{ localStorage.setItem('nny-login-name',name); }catch(e){}
+      location.href='/';
+    }catch(e){ err.textContent='서버와 연결하지 못했다: '+e.message; }
+  };
+})();
+</script>
+</body>
+</html>
