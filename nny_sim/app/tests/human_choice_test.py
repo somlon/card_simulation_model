@@ -150,4 +150,26 @@ h0 = len(g.p[0].hand); n0 = len(bot.asked); bot.answers = ['내지 않는다']
 g.act(0, th, next(e for e in th.effects if e.num == 1))
 check('선택 코스트: 내지 않으면 1장만 드로우', hero.zone == 'm' and len(g.p[0].hand) == h0 + 1, f'(드로우 {len(g.p[0].hand) - h0})')
 
+# ⑨ 상대 세트 카드 감춤(사용자 지시 2026-10-30) — 대상 · 카드 고르기 후보와 사람 판단 줄에 상대 뒷면 카드 이름이 나오지 않는다
+g, hu, bot = game('투기장의 규칙', '세제', [])
+spells = sorted(n for n, d in Impl.pool.items() if d['type'] == '마법' and d.get('subtype') in ('신속', '트리거'))
+sets = []
+for i, n in enumerate(spells[:2] + spells[:1]):   # 같은 이름 세트 카드 2장 + 다른 이름 1장
+    x = put(g, n, 1, 's'); x.faceup = False; g.p[1].s[i] = x; sets.append(x)
+up = put(g, weak, 1, 'm', 0)
+seen = []
+
+class Spy(Script):
+    def ask(self, req):
+        seen.append((req['decision'], [(o['label'], o.get('sub', '')) for o in req['opts']])); return 0
+hu.bridge = Spy([])
+n0 = len(g.log)
+hu.pick_target(g, 0, sets + [up], 'remove')
+H.ask_cards(hu, g, 0, '고르기', sets + [up], 1)
+txt = ' '.join(l + ' ' + s_ for _, opts in seen for l, s_ in opts) + ' ' + ' '.join(e['m'] for e in g.log[n0:])
+names = {x.name for x in sets}
+check('세트 카드: 후보 · 판단 줄에 상대 뒷면 카드 이름이 없다', seen and not any(n in txt for n in names) and '뒷면 카드' in txt,
+      str([o for _, o in seen][:2]))
+check('세트 카드: 같은 이름 뒷면 카드도 칸마다 따로 나온다', len(seen[0][1]) == 4, str(seen[0][1]))
+
 print('결과:', '통과' if ok else '실패'); sys.exit(0 if ok else 1)
