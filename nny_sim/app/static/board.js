@@ -444,7 +444,7 @@ class Stage {
   maskMsg(fr, m) {
     if (!this.hideSeat || !this.hideSeat.length) return m;
     if (!this.hideSeat.some(s => m.startsWith(this.names[s]))) return m;
-    if (/드로우|시작 패|멀리건|세트$/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
+    if (/드로우|시작 패|멀리건|세트$|전략 덱 교체/.test(m)) return m.replace(/「[^」]+」/g, '「?」');
     return m;
   }
   shortMsg(fr) {

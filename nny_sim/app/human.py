@@ -108,6 +108,24 @@ class HumanAI(P.LearnedAI):
                                  'opts': [(o[0], keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
         return self._rec(g, p, idx, opts)
 
+    def choose_split(self, g, p, n):
+        """시작 패 메인/상급 배분 — LearnedAI.choose_split 은 choose_summon_pos 와 같은 문제로 LearnedAI.choose 를
+        직접 불러 사람 자리의 choose 를 거치지 않는다(soltop_ 제보 2026-11-03) — 사람은 직접 고른다"""
+        pl = g.p[p]
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        k0 = max(lo, min(hi, self.split_default(g, p, n)[0]))
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 배분({pos})', self.split_opts(k0, lo, hi), scale=10)
+
+    def mulligan_split(self, g, p, back):
+        """멀리건으로 다시 뽑을 매수 중 메인 덱 몫 — choose_split 과 같은 이유로 사람이 직접 고른다"""
+        n0 = HeuristicAI.mulligan_split(self, g, p, back)
+        pl = g.p[p]; n = len(back)
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        if lo >= hi: return lo
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 재배분({pos}·{n}장)', self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10)
+
     def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
         """이전 라운드 패자가 정하는 rnd라운드 선후공"""
         base = f'{me_skill} vs {opp_skill}|선후공 선택({rnd}라운드)|'
