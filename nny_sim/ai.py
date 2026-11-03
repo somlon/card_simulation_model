@@ -227,9 +227,14 @@ class HeuristicAI:
             s = 100 if e.mandatory else act_score(g, c, e, p, ev, 1)
             sc.append((f'{c.name}#{e.num}', s))
             if s > 0: out.append((s, c, e, ev))
-        out.sort(key=lambda x: -x[0])
+        out = self.order_triggers(g, p, out)
         if sc: self.note(g, p, '트리거 발동', sc, ', '.join(f'{c.name}#{e.num}' for _, c, e, _ in out) or '없음')
         return [(c, e, ev) for _, c, e, ev in out]
+
+    def order_triggers(self, g, p, items):
+        """같은 타이밍에 발동할 효과들([트리거] · [유언] · [소환] · [전투] — items [(점수, 카드, 효과, 사건)])의 발동 선언 순서.
+        엔진(Game.triggers)은 이 순서대로 선언한다 — 먼저 선언한 효과가 낮은 체인 번호(나중에 처리). 휴리스틱: 점수가 높은 것부터"""
+        return sorted(items, key=lambda x: -x[0])
 
     # ── 종료 · 패스의 평가: 보유 가치(기회비용) ──
     # 후보 점수는 「그 행동으로 얻는 것」만 세고 「그 카드를 지금 써서 잃는 것」을 빼지 않아, 종료 · 패스(0점)가 늘 졌다.
