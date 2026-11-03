@@ -61,6 +61,7 @@ class Tap:
             if len(g.dlog) > n0:   # LearnedAI._rec 가 (자리, 후보 번호)를 남긴다
                 idx = g.dlog[-1][1]
                 self.rec.add('game', seat, DRLAI.game_id(g), (obs, None, cands, idx, 0.0, tp, S.parse_decision(decision)[0]))
+                self.rec._pending[-1].append([decision, opts[idx][0], seat])   # 판단 글(판단 단위 정리 — 저장 때 index.json 'decs')
                 self.decisions += 1
             return out
 
@@ -75,6 +76,8 @@ class Tap:
     def save(self, user_dir, winner, meta):
         """매치 끝: 승패가 난 라운드의 표본만 저장 → (파일 이름, 표본 수). 표본이 없으면 (None, 0)"""
         import numpy as np
+        # 저장되는 표본(승패가 난 라운드의 판단 — Recorder.end_match)과 같은 순서의 판단 글
+        decs = [e[6] if len(e) > 6 else None for e in self.rec._pending if e[0] == 'game' and e[4] is not None]
         self.rec.end_match(winner)
         P = self.rec.packed().get('game')
         n = 0 if P is None else len(P['idx'])
@@ -87,6 +90,7 @@ class Tap:
         with open(tmp, 'wb') as f: np.savez_compressed(f, **arrays)
         os.replace(tmp, os.path.join(d, name))
         idx = read_index(user_dir); idx[name] = dict(meta, samples=n, time=time.strftime('%Y-%m-%d %H:%M'))
+        if len(decs) == n and all(decs): idx[name]['decs'] = decs
         _write_index(user_dir, idx)
         return name, n
 
@@ -105,10 +109,33 @@ def _write_index(user_dir, idx):
     os.replace(tmp, p)
 
 
+def filtered_npz(path, drop):
+    """표본 파일에서 drop 번호의 표본을 뺀 npz 내용(bytes)"""
+    import numpy as np
+    from drl import buffer as B
+    with np.load(path, allow_pickle=False) as z: P = {'kind': 'game', **{k: z[k] for k in z.files}}
+    P = B.select(P, [i for i in range(len(P['idx'])) if i not in drop])
+    bio = io.BytesIO(); np.savez_compressed(bio, **{k: v for k, v in P.items() if k != 'kind'})
+    return bio.getvalue()
+
+
+def decision_types(user_dir, name):
+    """판단 글이 없는 예전 표본 파일 → 표본마다 [판단 종류 이름] (drl.schema.DECISION_TYPES)"""
+    import numpy as np
+    from drl import schema as S
+    try:
+        with np.load(os.path.join(samples_dir(user_dir), name), allow_pickle=False) as z: dt = z['dt']
+    except (OSError, KeyError, ValueError):
+        return []
+    return [[S.DECISION_TYPES[int(t)] if 0 <= int(t) < len(S.DECISION_TYPES) else f'판단 종류 {int(t)}'] for t in dt]
+
+
 def kept_files(user_dir):
-    """학습에 쓰는 표본 파일 이름(있는 파일 중 사용자가 빼지 않은 매치) · 표본 목록"""
+    """학습에 쓰는 표본 파일 이름(있는 파일 중 사용자가 빼지 않은 매치) · 표본 목록(samples 는 뺀 판단을 뺀 수)"""
     idx = read_index(user_dir); d = samples_dir(user_dir); ex = LD.read_excluded(user_dir)
-    return [k for k in idx if os.path.exists(os.path.join(d, k)) and LD.sample_key(k, idx[k]) not in ex], idx
+    out = [k for k in idx if os.path.exists(os.path.join(d, k)) and LD.sample_key(k, idx[k]) not in ex]
+    idx = {k: dict(m, samples=m.get('samples', 0) - len(ex.dropped(LD.sample_key(k, m), 'n'))) for k, m in idx.items()}
+    return out, idx
 
 
 def stats(user_dir):
@@ -172,10 +199,16 @@ def load_sources(srcs, exclude=()):
             if n in seen:
                 dup += 1; continue
             seen.add(n)
-            if LD.sample_key(n, meta) in exclude:
+            key = LD.sample_key(n, meta)
+            if key in exclude:
                 skipped += 1; continue
             with np.load(io.BytesIO(data), allow_pickle=False) as z:
-                P = {'kind': 'game', **{key: z[key] for key in z.files}}
+                P = {'kind': 'game', **{k_: z[k_] for k_ in z.files}}
+            drop = exclude.dropped(key, 'n') if isinstance(exclude, LD.Exclusion) else ()
+            if drop:   # 사용자가 뺀 판단(learndata parts)
+                keep = [i for i in range(len(P['idx'])) if i not in drop]
+                if not keep: skipped += 1; continue
+                P = B.select(P, keep)
             source = LD.sample_source(meta); k = len(P['idx'])
             P['sw'] = np.full(k, LD.weight_of(source), np.float32)
             e = by.setdefault(source, {'files': 0, 'samples': 0}); e['files'] += 1; e['samples'] += k

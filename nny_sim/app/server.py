@@ -139,6 +139,14 @@ class App:
         if path == '/api/learning/exclude':
             if self.nn.busy(): raise ValueError('신경망 학습 중에는 학습 데이터를 바꿀 수 없습니다')
             return {'ok': True, 'excluded': self.store.set_excluded(body.get('keys', []), bool(body.get('excluded', True)))}
+        if path == '/api/learning/decisions': return self.store.decisions(g('key', ''))
+        if path in ('/api/learning/exclude_parts', '/api/learning/exclude_text'):
+            if self.nn.busy(): raise ValueError('신경망 학습 중에는 학습 데이터를 바꿀 수 없습니다')
+            if path.endswith('parts'):
+                return {'ok': True, 'dropped': self.store.set_parts(body.get('key', ''), body.get('table', []), body.get('nn', []), bool(body.get('excluded', True)))}
+            text = str(body.get('text', '')).strip()
+            if not text: raise ValueError('판단 글을 입력하세요')
+            return {'ok': True, 'changed': self.store.set_decision_text(body.get('keys', []), text, bool(body.get('excluded', True)))}
         if path == '/api/nn/status': return self.nn.status()
         if path == '/api/nn/train': return self.nn.start(body.get('epochs'))
         if path == '/api/nn/stop': return self.nn.stop()

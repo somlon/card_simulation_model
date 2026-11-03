@@ -136,4 +136,33 @@ check('GitHub 올리기 — 제외 반영 · 줄마다 출처', r['ok'] and [p['
 app.route('POST', '/api/learning/exclude', {}, {'keys': keys, 'excluded': False})
 check('다시 넣기', len(st.learning_records()) == 3 and not any(i['excluded'] for i in st.learning_items()))
 
+# ⑨ 판단 단위 정리(사용자 지시 2026-10-30) — 매치 하나에서 판단 몇 개 · 글로 거른 판단을 빼면 학습표 · 신경망 · 내보내기에서 그 판단만 빠진다
+key = h[0]['match']
+D = app.route('GET', '/api/learning/decisions', {'key': [key]}, {})
+check('판단 목록: 학습표 · 신경망 판단 글', D['table'] and all(x['decision'] for x in D['table'])
+      and (not NN or (D['nn'] and all(x['decision'] and x['label'] for x in D['nn']))), f'(학습표 {len(D["table"])} · 신경망 {len(D["nn"])} · 예 {D["nn"][:1]})')
+drop_t = [0, 1]; drop_n = [0] if D['nn'] else []
+app.route('POST', '/api/learning/exclude_parts', {}, {'key': key, 'table': drop_t, 'nn': drop_n, 'excluded': True})
+rec = next(r for r in st.learning_records() if r['match'] == key)
+check('판단 빼기 → 학습 기록 · 내보내기에서 그 갱신만 빠짐', rec['updates'] == h[0]['updates'][2:])
+decks = set(h[0]['decks'])
+t_all = T.matchup_table(SPLIT, decks, logs=[st.log_path]); t_cut = T.matchup_table(SPLIT, decks, logs=[st.log_path], exclude=st.excluded())
+own = lambda u: (T.key_owner(u[0]) or [None])[0] in decks
+check('판단 빼기 → 학습표 다시 적용에서 빠짐', t_all.applied - t_cut.applied == sum(1 for i in drop_t if own(h[0]['updates'][i])))
+if NN:
+    P, matches, info = NS.load_all(USER)
+    check('판단 빼기 → 신경망 표본에서 빠짐', info['samples'] == sum(m['samples'] for m in NS.read_index(USER).values()) - len(drop_n), f'({info})')
+    z = app.nn.export(os.path.join(USER, 'export'), 'test2')
+    import numpy as np, io
+    with zipfile.ZipFile(z) as zz:
+        name = next(n for n, m in NS.read_index(USER).items() if m.get('match') == key)
+        with np.load(io.BytesIO(zz.read(f'samples/{name}'))) as a: nz = len(a['idx'])
+    check('판단 빼기 → 신경망 내보내기 표본에서 빠짐', nz == NS.read_index(USER)[name]['samples'] - len(drop_n))
+word = D['table'][2]['decision'].split(':')[0].split('(')[0]
+r = app.route('POST', '/api/learning/exclude_text', {}, {'keys': [key], 'text': word, 'excluded': True})
+D2 = app.route('GET', '/api/learning/decisions', {'key': [key]}, {})
+check('글로 거른 판단 한꺼번에 빼기', r['changed'] > 0 and all(x['excluded'] for x in D2['table'] if word in x['decision']), f'(「{word}」 {r["changed"]}개)')
+app.route('POST', '/api/learning/exclude_parts', {}, {'key': key, 'table': [x['i'] for x in D2['table']], 'nn': [x['i'] for x in D2['nn']], 'excluded': False})
+check('판단 다시 넣기', next(r for r in st.learning_records() if r['match'] == key)['updates'] == h[0]['updates'])
+
 print('전체', '통과' if ok else '실패'); sys.exit(0 if ok else 1)

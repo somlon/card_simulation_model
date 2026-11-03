@@ -198,9 +198,10 @@ class Store:
     def excluded(self): return LD.read_excluded(self.dir)
 
     def learning_records(self, include_excluded=False):
-        """두 학습 기록 파일의 매치 기록(줄마다 출처 'source') — 사용자가 뺀 매치는 빼고"""
-        ex = set() if include_excluded else self.excluded()
-        return [dict(r, source=LD.record_source(r)) for path in self.log_paths for r in T.read_log(path) if LD.record_key(r) not in ex]
+        """두 학습 기록 파일의 매치 기록(줄마다 출처 'source') — 사용자가 뺀 매치는 빼고, 뺀 판단은 그 줄의 갱신에서 뺀다"""
+        ex = LD.Exclusion() if include_excluded else self.excluded()
+        return [dict(r, source=LD.record_source(r), updates=LD.kept_updates(r, ex))
+                for path in self.log_paths for r in T.read_log(path) if LD.record_key(r) not in ex]
 
     @staticmethod
     def write_records(path, recs):
@@ -215,7 +216,8 @@ class Store:
         by = {src: T.log_stats(path, ex) for src, path in (('human', self.log_path), ('ai', self.ai_log_path))}
         tot = {'matches': sum(v['matches'] for v in by.values()), 'updates': sum(v['updates'] for v in by.values()),
                'size': sum(v['size'] for v in by.values())}
-        return dict(tot, by_source=by, by_matchup=by['human']['by_matchup'], excluded=len(ex))
+        return dict(tot, by_source=by, by_matchup=by['human']['by_matchup'], excluded=len(ex),
+                    excluded_parts=sum(len(v.get('t', ())) + len(v.get('n', ())) for v in ex.parts.values()))
 
     def export_learning(self):
         """사람 대전 · AI끼리 학습 기록을 합친 파일 하나(줄마다 출처) — 사용자가 뺀 매치는 넣지 않는다"""
@@ -233,7 +235,8 @@ class Store:
             if it is None:
                 it = items[key] = {'key': key, 'source': src, 'label': LD.SOURCE_LABEL.get(src, src), 'weight': LD.weight_of(src),
                                    'time': '', 'decks': meta.get('decks', []), 'ai_kinds': meta.get('ai_kinds'), 'winner': meta.get('winner'),
-                                   'human_won': meta.get('human_won'), 'status': meta.get('status'), 'updates': 0, 'samples': 0, 'excluded': key in ex}
+                                   'human_won': meta.get('human_won'), 'status': meta.get('status'), 'updates': 0, 'samples': 0, 'excluded': key in ex,
+                                   'dropped': len(ex.dropped(key, 't')) + len(ex.dropped(key, 'n'))}
             return it
         for path in self.log_paths:
             for r in T.read_log(path):
@@ -245,13 +248,51 @@ class Store:
             it['samples'] += meta.get('samples', 0); it['time'] = max(it['time'], meta.get('time') or '')
         return sorted(items.values(), key=lambda it: it['time'], reverse=True)
 
+    def decisions(self, key):
+        """매치 하나의 판단 목록(판단 단위 정리) — 학습표 기록의 갱신마다 {i, 판단, 후보, 승패, 뺌} · 신경망 표본마다 {i, 판단, 후보, 자리, 뺌}.
+        예전 신경망 표본(판단 글이 없는 것)은 판단 종류만(drl.schema)"""
+        ex = self.excluded(); dt, dn = ex.dropped(key, 't'), ex.dropped(key, 'n')
+        table = []
+        for path in self.log_paths:
+            for r in T.read_log(path):
+                if LD.record_key(r) != key: continue
+                for i, (k1, _, won) in enumerate(r.get('updates', ())):
+                    d, lab = LD.split_key(k1); table.append({'i': i, 'decision': d, 'label': lab, 'won': won, 'excluded': i in dt})
+        nn = []
+        for name, meta in NS.read_index(self.dir).items():
+            if LD.sample_key(name, meta) != key: continue
+            decs = meta.get('decs') or NS.decision_types(self.dir, name)
+            for i, d in enumerate(decs):
+                nn.append({'i': i, 'decision': d[0], 'label': d[1] if len(d) > 1 else '', 'seat': d[2] if len(d) > 2 else None, 'excluded': i in dn})
+        return {'key': key, 'match_excluded': key in ex, 'table': table, 'nn': nn}
+
+    def set_parts(self, key, table=(), nn=(), excluded=True):
+        """매치 key 안의 판단(학습표 갱신 번호 table · 신경망 표본 번호 nn)을 빼거나 다시 넣는다 → 그 매치의 뺀 판단 수"""
+        with self.lock:
+            ex = self.excluded(); part = ex.parts.setdefault(str(key), {'t': set(), 'n': set()})
+            for kind, idx in (('t', table), ('n', nn)):
+                cur = part.setdefault(kind, set()); idx = {int(i) for i in idx}
+                part[kind] = (cur | idx) if excluded else (cur - idx)
+            LD.write_excluded(self.dir, ex, ex.parts)
+            return sum(len(v) for v in part.values())
+
+    def set_decision_text(self, keys, text, excluded=True):
+        """여러 매치에서 판단 · 후보 글에 text 가 들어 있는 판단을 한꺼번에 빼거나 넣는다 → 바뀐 판단 수"""
+        n = 0
+        for key in keys:
+            d = self.decisions(key)
+            t = [x['i'] for x in d['table'] if text in x['decision'] or text in x['label']]
+            m = [x['i'] for x in d['nn'] if text in x['decision'] or text in x['label']]
+            if t or m: self.set_parts(key, t, m, excluded); n += len(t) + len(m)
+        return n
+
     def set_excluded(self, keys, excluded):
         """매치 키들을 학습 데이터에서 빼거나(excluded=True) 다시 넣는다 → 제외 매치 수"""
         with self.lock:
             ex = self.excluded(); keys = {str(k) for k in keys}
-            ex = (ex | keys) if excluded else (ex - keys)
-            LD.write_excluded(self.dir, ex)
-        return len(ex)
+            new = (ex | keys) if excluded else (ex - keys)
+            LD.write_excluded(self.dir, new, ex.parts)
+        return len(new)
 
     def auto_push(self):
         """대전이 끝날 때 자동으로 올리기(설정) — 인터넷 · git 이 없으면 실패를 기록만 하고, 다음 대전 때 쌓인 기록을 통째로 다시 올린다"""
