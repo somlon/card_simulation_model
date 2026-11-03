@@ -140,12 +140,15 @@ class MonsterTest(unittest.TestCase):
 
 class SpellTest(unittest.TestCase):
     def test_ceremony_permanent_and_stacking(self):
+        # 부여받은 효과 번호는 고정값(CER_BASE)이 아니라 받는 카드(TIGER)의 그때까지 효과 번호
+        # 최댓값 + 1부터 부여마다 하나씩(재정질문 002 ②, build.do_grant)
         g = make(ai=Yes)
         t = mon(g, TIGER, 0); o = mon(g, '솔루나 시아', 1)
+        own_max = max(e.num for e in t.effects)
         c1 = spell(g, CER, 0, faceup=False); c1.set_turn = 1
         win(g, t, o); run(g)
         self.assertEqual(t.flags.get(CER_FLAG), 1); self.assertGreaterEqual(t.extra_attacks, 1)
-        self.assertTrue(any(e.num == CER_BASE + 1 for e in t.effects))
+        self.assertTrue(any(e.num == own_max + 1 for e in t.effects))
         # 영구: 다음 자신 턴에도 공격 횟수 +1
         for m in g.monsters(0) + g.monsters(1): m.attacks_made = 0; m.extra_attacks = m.flags.get('perm_extra_attacks', 0)
         self.assertEqual(t.extra_attacks, 1)
@@ -155,7 +158,7 @@ class SpellTest(unittest.TestCase):
         o2 = mon(g, '솔루나 시엘', 1)
         g.events = []; win(g, t, o2); run(g)
         self.assertEqual(t.flags.get(CER_FLAG), 2); self.assertEqual(t.flags.get('perm_extra_attacks'), 2)
-        self.assertTrue(any(e.num == CER_BASE + 2 for e in t.effects))
+        self.assertTrue(any(e.num == own_max + 2 for e in t.effects))
         # 필드를 벗어나면 사라진다
         g.send_grave(t)
         self.assertIsNone(t.flags.get(CER_FLAG)); self.assertIsNone(t.flags.get('perm_extra_attacks'))

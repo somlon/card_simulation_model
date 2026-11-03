@@ -252,19 +252,24 @@ def can_pick(g, c, p, ev, k):
 
 @block('pick', can=can_pick)
 def pick(g, c, p, l, k):
-    """S1 고르기 — 대상(발동 시)은 l.ctx[ref], 그 밖은 l.ctx['refs'][ref]. 후보가 모자라면 False(발동 취소 · 뒤 처리 없음)"""
+    """S1 고르기 — 대상(발동 시)은 l.ctx[ref], 그 밖은 l.ctx['refs'][ref]. 후보가 모자라면 False(발동 취소 · 뒤 처리 없음).
+    재정질문/001-②(2026-11-01): 이 대상(targeted)이 앞선 코스트보다 먼저는 있었는데(l.ctx['pre_cost_ok']) 그 코스트의
+    부수효과로 지금 모자라게 된 경우는 예외 — 발동(과 이미 치른 코스트)은 취소하지 않고, 있는 만큼만 대상으로 한다(없으면 불발)"""
     pool = pick_pool(g, c, p, k['scope'], l)
     n = pick_n(g, c, p, l, k)
     upto = k.get('upto') or 'n_count' in k
-    if n <= 0 or len(pool) < (1 if upto else n): return False
-    if k.get('picker') == 'mark':   # 레벨 · 속성 부여의 대상: 족보 계획(cards8.plan_mark)이 고른 카드, 쓸 곳이 없으면 이 카드(뒤에 릴리스해 드로우)
+    if n <= 0: return False
+    if len(pool) < (1 if upto else n):
+        if not (k.get('targeted') and l is not None and l.ctx.get('pre_cost_ok', {}).get(k['ref'])): return False
+        g.L(f'{c} {k["ref"]}: 코스트의 부수효과로 대상이 모자라짐 — 있는 만큼만(불발 가능)', 'sys')
+    if pool and k.get('picker') == 'mark':   # 레벨 · 속성 부여의 대상: 족보 계획(cards8.plan_mark)이 고른 카드, 쓸 곳이 없으면 이 카드(뒤에 릴리스해 드로우)
         t = _mark_plan(g, p)[1]
         xs = [t if t in pool else c if c in pool else pool[0]]
     else:
         xs = pick_cards(g, c, p, pool, min(n, len(pool)), k)
     dst = l.ctx if k.get('targeted') else refs(l)
-    dst[k['ref']] = xs[0] if n == 1 and not upto else xs
-    g.L(('대상: ' if k.get('targeted') else '고름: ') + ', '.join(map(str, xs)))
+    dst[k['ref']] = (xs[0] if xs else None) if n == 1 and not upto else xs
+    g.L(('대상: ' if k.get('targeted') else '고름: ') + (', '.join(map(str, xs)) if xs else '없음'))
     return True
 
 
@@ -542,14 +547,12 @@ def do_search(g, c, p, l, k):
             nm = {y.name for y in ref_cards(g, c, p, l, k['name_ref'])}
             x = g.search(p, lambda y: y.name in nm and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
         else:
-            cs = g.search_cands(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc))
-            if not cs: g.L(f'{k.get("why") or c.name}: 대상 없음', 'sys'); x = None
-            else:
-                ai = g.p[p].ai
-                x = max(cs, key=lambda y: (round(hand_pick_val(g, p, y), 1), ai.card_pri(g, p, y)))
-                g.to_hand(x); g.shuffle(p)
-                if x.zone != 'hand': x = None
-                else: g.L(f'{g.pname(p)} {k.get("why") or c.name}: {x} 패에 넣음')
+            # soltop_ 제보(디스코드 ?, 2026-10-31) — 이 분기가 g.search()(엔진, ai.pick_search 거쳐 사람·AI가 직접 고름)
+            # 대신 하드코딩된 가치 휴리스틱(hand_pick_val+card_pri)으로 멋대로 한 장을 골라 패에 넣고 있었다 —
+            # 사람 자리에서도 "어떤 카드를 서치할지" 선택지 없이 엔진이 임의로 정해버려, 특정 카드(격투가 입장 등)를
+            # 노리고 서치했는데 다른 카드가 나와 의도한 플레이를 못 하는 문제. g.search()로 교체(동일 이름 서치
+            # 분기(name_ref, 541행)가 이미 쓰던 방식과 통일).
+            x = g.search(p, lambda y: match_card(g, c, p, y, sc) and y not in got, which=deck_which(sc), why=k.get('why') or c.name)
         if x is None: break
         got.append(x)
     if k.get('as') and got: refs(l)[k['as']] = got[0] if len(got) == 1 else got
@@ -1019,7 +1022,10 @@ def w_to_grave(g, c, p, ev, k):
     if k.get('not_from_field') and ev['prev'] in FIELD_Z: return False
     if k.get('not_from_deck') and ev['prev'] in ('main', 'upper'): return False
     ca = ev.get('cause') or ('', None)
-    if k.get('not_cost') and ca[0] == 'cost' and ca[1] is c: return False
+    # not_cost: 「자신의 효과를 발동하기 위해 묘지로 보내졌을 경우」 — 이 카드를 코스트로 낸 경우(ca[0]=='cost')뿐 아니라, 마법 카드가
+    # 자신의 발동 효과(§8-2)를 처리하고 그 결과로 바로 묘지에 가는 경우(ca[0]=='self_resolve', engine.resolve_chain)도 포함한다
+    # — 둘 다 「이 카드 자신의 발동」이 원인이라는 점이 같다(soltop_ 제보, 행운의 카드 - 조커 · 용기의 무기 - 검 등 WSFT 시리즈 점검).
+    if k.get('not_cost') and ca[0] in ('cost', 'self_resolve') and ca[1] is c: return False
     if k.get('released') and not ev.get('released'): return False
     if k.get('by_opp'):   # 「이 카드가 상대에 의해 자신의 묘지로 보내진 경우」 — 원인 카드(효과 · 코스트 · 전투)의 컨트롤러가 상대
         src = ca[1] if len(ca) > 1 else None

@@ -124,7 +124,7 @@ class Game:
         self.shareds = [None] * SHZ; self.shared_owners = [None] * SHZ   # 공유 존 칸마다 카드 · 마커 주인(마커는 칸이 비어도 남는다)
         self.fieldz = None
         self.turn = 0; self.turn_player = first; self.first = first; self.phase = '준비'
-        self.chain = []; self.events = []; self.floating = []; self.src = None; self.no_attack = {}; self.no_damage = {}
+        self.chain = []; self.events = []; self.floating = []; self.pending_leaves = []; self.src = None; self.no_attack = {}; self.no_damage = {}
         self.resolving = False
         self.locked = False       # 종료 단계 a 이후: 양쪽 모두 효과를 발동할 수 없다 (§5-5)
         self.decks = decks
@@ -477,7 +477,10 @@ class Game:
             for e in list(c.equips):
                 e.equip_to = None
                 h = getattr(e, 'on_host_leave', None)
-                if h: h(self, e, c)
+                # soltop_ 제보(디스코드 ?, 6번, 2026-10-31) — 여기서 곧바로 h(...)를 불러 처리하면, 호스트 c가
+                # '다른 처리'의 중간 단계로 떠난 경우 그 처리가 끝나기도 전에 서치가 먼저 끝나 버린다. [유언] 등
+                # 다른 「…했을 경우」 효과처럼 Game.triggers()(체인·처리가 다 끝난 체크포인트)까지 미룬다.
+                if h: self.pending_leaves.append((h, e, c))
                 if self.on_field(e):
                     self.L(f'장착 대상 {c} 이탈 → {e} 묘지로', 'sys')
                     self.send_grave(e, cause=('rule', None))
@@ -1281,7 +1284,7 @@ class Game:
             if e.spell_act and self.on_field(c) and c.type == '마법' and c.d.get('subtype') in ('일반', '신속', '트리거') \
                and not c.flags.get('stay'):
                 if c.flags.get('banish_on_resolve'): self.L(f'{c} 발동 후 제외', 'sys'); self.banish(c, ('rule', None))
-                else: self.send_grave(c, ('rule', None))
+                else: self.send_grave(c, ('self_resolve', c))   # 마법 카드 자신의 발동 처리가 끝나 묘지로 (not_cost 단서가 보는 「자신의 효과를 발동하기 위해」 포함, lib.w_to_grave)
             if link.negated and e.spell_act and self.on_field(c) and c.type != '마법':
                 pass
             # [지속] 상태 점검(인페르노 드래곤 · 격투가의 투기장)은 체인 처리가 끝나기를 기다리지 않고 링크마다 바로 적용한다 (사용자 답변 2026-10-23 Q55)
@@ -1356,6 +1359,9 @@ class Game:
             src.state_check(self, src)
 
     def triggers(self, depth=0):
+        if self.pending_leaves:   # 미뤄 둔 on_host_leave(맵시기생벌 등 — Game._remove) 처리, 체인·처리가 다 끝난 지금 실행
+            pending, self.pending_leaves = self.pending_leaves, []
+            for h, e, c in pending: h(self, e, c)
         self.state_check()
         if self.locked or depth > 12 or not self.events: self.events = []; return
         evs = self.events; self.events = []; self.cur_evs = evs
@@ -1567,10 +1573,11 @@ class Game:
         self.set_phase('종료')
         # [지속] 종료 단계 처리: 필드의 카드와 스킬 존의 스킬 (스킬은 필드가 아니지만 [지속]이 적용된다).
         # 「턴 종료 시」 트리거와의 처리 순서는 그 카드의 플레이어가 정한다(c.end_order(g, c) → 'after'면 트리거 뒤에, 사용자 답변 2026-10-21)
-        late = []
+        late = []; phase_c = []
         for c in self.continuous_sources():
             f = getattr(c, 'end_process', None)
             if not (f and (self.on_field(c) or c.zone == 'skill')): continue
+            if getattr(c, 'end_phase', 'a') == 'c': phase_c.append((c, f)); continue   # 카드별 지정 — c단계(패 7장 확인 뒤)로 미룸, 예: SWRM-019(soltop_ 요청)
             order = getattr(c, 'end_order', None)
             if order and order(self, c) == 'after': late.append((c, f)); self.L(f'판단[{self.pname(c.controller)}] {c} 종료 시 처리를 「턴 종료 시」 트리거 뒤에', 'decision'); continue
             if self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
@@ -1587,6 +1594,10 @@ class Game:
         for _ in range(30):
             if len(pl.hand) <= 7: break
             c = pl.ai.pick_discard(self, tp, pl.hand); self.L(f'패 상한 — {c} 버림'); self.send_grave(c, ('rule', None))
+        self.events = []
+        # c. 종료 단계 c단계로 지정된 종료 시 처리(soltop_ 요청 — 패 7장 확인(b) 뒤에 처리)
+        for c, f in phase_c:
+            if (self.on_field(c) or c.zone == 'skill') and self.cont_use(c, self.cont_num(c, 'end_process'), '종료 시 처리'): self.deferring_hp(f, self, c)
         self.events = []
         # c. 턴 종료 시까지 효과 해제
         for c in self.all_field() + [x.skill for x in self.p if x.skill]:
