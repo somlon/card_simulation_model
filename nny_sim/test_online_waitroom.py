@@ -80,6 +80,18 @@ class WaitRoomTest(unittest.TestCase):
         self.assertEqual(list(self.app.live.humans), [False, False])
         self.assertEqual(self.app.live_ips, {})
 
+    def test_keyless_shortcut_only_for_match_owner(self):
+        """사람vsAI 의 키 없는 poll/answer 지름길은 시작한 ip 에게만 — 다른 ip 는 관전으로 떨어지고 answer 는 거부."""
+        r = self.app.start_match({'deck': self.d1, 'ai_deck': self.d2, 'humans': [True, False], 'learn': False}, ip='25.0.0.11')
+        mid = r['id']
+        p = self.app.route('GET', '/api/match/poll', {'id': [mid]}, {}, ip='25.0.0.11')
+        self.assertEqual(p['seat'], 0)                                          # 시작한 사람: 키 없이도 자기 자리
+        p = self.app.route('GET', '/api/match/poll', {'id': [mid]}, {}, ip='25.0.0.99')
+        self.assertIsNone(p['seat']); self.assertIsNone(p['pending'])          # 남: 관전으로만
+        self.assertFalse(self.app.route('POST', '/api/match/answer', {}, {'rid': 0, 'idx': 0}, ip='25.0.0.99')['ok'])
+        p = self.app.route('GET', '/api/match/poll', {'id': [mid], 'seat': ['0'], 'key': [r['seats'][0]]}, {}, ip='25.0.0.99')
+        self.assertEqual(p['seat'], 0)                                          # 키를 들고 오면 기존대로
+
     def test_heartbeat_tells_me_my_ip(self):
         hb = self.app.heartbeat('25.0.0.11')
         self.assertEqual(hb['me_ip'], '25.0.0.11')

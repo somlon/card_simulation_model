@@ -271,6 +271,11 @@ class App:
         return {'id': self.live.id, 'seat': seat, 'key': self.live.keys[seat], 'names': self.live.names, 'title': self.live.title}
 
     # ── 덱 이름 · 대전 시작 ──
+    def _may_shortcut(self, ip):
+        """키 없는 poll/answer 를 사람 자리에 귀속시켜도 되는 ip 인가 — 매치를 시작한 ip(또는 로비 좌석 ip)만."""
+        if ip is None: return True   # 서버 내부 호출(시험 등) — 네트워크 접속이 아니다
+        return ip == getattr(self, 'live_owner_ip', None) or ip in self.live_ips
+
     def deck_label(self, did, d):
         return d['스킬'] if did.startswith('o:') else d['이름']
 
@@ -302,6 +307,10 @@ class App:
         # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
         # 매치 ID·참가 키 수동 공유 방식이 그대로 동작한다(호환).
         self.live_ips = {}
+        # 사람 자리가 하나뿐인 매치(사람vsAI)는 키 없이도 그 자리로 귀속되는 옛 호환 경로가 있다(session.poll/answer).
+        # 그 지름길은 **매치를 시작한 ip 에게만** 연다(2026-11-03, 「사용자 결정 대기」의 /api/match/answer 지름길 건 —
+        # 하마치망/공개 서버의 다른 사람이 남의 사람vsAI 판에 대신 답하지 못하게). 키를 들고 오면 누구든 기존대로.
+        self.live_owner_ip = ip
         if humans[0] and humans[1]:
             players = [pip for pip, m in self.room.items() if m['role'] == 'player']
             if ip in players and len(players) == 2:
@@ -372,8 +381,10 @@ class App:
         if path == '/api/match/poll':
             if not self.live or self.live.id != g('id'): return {'status': 'none'}
             seat = g('seat'); seat = int(seat) if seat not in (None, '') else None
-            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=bool(g('spectate')))
+            spectate = bool(g('spectate')) or (not g('key') and not self._may_shortcut(ip))
+            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=spectate)
         if path == '/api/match/answer':
+            if self.live and not body.get('key') and not self._may_shortcut(ip): return {'ok': False}
             ok = bool(self.live) and self.live.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
             return {'ok': ok}
         if path == '/api/match/abort':
