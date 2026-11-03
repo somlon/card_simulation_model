@@ -211,12 +211,16 @@ stages.play = new Stage($('g-stage'), {assets, pool: POOL, onCaughtUp: () => dra
 ['g-deck', 'g-ai'].forEach(id => deckOptions($(id)));
 $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
+const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(규칙 기반, 학습 없음)'};
+(BOOT.ai_kinds || ['table']).forEach(k => $('g-ai-kind').add(new Option(AI_KIND_LABEL[k] || k, k)));
 $('g-mode').onchange = () => {
   const mode = $('g-mode').value, human = mode !== 'ai';
   $('g-mylabel').textContent = mode === 'pvp' ? 'P1 덱(나)' : human ? '내 덱' : 'P1 덱';
   $('g-oplabel').textContent = mode === 'pvp' ? 'P2 덱(상대)' : mode === 'human' ? 'AI 덱' : 'P2 덱';
   $('g-learn').disabled = mode !== 'human'; $('g-hints').disabled = mode !== 'human';
+  $('g-ai-kind').disabled = mode === 'pvp';   // 사람 대 사람엔 AI 자리가 없음
 };
+$('g-mode').onchange();
 const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null, spectating: false};
 let lobbyRole = null, viaLobby = false;  // 로비(방) 참가 상태 — 매치 시작(로비) 로 시작했으면 상대가 매치 ID·키를 몰라도 스스로 들어온다
 const decBox = () => $('g-stage').querySelector('.dec');
@@ -226,7 +230,7 @@ $('g-start').onclick = async () => {
   try {
     const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'human' ? [true, false] : [false, false];
     const r = await api('match/start', {humans, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
-                                        learn: $('g-learn').checked, hints: $('g-hints').checked});
+                                        ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
     G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1]; G.spectating = false;
     G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');

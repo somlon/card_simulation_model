@@ -231,6 +231,8 @@ class App:
             if errs: raise ValueError(f'덱 규칙 오류 「{d["이름"]}」: ' + '; '.join(errs[:3]))
         first = {'me': 0, 'ai': 1}.get(j.get('first'), None)
         if first is None: first = secrets.randbelow(2)
+        ai_kind = j.get('ai_kind', 'table')
+        if ai_kind not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {ai_kind}')
         s = self.store.settings()
         a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
         if humans[0] and humans[1]:
@@ -242,7 +244,7 @@ class App:
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
         self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
                                  learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
-                                 chat_fn=self.chat_between).start()
+                                 chat_fn=self.chat_between, ai_kind=ai_kind).start()
         seats = {i: self.live.keys[i] for i in (0, 1) if self.live.humans[i]}
         # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 방에 player 가 정확히 둘 · 시작한 ip 가 그 둘 중 하나) 상대 ip 를
         # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
@@ -282,6 +284,7 @@ class App:
                 'assets': {'ratio': self.cards['ratio'], 'mat_size': self.cards['mat_size'], 'faces': self.cards['faces'],
                            'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
+                'ai_kinds': sorted(SS.AI_KINDS),
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
                 'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit,

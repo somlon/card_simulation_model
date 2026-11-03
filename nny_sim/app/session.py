@@ -13,6 +13,7 @@ import deck as D
 import match as M
 import policy as P
 import season as SE
+from ai import HeuristicAI
 from cards import POOL
 from engine import StalledGame
 
@@ -21,6 +22,10 @@ import tables as T
 from human import Abort, Bridge, HumanAI
 
 SAFE = re.compile(r'[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _\-().!]+')
+
+# AI 자리 종류 — 'table': 학습표 AI(기존, policy.LearnedAI) | 'heuristic': 규칙 기반 AI(ai.HeuristicAI, 학습 없음).
+# 오프라인판의 'nn'(신경망)은 online에 nnai 모듈이 없고 이 서버 환경에 numpy도 없어 뺐다(2026-11-03, 디스코드 요청 ①).
+AI_KINDS = {'table', 'heuristic'}
 
 
 def now(): return time.strftime('%Y-%m-%d %H:%M:%S')
@@ -365,12 +370,15 @@ class LiveMatch:
     """Bo3 매치 1개 — 엔진 스레드 + 기록기. human: 사람 자리 여부 — bool(좌석0만) 또는 (좌석0, 좌석1) 튜플(사람vs사람).
     사람 자리마다 Bridge 가 따로 있다(self.bridges) — 사람vs사람이면 좌석마다 참가 키(self.keys)로 poll · answer 를 묶는다"""
 
-    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='', chat_fn=None):
+    def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='', chat_fn=None,
+                 ai_kind='table'):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names
         self.humans = tuple(bool(x) for x in human) if isinstance(human, (tuple, list)) else (bool(human), False)
         self.human = any(self.humans)   # 사람 자리가 하나 이상 있는가(기존 코드 호환)
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
         self.learn = learn and self.human; self.hints = hints; self.title = title
+        if ai_kind not in AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {ai_kind}')
+        self.ai_kind = ai_kind
         self.bridges = [Bridge(), Bridge()]; self.keys = [secrets.token_hex(8) if h else None for h in self.humans]
         self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
@@ -391,7 +399,7 @@ class LiveMatch:
     def _run(self):
         REC.install_hooks()
         meta = {'decks': [d['스킬'] for d in self.decks], 'names': self.names, 'seed': self.seed, 'first': self.first,
-                'ai': 'table', 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
+                'ai': self.ai_kind, 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
         rounds = []; mw = None
         try:
             table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
@@ -400,6 +408,7 @@ class LiveMatch:
             def make_ai(d):
                 seat = d['_seat']
                 if self.humans[seat]: return HumanAI(d['스킬'], self.bridges[seat], table, learn=self.learn, hints=self.hints)
+                if self.ai_kind == 'heuristic': return HeuristicAI(d['스킬'])
                 return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
