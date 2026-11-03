@@ -18,12 +18,13 @@ const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const slot = (c, r) => ({x: SLOT.x0 + SLOT.dx * c, y: SLOT.y0 + SLOT.dy * r});
 // 몬스터 존 3칸(옛 1·3·5번 자리만, 2·4번은 없어짐 — 사용자 지시 2026-10-30, engine.MZ=3)
 const Z = [
-  {m: i => slot(1 + 2 * i, 3), s: i => slot(1 + i, 4), grave: slot(6, 3), ban: slot(0, 3), main: slot(6, 4), upper: slot(0, 4), sk: slot(4, 2)},
-  {m: i => slot(5 - 2 * i, 1), s: i => slot(5 - i, 0), grave: slot(0, 1), ban: slot(6, 1), main: slot(0, 0), upper: slot(6, 0), sk: slot(2, 2)},
+  {m: i => slot(1 + 2 * i, 3), s: i => slot(1 + i, 4), grave: slot(6, 3), ban: slot(0, 3), main: slot(6, 4), upper: slot(0, 4), sk: slot(5, 2)},
+  {m: i => slot(5 - 2 * i, 1), s: i => slot(5 - i, 0), grave: slot(0, 1), ban: slot(6, 1), main: slot(0, 0), upper: slot(6, 0), sk: slot(1, 2)},
 ];
-// 공유 존 2칸(engine.SHZ=2) — 매트 v2 전까지 구 매트 좌표로 임시 배치(옛 2·4번 몬스터 자리가 비며 생긴 row2 1·5번 칸, 사용자 지시
-// 2026-10-30 "다음 손댈 사람 참고"의 타협안). 매트 v2(신규 좌표)가 들어오면 이 두 좌표만 바꾸면 됨.
-const SHARED = [slot(1, 2), slot(5, 2)], FIELDZ = slot(0, 2);
+// 공유 존 2칸(engine.SHZ=2) · 필드 존 · 스킬 존 — 매트 v2(사용자 지시 2026-10-30 "field_mat_v2.png", 2026-11-03 반입
+// 승인) 가운데 줄 배치 그대로: 열1=P2 스킬 · 열2=공유 존1 · 열3=필드 존 · 열4=공유 존2 · 열5=P1 스킬(make_mat_v2.py
+// 좌표·실제 이미지로 확인). 구 매트의 열0 필드 존 자리는 매트 v2에서 빈 배경이라 더 이상 안 씀.
+const SHARED = [slot(2, 2), slot(4, 2)], FIELDZ = slot(3, 2);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[ch]));
 
 function typeLine(p) {
