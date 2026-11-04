@@ -18,6 +18,13 @@ def req(base, token, method, path, body=None):
     except urllib.error.HTTPError as ex: return ex.code, json.loads(ex.read())
 
 
+# 2026-11-03 대기실 개편 뒤 room_status 에 host·deck·deck_label·live 가 더 실린다(test_online_waitroom 이 본다) —
+# 이 파일은 v1③ 의 핵심 모양(ip·name·role / members·players·open_seat)만 그대로 본다.
+MEMBER_KEYS = ('ip', 'name', 'role')
+def members(body): return [{k: m[k] for k in MEMBER_KEYS} for m in body['members']]
+def core(body): return {k: body[k] for k in ('members', 'players', 'open_seat')}
+
+
 class RoomLobbyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='nny_room_')
@@ -41,14 +48,14 @@ class RoomLobbyTest(unittest.TestCase):
     def test_room_empty_before_anyone_joins(self):
         st, body = req(self.base, self.token, 'GET', '/api/room/status')
         self.assertEqual(st, 200, body)
-        self.assertEqual(body, {'members': [], 'players': 0, 'open_seat': True})
+        self.assertEqual(core(body), {'members': [], 'players': 0, 'open_seat': True})
 
     def test_join_as_player_then_spectator_shows_in_boot_and_room(self):
         # 같은 IP(127.0.0.1)에서 테스트하므로 역할 전환으로 확인 — player 로 먼저 들어간다
         st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'player'})
         self.assertEqual(st, 200, body)
         self.assertEqual(body['players'], 1); self.assertTrue(body['open_seat'])
-        self.assertEqual(body['members'], [{'ip': '127.0.0.1', 'name': '장인준', 'role': 'player'}])
+        self.assertEqual(members(body), [{'ip': '127.0.0.1', 'name': '장인준', 'role': 'player'}])
         st, boot = req(self.base, self.token, 'GET', '/api/boot')
         self.assertEqual(boot['room']['players'], 1)
         # 역할을 관전으로 바꾸면(재접속 시 선택이 달라진 경우) player 자리가 비워진다
@@ -70,7 +77,7 @@ class RoomLobbyTest(unittest.TestCase):
         req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'player'})
         st, body = req(self.base, self.token, 'POST', '/api/room/leave')
         self.assertEqual(st, 200, body)
-        self.assertEqual(body, {'members': [], 'players': 0, 'open_seat': True})
+        self.assertEqual(core(body), {'members': [], 'players': 0, 'open_seat': True})
 
     def test_heartbeat_keeps_room_seat_alive_reconnect_grace(self):
         req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'player'})
@@ -82,7 +89,7 @@ class RoomLobbyTest(unittest.TestCase):
         req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'player'})
         self.app.room['127.0.0.1']['last_seen'] = time.time() - S.ROOM_GRACE - 1  # 유예 지남 — heartbeat 없이 조회
         st, body = req(self.base, self.token, 'GET', '/api/room/status')
-        self.assertEqual(body, {'members': [], 'players': 0, 'open_seat': True}, '유예가 지나면 자리를 비워야 한다')
+        self.assertEqual(core(body), {'members': [], 'players': 0, 'open_seat': True}, '유예가 지나면 자리를 비워야 한다')
 
     def write_users(self, **ip_by_name):
         """등록 유저 파일(online_users.json, 이름→IP) — test_user_gate.py 와 같은 방식."""
@@ -95,7 +102,7 @@ class RoomLobbyTest(unittest.TestCase):
         self.write_users(장인준='127.0.0.1')
         st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '아무개', 'role': 'player'})
         self.assertEqual(st, 200, body)
-        self.assertEqual(body['members'], [{'ip': '127.0.0.1', 'name': '장인준', 'role': 'player'}])
+        self.assertEqual(members(body), [{'ip': '127.0.0.1', 'name': '장인준', 'role': 'player'}])
 
     def test_unregistered_ip_join_keeps_typed_name(self):
         # 게이트 비활성(등록 없음) 상태에서는 기존 그대로 직접 타이핑한 이름을 쓴다
@@ -104,7 +111,7 @@ class RoomLobbyTest(unittest.TestCase):
         self.write_users(_설명='이름:하마치IP')  # 메타 키만, 실제 등록 없음 → 게이트 비활성
         st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '아무개', 'role': 'player'})
         self.assertEqual(st, 200, body)
-        self.assertEqual(body['members'], [{'ip': '127.0.0.1', 'name': '아무개', 'role': 'player'}])
+        self.assertEqual(members(body), [{'ip': '127.0.0.1', 'name': '아무개', 'role': 'player'}])
 
     def test_registered_name_flows_into_chat_sender(self):
         # 로비 이름이 등록 이름으로 맞춰지면, 인게임 메신저의 발신자(who)도 직접 타이핑에 의존하지 않고 자동으로 맞는다

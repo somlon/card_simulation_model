@@ -10,6 +10,7 @@
 <body>
 <header class="nav">
   <span class="logo">뉴 네오 유희왕 <small>시뮬레이터</small></span>
+  <button class="btn sm" id="home-btn" title="메인 메뉴로">☰ 메뉴</button>
   <span class="muted" id="cur-view"></span>
   <span class="sp"></span><span class="muted" id="online" title=""></span><span class="muted" id="ver"></span>
   <select id="theme-select" class="btn sm" title="화면 테마"><option value="neo">뉴 네오</option><option value="white">화이트</option><option value="black">블랙</option></select>
@@ -20,9 +21,11 @@
   <div class="panel esc-panel">
     <h2 class="sec">메뉴</h2>
     <div class="esc-tabs">
-      <button class="tab on" data-v="watch">관전 · 재생 목록</button>
-      <button class="tab" data-v="play">AI 대전</button>
+      <button class="tab on" data-v="home">메인 메뉴</button>
+      <button class="tab" data-v="play">방 (대전 · 관전)</button>
+      <button class="tab" data-v="watch">리플레이</button>
       <button class="tab" data-v="deck">덱 편집</button>
+      <button class="tab" data-v="cards">카드 목록</button>
       <button class="tab" data-v="learn">학습</button>
     </div>
     <div class="row2" style="margin-top:14px;justify-content:center">
@@ -32,8 +35,23 @@
   </div>
 </div>
 <main>
-  <!-- 관전 · 재생 목록 -->
-  <section class="view on" id="v-watch">
+  <!-- 메인 메뉴 — 한 화면에 전부 띄우지 않고 메뉴에서 하나씩 들어간다(2026-11-03 장인준 요청) -->
+  <section class="view on" id="v-home">
+    <div class="home">
+      <h1 class="home-title">뉴 네오 유희왕 <small>시뮬레이터</small></h1>
+      <div class="home-grid">
+        <button class="home-card tab" data-v="play"><b>방</b><span>대기실에서 플레이어 · 관전을 고르고 시작 — 사람 대 사람 · 사람 vs AI · AI끼리 구경</span><em id="home-room"></em></button>
+        <button class="home-card tab" data-v="watch"><b>리플레이</b><span>끝난 판의 기보를 다시 보기 · 재생 목록 · AI 대전 녹화</span><em id="home-replays"></em></button>
+        <button class="home-card tab" data-v="deck"><b>덱 편집</b><span>쓸 카드를 골라 내 덱으로</span><em id="home-decks"></em></button>
+        <button class="home-card tab" data-v="cards"><b>카드 목록</b><span>카드 풀 전체 열람 — 이름·텍스트로 찾기</span><em id="home-cards"></em></button>
+        <button class="home-card tab" data-v="learn"><b>학습</b><span>사람 대전 학습 기록 · GitHub 올리기 · AI 실력 분석</span></button>
+      </div>
+      <div class="muted" style="margin-top:14px;font-size:12px">어느 화면에서든 <b>Esc</b> 또는 머리 막대의 「☰ 메뉴」로 돌아온다.</div>
+    </div>
+  </section>
+
+  <!-- 리플레이(관전 · 재생 목록) -->
+  <section class="view" id="v-watch">
     <div class="row2" style="margin-bottom:8px">
       <button class="btn sm" id="w-toggle">목록 접기</button>
       <span class="muted" id="w-now"></span>
@@ -85,49 +103,83 @@
     <div id="w-stage"></div>
   </section>
 
-  <!-- AI 대전 -->
+  <!-- 방: 대기실 → 판 -->
   <section class="view" id="v-play">
-    <div class="panel" id="g-lobby" style="margin-bottom:12px">
-      <h2 class="sec">로비(방)</h2>
-      <div class="row2" style="gap:8px;align-items:center;margin-bottom:6px">
-        <input type="text" id="lobby-name" placeholder="내 이름" style="width:120px">
-        <button class="btn sm" id="lobby-join">참가</button>
-        <button class="btn sm" id="lobby-watch">관전</button>
-        <button class="btn sm" id="lobby-leave">나가기</button>
-        <button class="btn sm primary" id="lobby-start" disabled title="방에 참가자가 2명이 되면 눌러 시작할 수 있습니다(상대는 자동으로 들어옵니다)">매치 시작(로비)</button>
-      </div>
-      <div class="muted" id="lobby-list"></div>
-    </div>
-    <div class="panel" id="g-chat" style="margin-bottom:12px">
-      <h2 class="sec">채팅(방 전체 — 참가·관전 모두)</h2>
-      <div class="chatlog" id="chat-log"></div>
-      <div class="row2" style="margin-top:6px">
-        <input type="text" id="chat-text" placeholder="메시지(방에 참가·관전 중이어야 보낼 수 있습니다, 최대 200자)" maxlength="200" style="flex:1">
-        <button class="btn sm primary" id="chat-send">보내기</button>
-      </div>
-    </div>
-    <div class="panel" id="g-setup" style="margin-bottom:12px">
-      <div class="row2" style="gap:14px;align-items:flex-end">
-        <div class="field"><span>방식</span><select id="g-mode"><option value="human">나 vs AI</option><option value="ai">AI vs AI 관전(실시간)</option><option value="pvp">사람 대 사람</option></select></div>
-        <div class="field"><span id="g-mylabel">내 덱</span><select id="g-deck"></select></div>
-        <div class="field"><span id="g-oplabel">AI 덱</span><select id="g-ai"></select></div>
-        <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">나(P1)</option><option value="ai">AI(P2)</option><option value="random">무작위</option></select></div>
-        <div class="field"><span id="g-aikindlabel">AI 종류</span><select id="g-ai-kind"></select></div>
-        <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다(다음 대전부터 반영)"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
-        <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
-        <div class="field"><span>&nbsp;</span><button class="btn primary" id="g-start">대전 시작</button></div>
-        <div class="field"><span>&nbsp;</span><button class="btn danger" id="g-abort" disabled>그만두기</button></div>
-      </div>
-      <div class="muted" id="g-status" style="margin-top:6px"></div>
-      <div class="muted" id="g-pvpinfo" style="margin-top:6px"></div>
-      <div class="row2" style="margin-top:8px;gap:8px;align-items:flex-end">
-        <div class="field"><span>참가 키로 들어가기(상대가 받은 키)</span>
-          <div class="row2"><input type="text" id="g-join-id" placeholder="매치 ID" style="width:90px"><input type="text" id="g-join-key" placeholder="참가 키" style="width:160px"></div>
+    <div id="g-lobby">
+      <div class="cols c2" style="margin-bottom:12px">
+        <div class="panel">
+          <h2 class="sec">대기실 <span class="muted" id="lobby-host" style="font-weight:normal"></span></h2>
+          <div class="seats" id="lobby-seats"></div>
+          <div class="row2" style="margin:10px 0 6px;gap:8px;align-items:center">
+            <input type="text" id="lobby-name" placeholder="내 이름" style="width:120px" title="등록된 하마치 유저면 등록 이름이 자동으로 쓰인다">
+            <select id="lobby-deck" title="내가 쓸 덱 — 플레이어로 앉았을 때 이 덱으로 둔다"></select>
+            <button class="btn sm primary" id="lobby-join">플레이어로 앉기</button>
+            <button class="btn sm" id="lobby-watch">관전으로</button>
+            <button class="btn sm danger" id="lobby-leave">나가기</button>
+          </div>
+          <div class="muted" id="lobby-list"></div>
+          <div class="muted" id="lobby-msg" style="margin-top:4px"></div>
         </div>
-        <button class="btn sm" id="g-join">참가</button>
+        <div class="panel" id="lobby-hostpanel">
+          <h2 class="sec">시작 설정 <span class="muted" style="font-weight:normal">(방장만)</span></h2>
+          <div class="field"><span>방식</span><select id="g-mode">
+            <option value="pvp">사람 대 사람 — 플레이어 자리 둘</option>
+            <option value="ai">사람 vs AI — 플레이어 한 명 + AI</option>
+            <option value="aivai">AI vs AI — 방 전체가 관전</option></select></div>
+          <div class="field" id="g-deck-f"><span id="g-mylabel">P1 AI 덱</span><select id="g-deck"></select></div>
+          <div class="field" id="g-ai-f"><span id="g-oplabel">AI 덱</span><select id="g-ai"></select></div>
+          <div class="field" id="g-ai-kind-f"><span id="g-aikindlabel">AI 종류</span><select id="g-ai-kind"></select></div>
+          <div class="row2" style="gap:14px;align-items:flex-end">
+            <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">좌석0(P1)</option><option value="ai">좌석1(P2)</option><option value="random">무작위</option></select></div>
+            <div class="field"><span>&nbsp;</span><label class="chk" title="대전이 끝나면 AI가 이 매치의 판단 기록으로 학습합니다"><input type="checkbox" id="g-learn" checked> AI 학습</label></div>
+            <div class="field"><span>&nbsp;</span><label class="chk" title="후보마다 학습표가 보는 승률을 보여 줍니다"><input type="checkbox" id="g-hints"> 승률 힌트</label></div>
+          </div>
+          <div class="row2"><button class="btn primary" id="lobby-start">▶ 시작</button><span class="muted" id="g-startmsg"></span></div>
+        </div>
       </div>
+      <details class="panel fold" id="g-chat" style="margin-bottom:12px">
+        <summary>채팅 <span class="muted">방 전체 — 참가·관전 모두</span></summary>
+        <div class="chatlog" id="chat-log" style="margin-top:8px"></div>
+        <div class="row2" style="margin-top:6px">
+          <input type="text" id="chat-text" placeholder="메시지(방에 참가·관전 중이어야 보낼 수 있습니다, 최대 200자)" maxlength="200" style="flex:1">
+          <button class="btn sm primary" id="chat-send">보내기</button>
+        </div>
+      </details>
+      <details class="panel fold" id="g-manual" style="margin-bottom:12px">
+        <summary>수동 시작 · 참가 키 <span class="muted">(옛 방식 — 대기실을 거치지 않을 때)</span></summary>
+        <div class="row2" style="margin-top:8px;gap:8px;align-items:flex-end">
+          <button class="btn" id="g-start" title="위 시작 설정의 덱·방식으로 대기실 없이 바로 시작">대기실 없이 바로 시작</button>
+          <div class="field" style="margin:0"><span>참가 키로 들어가기(상대가 받은 키)</span>
+            <div class="row2"><input type="text" id="g-join-id" placeholder="매치 ID" style="width:90px"><input type="text" id="g-join-key" placeholder="참가 키" style="width:160px"></div>
+          </div>
+          <button class="btn sm" id="g-join">참가</button>
+        </div>
+        <div class="muted" id="g-pvpinfo" style="margin-top:6px"></div>
+      </details>
+    </div>
+    <div class="row2 gamebar" id="g-bar" style="margin-bottom:8px">
+      <button class="btn sm" id="g-tolobby" title="보드는 그대로 두고 대기실 패널을 펼친다">대기실 보기</button>
+      <span class="muted" id="g-status"></span>
+      <span class="sp"></span>
+      <button class="btn sm danger" id="g-abort" disabled>그만두기</button>
     </div>
     <div id="g-stage"></div>
+  </section>
+
+  <!-- 카드 목록 열람 -->
+  <section class="view" id="v-cards">
+    <div class="cols c2 cardsview">
+      <div class="panel">
+        <div class="row2" style="margin-bottom:6px">
+          <input type="text" id="c-q" placeholder="이름 · 텍스트 찾기" style="flex:1">
+          <select id="c-theme"></select>
+          <select id="c-type"><option value="">종류 전체</option><option>몬스터</option><option>마법</option><option>필드</option><option>스킬</option></select>
+          <span class="muted" id="c-count"></span>
+        </div>
+        <div class="pool" id="c-grid"></div>
+      </div>
+      <div class="panel"><h2 class="sec">카드 설명</h2><div class="detail" id="c-detail"><div class="muted">카드에 올리거나 누르면 여기에 뜬다.</div></div></div>
+    </div>
   </section>
 
   <!-- 덱 편집 -->

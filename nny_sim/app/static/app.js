@@ -46,8 +46,9 @@ function showOnline(list) {
 showOnline(BOOT.online || []);
 
 // ── 탭(화면 이동) — 상시 노출 버튼 대신 Esc 메뉴 안에서만(「원하는 화면으로 이동」 요청, 2026-11-02 디스코드) ──
-const VIEW_LABEL = {watch: '관전 · 재생 목록', play: 'AI 대전', deck: '덱 편집', learn: '학습'};
+const VIEW_LABEL = {home: '', play: '방', watch: '리플레이', deck: '덱 편집', cards: '카드 목록', learn: '학습'};
 let stages = {};
+let LAST_ROOM = null, ME_IP = null, beating = false;   // 대기실 상태 · 내 ip · heartbeat 중복 방지(선언은 위에 — showView 가 먼저 부른다)
 function showView(v) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.v === v));
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
@@ -56,6 +57,9 @@ function showView(v) {
   if (activeStage) setTimeout(() => activeStage.fit(), 0);
   if (v === 'learn') { refreshLearning(); refreshDecisions(); }
   if (v === 'deck' && !ED.loaded) newDeck();
+  if (v === 'cards') renderCards();
+  if (v === 'home') renderHome();
+  if (v === 'play') { beat(); updateLobbyVisibility(); }
 }
 let activeStage = null;
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => { showView(t.dataset.v); setEscMenu(false); });
@@ -72,6 +76,14 @@ document.addEventListener('keydown', e => {
 });
 $('esc-menu').addEventListener('click', e => { if (e.target.id === 'esc-menu') setEscMenu(false); });
 $('esc-close').onclick = () => setEscMenu(false);
+$('home-btn').onclick = () => { setEscMenu(false); showView('home'); };
+function renderHome() {
+  const r = BOOT.room || {members: []};
+  $('home-room').textContent = r.live ? `대전 중: ${r.live.title}` : r.members.length ? `대기실에 ${r.members.length}명 (${r.members.map(m => m.name).join(', ')})` : '방이 비어 있다';
+  $('home-replays').textContent = `저장된 기록 ${BOOT.replays.length}개`;
+  $('home-decks').textContent = `내 덱 ${BOOT.decks.filter(d => d.kind === 'user').length}개 · 기본 덱 ${BOOT.decks.filter(d => d.kind === 'official').length}개`;
+  $('home-cards').textContent = `${Object.keys(POOL).length}장`;
+}
 $('quit').onclick = async () => { if (!confirm('프로그램을 끌까요?')) return; await api('quit', {}).catch(() => {}); document.body.innerHTML = '<p style="padding:40px">프로그램을 껐습니다. 이 창을 닫아도 됩니다.</p>'; };
 
 function deckOptions(sel, withOfficialFirst = true, keep) {
@@ -81,7 +93,7 @@ function deckOptions(sel, withOfficialFirst = true, keep) {
   sel.innerHTML = `<optgroup label="기본 덱">${og.map(opt).join('')}</optgroup>` + (ug.length ? `<optgroup label="내 덱">${ug.map(opt).join('')}</optgroup>` : '');
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
-async function refreshBoot() { BOOT = await api('boot'); ['r-a', 'r-b', 'g-deck', 'g-ai'].forEach(id => deckOptions($(id))); renderReplays(); renderDeckList(); }
+async function refreshBoot() { BOOT = await api('boot'); ['r-a', 'r-b', 'g-deck', 'g-ai', 'lobby-deck'].forEach(id => deckOptions($(id))); renderReplays(); renderDeckList(); renderHome(); }
 
 // ═══════════════ 관전 · 재생 목록 ═══════════════
 stages.watch = new Stage($('w-stage'), {assets, pool: POOL, onEnd: () => playlistNext(true),
@@ -89,7 +101,6 @@ stages.watch = new Stage($('w-stage'), {assets, pool: POOL, onEnd: () => playlis
     if (!stages.watch.replayId) return;
     api('replay/memo', {id: stages.watch.replayId, memos: [{i, text, who, t}]}).catch(e => toast('메모 저장 실패: ' + e.message));
   }});
-activeStage = stages.watch;
 const W = {sel: new Set(), pl: {name: '', items: []}, idx: -1, playing: false};
 $('w-stage').querySelector('.extra').innerHTML = '<button data-x="prevm" title="이전 매치">⏪ 이전 매치</button><button data-x="nextm" title="다음 매치">다음 매치 ⏩</button>';
 $('w-stage').querySelector('[data-x=prevm]').onclick = () => playlistGo(W.idx - 1);
@@ -208,17 +219,21 @@ if (BOOT.replays.length) { loadReplay(BOOT.replays[0].id).catch(() => {}); }
 
 // ═══════════════ AI 대전 ═══════════════
 stages.play = new Stage($('g-stage'), {assets, pool: POOL, onCaughtUp: () => drawDecision(), onFrame: () => {}});
-['g-deck', 'g-ai'].forEach(id => deckOptions($(id)));
 $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
+['g-deck', 'g-ai', 'lobby-deck'].forEach(id => deckOptions($(id)));
+$('lobby-deck').selectedIndex = 0;
 const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(규칙 기반, 학습 없음)'};
 (BOOT.ai_kinds || ['table']).forEach(k => $('g-ai-kind').add(new Option(AI_KIND_LABEL[k] || k, k)));
 $('g-mode').onchange = () => {
-  const mode = $('g-mode').value, human = mode !== 'ai';
-  $('g-mylabel').textContent = mode === 'pvp' ? 'P1 덱(나)' : human ? '내 덱' : 'P1 덱';
-  $('g-oplabel').textContent = mode === 'pvp' ? 'P2 덱(상대)' : mode === 'human' ? 'AI 덱' : 'P2 덱';
-  $('g-learn').disabled = mode !== 'human'; $('g-hints').disabled = mode !== 'human';
-  $('g-ai-kind').disabled = mode === 'pvp';   // 사람 대 사람엔 AI 자리가 없음
+  const mode = $('g-mode').value;
+  // pvp: 두 사람이 각자 대기실에서 고른 덱 · ai: 플레이어 덱 + AI 덱 · aivai: AI 둘 다 여기서
+  $('g-deck-f').style.display = mode === 'aivai' ? '' : 'none';
+  $('g-ai-f').style.display = mode === 'pvp' ? 'none' : '';
+  $('g-ai-kind-f').style.display = mode === 'pvp' ? 'none' : '';   // 사람 대 사람엔 AI 자리가 없음
+  $('g-mylabel').textContent = 'P1 AI 덱'; $('g-oplabel').textContent = mode === 'ai' ? 'AI 덱 (상대)' : 'P2 AI 덱';
+  $('g-learn').disabled = mode !== 'ai'; $('g-hints').disabled = mode !== 'ai';
+  showRoom(LAST_ROOM);
 };
 $('g-mode').onchange();
 const G = {id: null, pending: null, poll: null, busy: false, human: true, done: false, seat: null, key: null, spectating: false};
@@ -228,17 +243,18 @@ $('g-start').onclick = async () => {
   const auto = viaLobby; viaLobby = false;
   if (G.id && !G.done && !confirm('진행 중인 대전을 그만두고 새로 시작할까요?')) return;
   try {
-    const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'human' ? [true, false] : [false, false];
-    const r = await api('match/start', {humans, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
+    const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'ai' ? [true, false] : [false, false];
+    const myDeck = mode === 'aivai' ? $('g-deck').value : $('lobby-deck').value;
+    const r = await api('match/start', {humans, deck: myDeck, ai_deck: $('g-ai').value, first: $('g-first').value,
                                         ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
     G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1]; G.spectating = false;
     G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
     stages.play.ended = false;
     stages.play.viewerLabel = G.seat != null ? (r.names[G.seat] || '') : '';
-    stages.play.startLive(r.names, {decks: [lab($('g-deck')), lab($('g-ai'))]}, G.seat);
-    stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
-    $('g-status').textContent = `대전 중: ${r.title}` + (mode === 'human' && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
+    stages.play.startLive(r.names, {decks: [lab(mode === 'aivai' ? $('g-deck') : $('lobby-deck')), lab($('g-ai'))]}, G.seat);
+    stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false; updateLobbyVisibility();
+    $('g-status').textContent = `대전 중: ${r.title}` + (mode === 'ai' && $('g-learn').checked ? ' · AI 학습 켜짐' : '');
     if (mode === 'pvp' && r.seats[1]) {
       $('g-pvpinfo').innerHTML = auto
         ? '로비 상대가 자동으로 들어옵니다(최대 20초 정도 걸릴 수 있습니다).'
@@ -260,31 +276,72 @@ $('g-join').onclick = async () => {
     stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
     $('g-pvpinfo').textContent = '';
     $('g-status').textContent = `참가함: ${r.title} · 내 좌석 ${r.seat}`;
+    updateLobbyVisibility();
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
 };
 $('g-abort').onclick = async () => { if (!confirm('대전을 그만둘까요? (끝낸 라운드까지는 기록 · 학습됩니다)')) return; await api('match/abort', {}); };
 
-// ── 로비(방): 참가/관전/나가기 + 둘 다 모이면 자동 매치 연결 ──
+// ── 대기실(방): 플레이어/관전 자리 · 내 덱 · 방장 시작 · 나가기 (2026-11-03 화면 분리) ──
+const liveNow = () => !!(G.id && !G.done);
+function updateLobbyVisibility(force) {
+  // 판이 돌면 대기실 패널은 접고 보드만 보인다 — 「대기실 보기」로 다시 펼친다
+  const show = force != null ? force : !liveNow();
+  $('g-lobby').style.display = show ? '' : 'none';
+  $('g-tolobby').textContent = show ? '대기실 접기' : '대기실 보기';
+  $('g-tolobby').style.display = liveNow() ? '' : 'none';
+  // 아직 한 판도 안 섰으면 빈 보드·막대는 안 보인다 — 대기실만
+  $('g-stage').style.display = G.id ? '' : 'none'; $('g-bar').style.display = G.id ? '' : 'none';
+  if (activeStage === stages.play) setTimeout(() => stages.play.fit(), 0);
+}
+$('g-tolobby').onclick = () => updateLobbyVisibility($('g-lobby').style.display === 'none');
+function showRoomMine(r) { markMe(r, ME_IP); showRoom(r); }
 function showRoom(r) {
   if (!r) return;
+  LAST_ROOM = r;
+  const me = r.members.find(m => m.me) || null;
+  const players = r.members.filter(m => m.role === 'player');
+  const mode = $('g-mode').value;
+  const seatHtml = (i, m) => {
+    if (m) return `<div class="seat-card${m.me ? ' me' : ''}"><div class="lab">좌석 ${i} (P${i + 1})</div><div class="nm">${esc(m.name)}${m.host ? ' 👑' : ''}${m.me ? ' (나)' : ''}</div><div class="dk">${esc(m.deck_label || '덱을 아직 안 골랐다')}</div></div>`;
+    const ai = (mode === 'ai' && i === 1) || mode === 'aivai';
+    return `<div class="seat-card"><div class="lab">좌석 ${i} (P${i + 1})</div><div class="nm empty">${ai ? 'AI' : '비어 있음 — 플레이어 자리'}</div><div class="dk">${ai ? '방장이 시작 설정에서 덱을 고른다' : ''}</div></div>`;
+  };
+  $('lobby-seats').innerHTML = seatHtml(0, players[0]) + seatHtml(1, players[1]);
+  $('lobby-host').textContent = r.host ? `· 방장 ${r.host}` : '';
   $('lobby-list').textContent = r.members.length
-    ? r.members.map(m => `${m.name}(${m.role === 'player' ? '참가' : '관전'})`).join(', ') : '방이 비었습니다.';
-  $('lobby-start').disabled = !(lobbyRole === 'player' && r.players === 2);
+    ? '들어와 있는 사람: ' + r.members.map(m => `${m.name}${m.host ? '👑' : ''}(${m.role === 'player' ? '플레이어' : '관전'})`).join(', ') : '방이 비었다 — 「플레이어로 앉기」나 「관전으로」로 들어온다.';
+  const amHost = !!(me && me.host);
+  $('lobby-hostpanel').style.opacity = amHost ? '' : '.55';
+  $('lobby-start').disabled = !amHost;
+  $('lobby-join').textContent = me && me.role === 'player' ? '플레이어로 앉아 있음' : '플레이어로 앉기';
+  $('lobby-join').disabled = !!(me && me.role === 'player');
+  $('lobby-watch').disabled = !!(me && me.role === 'spectator');
+  if (me && me.deck && $('lobby-deck').value !== me.deck && [...$('lobby-deck').options].some(o => o.value === me.deck)) $('lobby-deck').value = me.deck;
+  let need = '';
+  if (!me) need = '먼저 방에 들어와라.';
+  else if (!amHost) need = `방장(${r.host})이 시작하기를 기다리는 중…`;
+  else if (mode === 'pvp') need = players.length === 2 ? (players.every(m => m.deck) ? '둘 다 앉았다 — 시작을 누르면 판이 선다' : '덱을 아직 안 고른 사람이 있다') : `플레이어 자리에 둘이 앉아야 한다 (지금 ${players.length}명)`;
+  else if (mode === 'ai') need = players.length === 1 ? (players[0].deck ? '시작을 누르면 AI 와 붙는다' : '플레이어가 덱을 골라야 한다') : `플레이어 자리에 한 명만 앉아야 한다 (지금 ${players.length}명)`;
+  else need = '시작을 누르면 방 전체가 AI끼리 두는 판을 본다';
+  $('g-startmsg').textContent = r.live ? `대전 중: ${r.live.title}` : need;
+  if ($('v-home').classList.contains('on')) renderHome();
 }
-function checkMyMatch(m) {
-  if (!m || G.id === m.id) return;   // 이미 이 매치에 있으면(내가 시작한 쪽이거나 이미 들어온 뒤) 다시 건드리지 않음
+function enterMatch(m, label) {
+  if (!m || G.id === m.id) return;
   G.id = m.id; G.pending = null; G.done = false; G.human = true; G.seat = m.seat; G.key = m.key; G.spectating = false;
   stages.play.ended = false;
   stages.play.viewerLabel = m.names[G.seat] || '';
   stages.play.startLive(m.names, {decks: ['', '']}, G.seat);
   stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = false;
   $('g-pvpinfo').textContent = '';
-  $('g-status').textContent = `참가함(로비): ${m.title} · 내 좌석 ${m.seat}`;
+  $('g-status').textContent = `${label}: ${m.title} · 내 좌석 ${m.seat}`;
+  updateLobbyVisibility(); showView('play');
   clearTimeout(G.poll); pollLive();
 }
-function checkSpectate(li) {   // 관전(④): 로비에서 「관전」을 누른 뒤 매치가 떠 있으면(/api/boot·heartbeat 의 live_info) 양쪽 패를 가린 채 따라붙는다
-  if (lobbyRole !== 'spectator' || !li || G.id === li.id) return;
+function checkMyMatch(m) { enterMatch(m, '참가함(대기실)'); }
+function checkSpectate(li) {   // 관전(④): 방에 들어와 있는데 내 좌석이 없는 매치가 떠 있으면 양쪽 패를 가린 채 따라붙는다(AI끼리 판도 포함)
+  if (lobbyRole === null || !li || G.id === li.id) return;
   G.id = li.id; G.pending = null; G.done = false; G.human = false; G.seat = null; G.key = null; G.spectating = true;
   stages.play.ended = false;
   stages.play.viewerLabel = '관전';
@@ -292,23 +349,38 @@ function checkSpectate(li) {   // 관전(④): 로비에서 「관전」을 누�
   stages.play.fit(); decBox().innerHTML = ''; $('g-abort').disabled = true;
   $('g-pvpinfo').textContent = '';
   $('g-status').textContent = `관전 중: ${li.title}`;
+  updateLobbyVisibility(); showView('play');
   clearTimeout(G.poll); pollLive();
 }
 $('lobby-join').onclick = async () => {
-  try { lobbyRole = 'player'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'player'})); }
+  try { lobbyRole = 'player'; showRoomMine(await api('room/join', {name: $('lobby-name').value.trim(), role: 'player', deck: $('lobby-deck').value})); }
   catch (e) { lobbyRole = null; toast(e.message); }
 };
-$('lobby-watch').onclick = async () => { lobbyRole = 'spectator'; showRoom(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator'})); };
+$('lobby-watch').onclick = async () => {
+  try { lobbyRole = 'spectator'; showRoomMine(await api('room/join', {name: $('lobby-name').value.trim(), role: 'spectator', deck: $('lobby-deck').value})); }
+  catch (e) { toast(e.message); }
+};
+$('lobby-deck').onchange = async () => { if (lobbyRole) try { showRoomMine(await api('room/deck', {deck: $('lobby-deck').value})); } catch (e) { toast(e.message); } };
 $('lobby-leave').onclick = async () => {
   lobbyRole = null;
-  if (G.spectating) {   // 관전 중 로비 나가기 — 이전엔 매치가 끝날 때까지 화면이 계속 따라갔음(의도적 보류, 「다음 회차 지시」 2번)
-    clearTimeout(G.poll); G.id = null; G.spectating = false;
+  if (G.id && !G.done) {   // 관전이든 플레이든 방을 나가면 화면은 더 따라가지 않는다(플레이어는 상대가 보기엔 응답 없음 — 「그만두기」가 정식)
+    clearTimeout(G.poll); G.id = null; G.spectating = false; G.done = true;
     stages.play.reset(); stages.play.renderEmpty();
     $('g-status').textContent = ''; $('g-pvpinfo').textContent = '';
   }
-  showRoom(await api('room/leave', {}));
+  showRoomMine(await api('room/leave', {})); updateLobbyVisibility(true); showView('home');
 };
-$('lobby-start').onclick = () => { viaLobby = true; $('g-mode').value = 'pvp'; $('g-mode').onchange(); $('g-start').click(); };
+$('lobby-start').onclick = async () => {
+  const mode = $('g-mode').value;
+  try {
+    const r = await api('room/start', {mode, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
+                                       ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
+    if (r.my_match) enterMatch(r.my_match, '대전 중');
+    else checkSpectate({id: r.id, names: r.names, title: r.title});
+  } catch (e) { toast(e.message, 6000); }
+};
+// 대기실에 있는 동안은 3초마다, 평소엔 20초마다 — 자리·덱·시작이 바로 보이게
+setInterval(() => { if ($('v-play').classList.contains('on') && !liveNow()) beat(); }, 3000);
 
 // ── 인게임 메신저(수다): 방 전체 공용 채팅 1개 — 읽기는 기존 20초 heartbeat/boot 를 재사용(새 네트워크 호출 없음),
 // 보내기·수정·삭제만 새 호출(/api/room/chat[/edit|/delete]) 추가. 매치별이 아니라 room 전체인 이유: "방 1·듀얼 1" 이라 나눌 의미가 없음.
@@ -358,9 +430,19 @@ $('chat-log').addEventListener('click', async e => {
 });
 renderChatNew(BOOT.chat);
 
-function beat() { api('heartbeat', {chat_from: chatCursor}).then(r => { showOnline(r.online || []); showVer(r.commit); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); renderChatNew(r.chat); }).catch(() => {}); }
-setInterval(beat, 20000); beat();
-showRoom(BOOT.room); checkMyMatch(BOOT.my_match); checkSpectate(BOOT.live_info);
+function beat() {
+  if (beating) return; beating = true;
+  api('heartbeat', {chat_from: chatCursor}).then(r => { showOnline(r.online || []); showVer(r.commit); markMe(r.room, r.me_ip); showRoom(r.room); checkMyMatch(r.my_match); checkSpectate(r.live_info); renderChatNew(r.chat); }).catch(() => {}).finally(() => { beating = false; });
+}
+function markMe(r, ip) {   // 서버는 ip 로 나를 구별한다 — heartbeat/boot 가 알려 준 내 ip 로 내 줄을 찾아 me 표시
+  if (ip) ME_IP = ip;
+  if (!r || !r.members) return;
+  r.members.forEach(m => { m.me = !!ME_IP && m.ip === ME_IP; if (m.me) lobbyRole = m.role; });
+  if (!r.members.some(m => m.me)) lobbyRole = null;
+}
+setInterval(beat, 20000);
+markMe(BOOT.room, BOOT.me_ip); showRoom(BOOT.room); checkMyMatch(BOOT.my_match); checkSpectate(BOOT.live_info);
+updateLobbyVisibility();
 
 async function pollLive() {
   if (!G.id) return;
@@ -383,6 +465,7 @@ async function pollLive() {
 }
 function finishLive(d) {
   G.done = true; const st = stages.play; st.ended = true; st.endLive(); $('g-abort').disabled = true; decBox().innerHTML = '';
+  setTimeout(() => updateLobbyVisibility(true), 1500);
   const res = d.result, names = d.names;
   const w = [0, 1].map(s => res.rounds.filter(r => r.winner === s).length);
   const msg = d.status === 'done' ? (res.winner == null ? `무승부 (${w[0]}–${w[1]})` : `${names[res.winner]} 승 (${w[0]}–${w[1]})`)
@@ -558,6 +641,24 @@ $('d-saveas').onclick = () => { const n = prompt('새 덱 이름', ED.deck['이�
 $('d-delete').onclick = async () => { if (!ED.id || !confirm('이 덱을 지울까요?')) return; await api('deck/delete', {id: ED.id}); ED.dirty = false; newDeck(); await refreshBoot(); };
 renderDeckList();
 
+// ═══════════════ 카드 목록 열람 (덱 편집과 무관한 읽기 전용) ═══════════════
+$('c-theme').innerHTML = '<option value="">테마 전체</option>' + themes.map(t => `<option>${esc(t)}</option>`).join('');
+function showCard(name) {
+  const p = POOL[name]; const src = faceUrl(name); if (!p) return;
+  $('c-detail').innerHTML = `<div class="dwrap"><div>${src ? `<img class="big" src="${src}" alt="">` : ''}</div><div><div class="dn">${esc(p.name)}</div>
+    <div class="dm">${esc(p.code || '')} · ${esc(typeLine(p))}${p.type === '몬스터' ? ` · 공 ${esc(p.atk ?? 0)} / 수 ${esc(p.def ?? 0)}` : ''} · ${esc((p.tags || []).join(', '))}</div><div class="dx">${esc(p.text || '')}</div></div></div>`;
+}
+function renderCards() {
+  const q = $('c-q').value.trim(), th = $('c-theme').value, ty = $('c-type').value;
+  const list = Object.values(POOL).filter(p => (!th || p.theme === th) && (!ty || p.type === ty) && (!q || p.name.includes(q) || (p.text || '').includes(q)))
+    .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+  $('c-count').textContent = `${list.length}장`;
+  $('c-grid').innerHTML = list.map(p => { const src = faceUrl(p.name);
+    return `<div class="pc" data-name="${esc(p.name)}" title="${esc(p.name)}">${src ? `<img src="${src}" alt="${esc(p.name)}" loading="lazy">` : esc(p.name)}</div>`; }).join('');
+  $('c-grid').querySelectorAll('.pc').forEach(el => { el.onclick = () => showCard(el.dataset.name); el.onmouseenter = () => showCard(el.dataset.name); });
+}
+['c-q', 'c-theme', 'c-type'].forEach(id => $(id).addEventListener(id === 'c-q' ? 'input' : 'change', renderCards));
+
 // ═══════════════ 학습 ═══════════════
 async function refreshLearning() {
   const L = await api('learning'); const s = BOOT.settings;
@@ -588,4 +689,6 @@ $('l-git').onclick = async () => {
 $('g-learn').onchange = () => api('settings', {learn: $('g-learn').checked}).catch(() => {});
 $('g-hints').onchange = () => api('settings', {hints: $('g-hints').checked}).catch(() => {});
 stages.watch.fit();
+
+showView('home');
 })();
