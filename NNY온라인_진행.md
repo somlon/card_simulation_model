@@ -58,6 +58,16 @@
   필드가 늘어 핵심 모양(ip·name·role)만 보게 완화. online 스위트 46건 통과. Playwright 로 메인/대기실/판/카드 목록 렌더 확인.
 - 다음: 장인준이 실서버(VM)에서 확인 → online/main 머지 여부 결정(PR). 루틴은 이 브랜치를 건드리지 말 것.
 
+## 사용자 세션 (2026-11-03, 장인준 채팅): 로그인 게이트 — 하마치 없이 링크로 (`online/login-gate`, `online/ui-menu-lobby` 위)
+
+- 장인준 질문 "하마치 없이 링크로 안 되나?" → VM 주소 25.5.165.240 은 하마치 망 주소라 불가. 대신 `--public`(0.0.0.0) + **입장 암호**
+  로그인(`server.py` `login/login_check/logout`, `/api/login`·`/api/logout`·`/api/whoami`, 쿠키 `nny_sid` HttpOnly 30일,
+  `static/login.html`). 등록 IP 게이트는 그대로 — 쿠키 OR 등록 IP 면 통과. 로그인 이름이 등록 이름 노릇(로비·채팅).
+- 암호 출처: `<user>/online_login.json {"암호"}` 또는 `NNY_LOGIN_PASSWORD`. 둘 다 없으면 게이트 꺼짐(기존 동작), `--public` 은 거부.
+- 시험 `test_online_login.py` 3건 + 기존 42건 통과. `온라인_접속_안내.md` 에 VM 쪽 절차(암호 파일 · systemd `--public` · GCP 방화벽 8899).
+- 서버는 VM 에서 24시간 돌므로 장인준 PC 를 켜 둘 필요 없음. 공인 IP 포트포워딩 금지 전제(세창)와 어긋나니 **머지는 둘이 합의 뒤**.
+- 알려진 한계: 신원 열쇠가 ip 라 같은 공인 IP(같은 집) 둘이 따로 로그인하면 나중 이름이 이김.
+
 ## 다음 회차 지시
 
 (2026-11-03 장인준 세션 — 자동화 아님) **「사용자 결정 대기」 절을 통째로 정리했다.** 루틴은 그 절의 「남은 건」 셋만
