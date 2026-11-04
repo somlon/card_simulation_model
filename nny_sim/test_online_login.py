@@ -71,6 +71,18 @@ class LoginGateTest(unittest.TestCase):
         st, body, _ = req(self.base, 'GET', '/api/boot', headers={'X-NNY-Token': self.app.token, 'Cookie': cookie})
         self.assertEqual(st, 403)
 
+    def test_password_gates_even_without_registered_users(self):
+        """등록 유저 파일이 비어 있어도(게이트 비활성 조건) 입장 암호가 있으면 미로그인 접속은 로그인 페이지로 — --public 을 열어 둔 채
+        online_users.json 이 비면 누구나 들어오던 구멍을 막는다."""
+        os.remove(os.path.join(self.paths['user'], 'online_users.json'))
+        st, body, _ = req(self.base, 'GET', '/')
+        self.assertEqual(st, 200); self.assertIn(b'nny-token', body)          # 암호도 등록도 없으면 기존대로 열림
+        self.set_pw('비밀')
+        st, body, _ = req(self.base, 'GET', '/')
+        self.assertEqual(st, 200); self.assertIn('입장 암호'.encode('utf-8'), body)   # 암호가 생기면 로그인 페이지
+        st, body, _ = req(self.base, 'GET', '/api/boot', headers={'X-NNY-Token': self.app.token})
+        self.assertEqual(st, 403)
+
     def test_env_password_and_ping_flag(self):
         os.environ['NNY_LOGIN_PASSWORD'] = 'env암호'
         try:

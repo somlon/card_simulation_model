@@ -521,7 +521,8 @@ def make_handler(app):
             ip = self.client_address[0]
             if app.login_check(self._cookie('nny_sid'), ip): return True
             ips = app.allowed_ips()
-            return ips is None or ip in ips
+            if ips is None: return not app.login_password()   # 등록 유저가 없어도 입장 암호가 켜져 있으면 로그인 없이는 안 열린다(--public 보호)
+            return ip in ips
 
         def _login(self):
             """POST /api/login {name, password} — 게이트 밖에서 받는 유일한 쓰기. 맞으면 쿠키(nny_sid)를 심는다."""
