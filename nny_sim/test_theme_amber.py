@@ -285,6 +285,31 @@ class SpellTest(unittest.TestCase):
         g.events = []; g.destroy(nx); run(g)
         self.assertEqual(o.zone, 'grave'); self.assertEqual(own.zone, 'grave')
 
+    def test_marmor_carbun_ss1_cost_excludes_aces_even_unsealed(self):
+        """마르모르 · 카르분쿨루스 1번 코스트(SS1_COST)는 에이스(아우렘·녹스)를 봉인 카운터 없이도 릴리스 후보에서 뺀다
+        (사용자 요청 2026-11-04, 디스코드 ai-채찍질-하는-방) — 「저 두 카드는 릴리스할 수 없고」."""
+        import blocks.lib as L
+        from blocks.dsl import S
+        g = make()
+        mm = mon(g, A.MARMOR, 0, 'def')
+        au = mon(g, A.AUREM, 0, 'def')      # 봉인 카운터 없음 — 일반 releasable()는 True
+        nx = mon(g, A.NOX, 0, 'def')
+        other = mon(g, A.RESINA, 0, 'def')  # 에이스가 아닌 다른 몬스터는 그대로 후보
+        self.assertTrue(g.releasable(au)); self.assertTrue(g.releasable(nx))
+        pool = L.cards_in(g, mm, 0, S('own', 'field', 'monster', pred='releasable', name_not_has=(A.AUREM, A.NOX)))
+        self.assertNotIn(au, pool); self.assertNotIn(nx, pool); self.assertIn(other, pool)
+
+    def test_name_not_has_tuple_excludes_either_name(self):
+        """name_not_has가 튜플을 받으면 둘 중 하나라도 이름에 들어간 카드를 전부 뺀다(일반화 — 기존 단일 문자열도 그대로 동작)."""
+        import blocks.lib as L
+        from blocks.dsl import S
+        g = make()
+        au = mon(g, A.AUREM, 0, 'def'); nx = mon(g, A.NOX, 0, 'def'); other = mon(g, A.RESINA, 0, 'def')
+        pool = L.cards_in(g, au, 0, S('own', 'field', 'monster', name_not_has=(A.AUREM, A.NOX)))
+        self.assertEqual(set(pool), {other})
+        pool_single = L.cards_in(g, au, 0, S('own', 'field', 'monster', name_not_has=A.AUREM))
+        self.assertEqual(set(pool_single), {nx, other})
+
 
 if __name__ == '__main__':
     unittest.main()

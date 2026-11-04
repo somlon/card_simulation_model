@@ -93,8 +93,8 @@ def match_card(g, c, p, x, sc):
     if cn is not None and (x.counters.get(cn[0], 0) < cn[1] if isinstance(cn, tuple) else x.counters.get(cn, 0) <= 0): return False
     hs = sc.get('name_has')   # 「「X」를 소환한다」 — 카드명 줄임 표기(이름에 X가 든 카드)
     if hs is not None and hs not in x.name: return False
-    nh = sc.get('name_not_has')   # 「「X」 이외의 몬스터」 — 이름에 X가 든 카드 제외(카드명 줄임 표기)
-    if nh is not None and nh in x.name: return False
+    nh = sc.get('name_not_has')   # 「「X」 이외의 몬스터」 — 이름에 X가 든 카드 제외(카드명 줄임 표기, 튜플이면 그중 하나라도 들면 제외)
+    if nh is not None and (any(h in x.name for h in nh) if isinstance(nh, tuple) else nh in x.name): return False
     at = sc.get('attr')
     if at is not None and not x.has_attr(at): return False
     pr = sc.get('pred')

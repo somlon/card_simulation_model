@@ -65,8 +65,10 @@ fx('AMBR-003', '3', '[트리거] 상대가 효과를 발동했을 때 발동. �
    when=[when('activated', who='opp')],
    do=[choice([search(S('own', 'deck', group=AMB), '$n')], [to_hand(scope=S('own', 'grave', group=AMB, pickable=True), n='$n', harm=False)])])
 # 마르모르 · 카르분쿨루스 1번 — 「필드의 릴리스 가능한 몬스터」 = 자신 필드(ASSUME), 3개는 자신 필드의 몬스터에서 합계로
+# 에이스(아우렘 티라누스 · 녹스 솜니페르)는 이 코스트의 릴리스 대상에서 제외한다(사용자 요청 2026-11-04, 디스코드) — 봉인 카운터가 없어도
+# 마르모르 · 카르분쿨루스의 특수소환 코스트로는 릴리스할 수 없다. 릴리스는 효과가 아닌 코스트(cost=SS1_COST)라 원래도 무효화 대상이 아니다.
 SS1 = ('[신속] 자신 필드의 몬스터 {n}장을 릴리스하고 발동. 이 카드를 특수소환한다. 필드의 릴리스 가능한 몬스터가 없는 경우, 대신 봉인 카운터 {k}개를 제거하고 소환할 수 있다.')
-SS1_COST = [alt(release(scope=S('own', 'field', 'monster', pred='releasable'), n='$n'),
+SS1_COST = [alt(release(scope=S('own', 'field', 'monster', pred='releasable', name_not_has=(AUREM, NOX)), n='$n'),
                 counter(SEAL, '$k', op='remove', total=True, scope=S('own', 'field', 'monster')))]
 DUMP_UPPER = send_grave(scope=S('own', 'upper', 'monster', group=AMB), n='$n')
 for code in ('AMBR-004', 'AMBR-005'):
