@@ -62,16 +62,16 @@ class RoomLobbyTest(unittest.TestCase):
         st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'spectator'})
         self.assertEqual(body['players'], 0); self.assertEqual(body['members'][0]['role'], 'spectator')
 
-    def test_room_full_rejects_third_player(self):
-        # 같은 서버 안에서 가짜 IP 두 개를 직접 room 에 채워 자리(2명) 가득 참을 흉내낸다
-        self.app.room['25.0.0.11'] = {'name': 'A', 'role': 'player', 'joined': time.time(), 'last_seen': time.time()}
-        self.app.room['25.0.0.12'] = {'name': 'B', 'role': 'player', 'joined': time.time(), 'last_seen': time.time()}
-        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': 'C', 'role': 'player'})
+    def test_room_full_rejects_fifth_player(self):
+        # 같은 서버 안에서 가짜 IP 네 개를 직접 room 에 채워 자리(MAX_PLAYERS=4, 동시 매치 2개 × 좌석 2) 가득 참을 흉내낸다
+        for i in range(4):
+            self.app.room[f'25.0.0.{11 + i}'] = {'name': 'ABCD'[i], 'role': 'player', 'joined': time.time(), 'last_seen': time.time()}
+        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': 'E', 'role': 'player'})
         self.assertEqual(st, 400, body)
         self.assertIn('가득', body['error'])
         # 관전으로는 그대로 들어갈 수 있다(자리 제한은 player 에만 적용)
-        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': 'C', 'role': 'spectator'})
-        self.assertEqual(st, 200, body); self.assertEqual(body['players'], 2)
+        st, body = req(self.base, self.token, 'POST', '/api/room/join', {'name': 'E', 'role': 'spectator'})
+        self.assertEqual(st, 200, body); self.assertEqual(body['players'], 4); self.assertFalse(body['open_seat'])
 
     def test_leave_removes_from_room(self):
         req(self.base, self.token, 'POST', '/api/room/join', {'name': '장인준', 'role': 'player'})

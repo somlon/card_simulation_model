@@ -16,6 +16,8 @@ IDLE_EXIT = 180          # 화면이 이만큼(초) 신호를 보내지 않으�
 CLIENT_TTL = 45          # 접속중 명단: 이만큼(초) heartbeat 가 없으면 끊긴 것으로 본다(heartbeat 주기 20초의 2배 이상)
 ROOM_GRACE = 90          # 로비(방) 재접속 유예: 이만큼(초) heartbeat 가 없어야 자리를 비운다(CLIENT_TTL 보다 넉넉히 — 잠깐 끊겨도 자리 유지)
 CHAT_MAX = 200           # 인게임 메신저: 메시지 1개 최대 글자 수(room_join 의 name[:40] 과 같은 식의 사람 입력 캡)
+MAX_LIVE = 2             # 동시에 띄우는 매치 수 상한(2026-11-04, 장인준) — 서버 자원이 아니라 방 운영 단위로 정한 값
+MAX_PLAYERS = 4          # 대기실 플레이어 자리(매치 2개 × 좌석 2)
 CHAT_BUFFER = 200        # 인게임 메신저: 메모리 링버퍼에 유지하는 최근 메시지 수(프로세스 수명 동안만 — 그 이상은 push_game 으로 넘어가야 남음)
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
@@ -58,14 +60,15 @@ class App:
         self.p = paths
         import human
         human.install_block_hooks()   # 첫 게임(카드 효과 코드 생성 · 캐시) 전에 — 사람 자리의 서치 · 카드 고르기를 화면에서 묻는다
+        SS.REC.install_hooks()        # 기록 훅도 여기서 한 번 — 매치 스레드 둘이 동시에 첫 설치를 하면 이중 감싸기가 될 수 있어서(동시 매치)
         self.store = SS.Store(paths['user'], paths.get('library'))
         self.users_path = os.path.join(paths['user'], 'online_users.json')  # tools/discord_bot.py 의 /유저등록 이 쓰는 그 파일(같은 경로)
         self.token = secrets.token_hex(16)
         self.commit = commit_rev()  # 업데이트 패널(⑧) — 서버 켤 때 한 번만 읽음(git 호출 반복 안 함)
-        self.live = None; self.jobs = {}; self.last_beat = time.time(); self.server = None
+        self.lives = {}; self.live_meta = {}   # 매치 id -> LiveMatch · {'ips': {ip: 좌석}, 'owner': 시작한 ip} — 동시에 MAX_LIVE 개까지
+        self.jobs = {}; self.last_beat = time.time(); self.server = None
         self.clients = {}  # ip -> 마지막 heartbeat 시각(접속중 명단, allowed_ips 와 같은 파일을 이름 표시에 재사용)
-        self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 2
-        self.live_ips = {}  # 로비에서 시작한 사람vs사람 매치의 ip -> 좌석(0|1) — 상대 화면이 매치 ID·참가 키를 수동으로 받지 않고 스스로 찾아 들어가게 함
+        self.room = {}     # 로비(방) 참가자: ip -> {'name','role'('player'|'spectator'),'joined','last_seen'} — 방 1개 · 자리(player) 최대 MAX_PLAYERS
         self.chat = deque(maxlen=CHAT_BUFFER)  # 인게임 메신저: 방 전체 공용 채팅 1개(매치별 구분 없음) — 최근 CHAT_BUFFER개만 메모리에(프로세스 수명 동안만)
         self.chat_seq = 0   # 끊기지 않고 늘어나는 메시지 id — 링버퍼에서 오래된 메시지가 밀려나도 커서(마지막으로 받은 id) 비교는 계속 올바름
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
@@ -131,11 +134,50 @@ class App:
         ips = set(self._users().values())
         return ips or None
 
-    def live_info(self):
-        """관전(④) 진입용 — 지금 매치가 떠 있다면 누구나(관전자) 알 수 있는 기본 정보만. pending · seat · key 는 절대 안 준다
+    # ── 동시 매치(최대 MAX_LIVE) ──
+    def running_lives(self):
+        return [m for m in self.lives.values() if m.status in ('starting', 'running')]
+
+    @property
+    def live(self):
+        """호환 — 진행 중인 첫 매치(없으면 가장 최근 매치). 새 코드는 lives · match_by_id · match_of 를 쓴다."""
+        running = self.running_lives()
+        if running: return running[0]
+        return next(reversed(list(self.lives.values())), None)
+
+    @property
+    def live_ips(self):
+        """호환 — 진행 중인 모든 매치의 로비 좌석(ip -> 좌석)을 합친 것."""
+        out = {}
+        for m in self.running_lives(): out.update(self.live_meta.get(m.id, {}).get('ips', {}))
+        return out
+
+    def match_by_id(self, mid):
+        return self.lives.get(mid) if mid else None
+
+    def match_of(self, ip):
+        """이 ip 가 앉아 있거나(로비 좌석) 직접 시작한(owner) 진행 중 매치 — 없으면 None."""
+        if ip is None: return None
+        for m in self.running_lives():
+            meta = self.live_meta.get(m.id, {})
+            if ip in meta.get('ips', {}) or meta.get('owner') == ip: return m
+        return None
+
+    def _add_live(self, m, ips, owner):
+        done = [k for k, v in self.lives.items() if v.status not in ('starting', 'running')]
+        for mid in done[:-1]:   # 끝난 판은 가장 최근 1개만 남긴다(끝 화면을 아직 받는 중인 클라이언트용)
+            self.lives.pop(mid, None); self.live_meta.pop(mid, None)
+        self.lives[m.id] = m; self.live_meta[m.id] = {'ips': dict(ips), 'owner': owner}
+
+    def lives_info(self):
+        """관전(④) 진입용 — 떠 있는 매치들의 누구나(관전자) 알 수 있는 기본 정보만. pending · seat · key 는 절대 안 준다
         (좌석별 비공개 정보는 /api/match/poll 에 spectate=1 로만 접근 — 그쪽이 늘 pending=None)."""
-        if not self.live or self.live.status not in ('starting', 'running'): return None
-        return {'id': self.live.id, 'names': self.live.names, 'title': self.live.title}
+        return [{'id': m.id, 'names': m.names, 'title': m.title, 'humans': list(m.humans)} for m in self.running_lives()]
+
+    def live_info(self):
+        """호환 — 첫 번째 진행 중 매치(옛 클라이언트의 자동 관전용). 새 클라이언트는 lives 목록을 본다."""
+        li = self.lives_info()
+        return li[0] if li else None
 
     def heartbeat(self, ip, chat_from=0):
         self.last_beat = time.time()
@@ -143,7 +185,7 @@ class App:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
         return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip),
-                'live_info': self.live_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from), 'me_ip': ip}
+                'live_info': self.live_info(), 'lives': self.lives_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from), 'me_ip': ip}
 
     def _ip_names(self):
         """online_users.json 을 ip → 등록 이름으로 거꾸로 뒤집은 것(이름 → ip 인 _users() 를 접속중 명단 ·
@@ -175,16 +217,18 @@ class App:
         self.room_gc()
         names = self._ip_names()
         host = self.room_host()
-        rows = []
+        rows = []; seated = self.live_ips
         for ip, m in self.room.items():
             d = self.store.deck(m.get('deck') or '') if m.get('deck') else None
+            mm = self.match_of(ip) if ip in seated else None
             rows.append({'ip': ip, 'name': names.get(ip, m['name']), 'role': m['role'], 'host': ip == host,
-                         'deck': m.get('deck'), 'deck_label': self.deck_label(m['deck'], d) if d else None})
+                         'deck': m.get('deck'), 'deck_label': self.deck_label(m['deck'], d) if d else None,
+                         'match': mm.id if mm else None})   # 지금 대전에 들어가 있으면 그 매치 id(새 판 짝짓기에서 제외)
         players = [r for r in rows if r['role'] == 'player']
         return {'members': sorted(rows, key=lambda r: (r['role'] != 'player', r['name'])),
-                'players': len(players), 'open_seat': len(players) < 2,
+                'players': len(players), 'open_seat': len(players) < MAX_PLAYERS, 'max_players': MAX_PLAYERS,
                 'host': (names.get(host, self.room[host]['name']) if host else None),
-                'live': self.live_info()}
+                'live': self.live_info(), 'lives': self.lives_info(), 'max_live': MAX_LIVE}
 
     def room_deck(self, ip, deck):
         """대기실에서 내 덱을 고른다(방에 있어야 함). 사람 대 사람은 각자 고른 덱으로 붙고, 사람 vs AI 는 이게 내 덱이 된다."""
@@ -194,35 +238,47 @@ class App:
         m['deck'] = deck or None
         return self.room_status()
 
+    def _pick_pair(self, ip, players, opponent):
+        """사람 대 사람 짝 — opponent(상대 ip)가 있으면 [시작한 사람(플레이어일 때) 또는 첫 플레이어, 상대], 없으면 먼저 앉은 둘."""
+        if len(players) < 2: raise ValueError('사람 대 사람은 (아직 대전에 들어가지 않은) 플레이어가 둘 이상 앉아야 시작할 수 있습니다')
+        if opponent:
+            if opponent not in players: raise ValueError('고른 상대가 플레이어 자리에 없거나 이미 대전 중입니다')
+            first = ip if (ip in players and ip != opponent) else next(p for p in players if p != opponent)
+            return [first, opponent]
+        return players[:2]
+
     def room_start(self, ip, j):
-        """대기실의 「시작」 — 방장만. mode: 'pvp'(사람 대 사람, player 2명) · 'ai'(사람 vs AI, player 1명 + ai_deck)
-        · 'aivai'(AI vs AI, 방 전체가 관전). 좌석은 방에 들어온 순서(먼저 앉은 쪽이 좌석0)."""
+        """대기실의 「시작」 — 방장만. mode: 'pvp'(사람 대 사람 — 아직 대전에 안 들어간 플레이어 둘, opponent 로 상대 지정 가능)
+        · 'ai'(사람 vs AI — player 로 지정, 없으면 방장 본인 또는 유일한 플레이어) · 'aivai'(AI vs AI, 방 전체가 관전).
+        매치는 동시에 MAX_LIVE 개까지 — 이미 대전 중인 사람은 새 판에 앉지 않는다(2026-11-04 동시 매치 2개)."""
         self.room_gc()
         if ip != self.room_host(): raise ValueError('방장만 시작할 수 있습니다')
-        if self.live and self.live.status in ('starting', 'running'): raise ValueError('이미 대전이 진행 중입니다')
+        if len(self.running_lives()) >= MAX_LIVE: raise ValueError(f'동시 대전은 {MAX_LIVE}개까지입니다 — 진행 중인 판이 끝나야 새로 시작할 수 있습니다')
         mode = j.get('mode', 'pvp')
-        players = sorted((pip for pip, m in self.room.items() if m['role'] == 'player'), key=lambda pip: self.room[pip]['joined'])
+        seated = self.live_ips
+        players = sorted((pip for pip, m in self.room.items() if m['role'] == 'player' and pip not in seated), key=lambda pip: self.room[pip]['joined'])
         body = {'first': j.get('first'), 'learn': j.get('learn', True), 'hints': j.get('hints', False), 'seed': j.get('seed'),
                 'ai_kind': j.get('ai_kind', 'table')}
         if mode == 'pvp':
-            if len(players) != 2: raise ValueError('사람 대 사람은 플레이어 자리에 둘이 앉아야 시작할 수 있습니다')
-            for pip in players:
+            pair = self._pick_pair(ip, players, j.get('opponent'))
+            for pip in pair:
                 if not self.room[pip].get('deck'): raise ValueError(f'{self.room[pip]["name"]} 이(가) 아직 덱을 고르지 않았습니다')
-            body.update(humans=[True, True], deck=self.room[players[0]]['deck'], ai_deck=self.room[players[1]]['deck'])
-            r = self.start_match(body)
-            self.live_ips = {players[0]: 0, players[1]: 1}
+            body.update(humans=[True, True], deck=self.room[pair[0]]['deck'], ai_deck=self.room[pair[1]]['deck'])
+            r = self.start_match(body, ips={pair[0]: 0, pair[1]: 1})
         elif mode == 'ai':
-            if len(players) != 1: raise ValueError('사람 vs AI 는 플레이어 자리에 한 명만 앉아야 합니다(나머지는 관전)')
-            if not self.room[players[0]].get('deck'): raise ValueError('플레이어가 아직 덱을 고르지 않았습니다')
+            if j.get('player') in players: p = j['player']
+            elif ip in players: p = ip
+            elif len(players) == 1: p = players[0]
+            elif not players: raise ValueError('사람 vs AI 는 플레이어 자리에 한 명이 앉아야 합니다(나머지는 관전)')
+            else: raise ValueError('사람 vs AI 는 누가 둘지 고르세요(플레이어가 여럿 앉아 있습니다)')
+            if not self.room[p].get('deck'): raise ValueError('플레이어가 아직 덱을 고르지 않았습니다')
             if not j.get('ai_deck'): raise ValueError('AI 덱을 고르세요')
-            body.update(humans=[True, False], deck=self.room[players[0]]['deck'], ai_deck=j['ai_deck'])
-            r = self.start_match(body)
-            self.live_ips = {players[0]: 0}
+            body.update(humans=[True, False], deck=self.room[p]['deck'], ai_deck=j['ai_deck'])
+            r = self.start_match(body, ips={p: 0})
         elif mode == 'aivai':
             if not j.get('deck') or not j.get('ai_deck'): raise ValueError('AI 두 쪽의 덱을 고르세요')
             body.update(humans=[False, False], deck=j['deck'], ai_deck=j['ai_deck'])
-            r = self.start_match(body)
-            self.live_ips = {}
+            r = self.start_match(body, ips={})
         else:
             raise ValueError('모르는 방식입니다')
         return dict(r, mode=mode, my_match=self.my_match(ip))
@@ -237,8 +293,8 @@ class App:
         role = role if role in ('player', 'spectator') else 'spectator'
         cur = self.room.get(ip)
         if role == 'player' and (not cur or cur['role'] != 'player'):
-            if sum(1 for pip, m in self.room.items() if m['role'] == 'player' and pip != ip) >= 2:
-                raise ValueError('방 자리가 이미 가득 찼습니다(2명) — 관전으로 들어가 주세요')
+            if sum(1 for pip, m in self.room.items() if m['role'] == 'player' and pip != ip) >= MAX_PLAYERS:
+                raise ValueError(f'방 자리가 이미 가득 찼습니다({MAX_PLAYERS}명) — 관전으로 들어가 주세요')
         now = time.time()
         reg = self._ip_names().get(ip)
         self.room[ip] = {'name': reg or (name or '').strip()[:40] or (cur['name'] if cur else ip), 'role': role,
@@ -315,22 +371,31 @@ class App:
         """로비(방)에서 짝지어 시작한 매치라면, 이 ip 가 매치 ID·참가 키를 묻지 않고도 자기 좌석을 그대로 받는다.
         로비를 거치지 않고(수동으로) 시작한 사람vs사람 매치는 live_ips 가 비어 있으므로 여기서 항상 None(기존 수동 키
         공유 방식 그대로) — 호환."""
-        if not self.live or self.live.status not in ('starting', 'running'): return None
-        seat = self.live_ips.get(ip)
-        if seat is None: return None
-        return {'id': self.live.id, 'seat': seat, 'key': self.live.keys[seat], 'names': self.live.names, 'title': self.live.title}
+        for m in self.running_lives():
+            seat = self.live_meta.get(m.id, {}).get('ips', {}).get(ip)
+            if seat is not None:
+                return {'id': m.id, 'seat': seat, 'key': m.keys[seat], 'names': m.names, 'title': m.title}
+        return None
 
     # ── 덱 이름 · 대전 시작 ──
-    def _may_shortcut(self, ip):
-        """키 없는 poll/answer 를 사람 자리에 귀속시켜도 되는 ip 인가 — 매치를 시작한 ip(또는 로비 좌석 ip)만."""
+    def _may_shortcut(self, ip, m):
+        """키 없는 poll/answer 를 그 매치의 사람 자리에 귀속시켜도 되는 ip 인가 — 매치를 시작한 ip(또는 그 매치의 로비 좌석 ip)만."""
         if ip is None: return True   # 서버 내부 호출(시험 등) — 네트워크 접속이 아니다
-        return ip == getattr(self, 'live_owner_ip', None) or ip in self.live_ips
+        meta = self.live_meta.get(m.id, {})
+        return ip == meta.get('owner') or ip in meta.get('ips', {})
 
     def deck_label(self, did, d):
         return d['스킬'] if did.startswith('o:') else d['이름']
 
-    def start_match(self, j, ip=None):
-        if self.live and self.live.status in ('starting', 'running'): self.live.abort()
+    def start_match(self, j, ip=None, ips=None):
+        """매치 하나를 띄운다(동시에 MAX_LIVE 개까지). ip 는 시작한 접속(키 없는 지름길의 주인), ips 는 로비가 정한 ip -> 좌석.
+        같은 ip 가 자기 판을 두고 다시 시작하면 그 판을 그만두고 새로 시작(옛 단일 매치 동작과 같음); 다른 사람 판은 건드리지 않는다."""
+        mine = self.match_of(ip)
+        if mine: mine.abort()
+        running = [m for m in self.running_lives() if m is not mine]
+        if len(running) >= MAX_LIVE:
+            if ip is not None: raise ValueError(f'동시 대전은 {MAX_LIVE}개까지입니다 — 진행 중인 판이 끝나야 새로 시작할 수 있습니다')
+            running[0].abort()   # 내부 호출(시험 등)은 가장 오래된 판을 밀어낸다(옛 동작 호환)
         # humans: [좌석0이 사람인가, 좌석1이 사람인가]. 새 클라이언트가 이걸 보내고, 옛 클라이언트의 mode(human/ai)도 그대로 받는다
         humans = tuple(bool(x) for x in j['humans']) if j.get('humans') else (j.get('mode', 'human') == 'human', False)
         da, db = self.store.deck(j['deck']), self.store.deck(j['ai_deck'])
@@ -351,31 +416,36 @@ class App:
         else:
             names = [a, b] if a != b else [f'{a} (P1)', f'{b} (P2)']; title = f'{names[0]} vs {names[1]}'
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
-        self.live = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
-                                 learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
-                                 chat_fn=self.chat_between, ai_kind=ai_kind).start()
-        seats = {i: self.live.keys[i] for i in (0, 1) if self.live.humans[i]}
-        # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 방에 player 가 정확히 둘 · 시작한 ip 가 그 둘 중 하나) 상대 ip 를
-        # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
-        # 매치 ID·참가 키 수동 공유 방식이 그대로 동작한다(호환).
-        self.live_ips = {}
+        m = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
+                         learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
+                         chat_fn=self.chat_between, ai_kind=ai_kind)
+        seats = {i: m.keys[i] for i in (0, 1) if m.humans[i]}
+        # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 시작한 ip 가 아직 대전에 안 들어간 player 이고 그런 player 가 둘 이상) 상대 ip 를
+        # 자동으로 좌석1에 묶어 둔다(opponent 로 지정 가능, 없으면 먼저 앉은 사람) — 수동으로 시작했으면(방에 없는 ip 거나 짝이
+        # 없으면) 비워 둬서 기존 매치 ID·참가 키 수동 공유 방식이 그대로 동작한다(호환).
         # 사람 자리가 하나뿐인 매치(사람vsAI)는 키 없이도 그 자리로 귀속되는 옛 호환 경로가 있다(session.poll/answer).
         # 그 지름길은 **매치를 시작한 ip 에게만** 연다(2026-11-03, 「사용자 결정 대기」의 /api/match/answer 지름길 건 —
         # 하마치망/공개 서버의 다른 사람이 남의 사람vsAI 판에 대신 답하지 못하게). 키를 들고 오면 누구든 기존대로.
-        self.live_owner_ip = ip
-        if humans[0] and humans[1]:
-            players = [pip for pip, m in self.room.items() if m['role'] == 'player']
-            if ip in players and len(players) == 2:
-                other = next(p for p in players if p != ip)
-                self.live_ips = {ip: 0, other: 1}
-        return {'id': self.live.id, 'names': names, 'title': title, 'seats': seats}
+        if ips is None:
+            ips = {}
+            if humans[0] and humans[1]:
+                seated = self.live_ips
+                players = [pip for pip, mm in self.room.items() if mm['role'] == 'player' and pip not in seated]
+                if ip in players and len(players) >= 2:
+                    opp = j.get('opponent')
+                    other = opp if (opp in players and opp != ip) else next(p for p in players if p != ip)
+                    ips = {ip: 0, other: 1}
+        self._add_live(m, ips, ip)
+        m.start()
+        return {'id': m.id, 'names': names, 'title': title, 'seats': seats}
 
     def join_match(self, j):
         """사람vs사람 대전에 참가 키로 들어간다 — 좌석 번호를 몰라도 키만으로 자기 좌석을 찾는다"""
-        if not self.live or self.live.id != j.get('id'): raise ValueError('매치를 찾을 수 없습니다')
+        m = self.match_by_id(j.get('id'))
+        if not m: raise ValueError('매치를 찾을 수 없습니다')
         key = j.get('key')
-        for seat, k in enumerate(self.live.keys):
-            if k and k == key: return {'ok': True, 'seat': seat, 'key': key, 'names': self.live.names, 'title': self.live.title}
+        for seat, k in enumerate(m.keys):
+            if k and k == key: return {'ok': True, 'seat': seat, 'key': key, 'names': m.names, 'title': m.title}
         raise ValueError('참가 키가 올바르지 않습니다')
 
     def start_record(self, j):
@@ -398,7 +468,7 @@ class App:
                            'mat': self.cards.get('mat', 'mat.webp'), 'back': self.cards.get('back', 'back.webp')},
                 'replays': self.store.replays(), 'playlists': self.store.playlists(), 'learning': self.learning(),
                 'ai_kinds': sorted(SS.AI_KINDS),
-                'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
+                'live': (self.running_lives()[0].id if self.running_lives() else None), 'lives': self.lives_info(), 'max_live': MAX_LIVE,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
                 'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit,
                 'chat': self.chat_since(chat_from), 'me_ip': ip}
@@ -432,16 +502,21 @@ class App:
         if path == '/api/match/start': return self.start_match(body, ip)
         if path == '/api/match/join': return self.join_match(body)
         if path == '/api/match/poll':
-            if not self.live or self.live.id != g('id'): return {'status': 'none'}
+            m = self.match_by_id(g('id'))
+            if not m: return {'status': 'none'}
             seat = g('seat'); seat = int(seat) if seat not in (None, '') else None
-            spectate = bool(g('spectate')) or (not g('key') and not self._may_shortcut(ip))
-            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=spectate)
+            spectate = bool(g('spectate')) or (not g('key') and not self._may_shortcut(ip, m))
+            return m.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=spectate)
         if path == '/api/match/answer':
-            if self.live and not body.get('key') and not self._may_shortcut(ip): return {'ok': False}
-            ok = bool(self.live) and self.live.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
+            # id 없는 옛 클라이언트는 그 ip 가 앉은/시작한 매치(없으면 호환용 첫 매치)
+            m = self.match_by_id(body.get('id')) or self.match_of(ip) or (self.live if ip is None else None)
+            if not m: return {'ok': False}
+            if not body.get('key') and not self._may_shortcut(ip, m): return {'ok': False}
+            ok = m.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
             return {'ok': ok}
         if path == '/api/match/abort':
-            if self.live: self.live.abort()
+            m = self.match_by_id(body.get('id')) or self.match_of(ip) or (self.live if ip is None else None)
+            if m and (ip is None or self._may_shortcut(ip, m) or body.get('key') in [k for k in m.keys if k]): m.abort()
             return {'ok': True}
         if path == '/api/record': return self.start_record(body)
         if path == '/api/jobs': return [j.info() for j in self.jobs.values()]
@@ -478,7 +553,7 @@ class App:
 
     def shutdown(self):
         time.sleep(0.3)
-        if self.live: self.live.abort()
+        for m in list(self.lives.values()): m.abort()
         if self.server: self.server.shutdown()
 
     def watchdog(self):

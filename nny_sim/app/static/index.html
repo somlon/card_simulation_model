@@ -110,6 +110,7 @@
         <div class="panel">
           <h2 class="sec">대기실 <span class="muted" id="lobby-host" style="font-weight:normal"></span></h2>
           <div class="seats" id="lobby-seats"></div>
+          <div class="muted" id="lobby-lives" style="margin-top:6px"></div>
           <div class="row2" style="margin:10px 0 6px;gap:8px;align-items:center">
             <input type="text" id="lobby-name" placeholder="내 이름" style="width:120px" title="등록된 하마치 유저면 등록 이름이 자동으로 쓰인다">
             <select id="lobby-deck" title="내가 쓸 덱 — 플레이어로 앉았을 때 이 덱으로 둔다"></select>
@@ -128,6 +129,7 @@
             <option value="aivai">AI vs AI — 방 전체가 관전</option></select></div>
           <div class="field" id="g-deck-f"><span id="g-mylabel">P1 AI 덱</span><select id="g-deck"></select></div>
           <div class="field" id="g-ai-f"><span id="g-oplabel">AI 덱</span><select id="g-ai"></select></div>
+          <div class="field" id="g-opp-f" style="display:none"><span>상대(플레이어 중)</span><select id="g-opp"></select></div>
           <div class="field" id="g-ai-kind-f"><span id="g-aikindlabel">AI 종류</span><select id="g-ai-kind"></select></div>
           <div class="row2" style="gap:14px;align-items:flex-end">
             <div class="field"><span>1라운드 선공</span><select id="g-first"><option value="me">좌석0(P1)</option><option value="ai">좌석1(P2)</option><option value="random">무작위</option></select></div>
