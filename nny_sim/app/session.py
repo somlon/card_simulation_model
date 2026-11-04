@@ -66,7 +66,10 @@ class Store:
 
     # ── 덱 ──
     def official_decks(self):
-        return {f'o:{sk}': dict(d, 이름=d.get('이름') or sk) for sk, d in SE.load_decks().items()}
+        """공식 덱은 항상 원본 시드 레시피(adjusted=False) — AI 학습(season.py)의 자동 레시피 조정은
+        learned/decks/<스킬>.json에만 쌓이고, 사람이 온라인에서 고르는 이 목록에는 영향을 주지 않는다
+        (디스코드 요청, 세창, 2026-11-04 — AI는 사람의 덱 레시피를 바꾸지 않고 자기 쪼그만 바꾼다)"""
+        return {f'o:{sk}': dict(d, 이름=d.get('이름') or sk) for sk, d in SE.load_decks(adjusted=False).items()}
 
     def user_decks(self):
         out = {}

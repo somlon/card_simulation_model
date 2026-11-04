@@ -15,11 +15,15 @@ ADJUST_EVERY = 60
 DECK_DIR = os.path.join('learned', 'decks'); os.makedirs(DECK_DIR, exist_ok=True)
 STATE = os.path.join('learned', 'season.json')
 
-def load_decks():
+def load_decks(adjusted=True):
+    """adjusted=False: season()이 자동 조정한 learned/decks/<스킬>.json을 무시하고 원본 시드(decks/시제_*.deck) 레시피만
+    돌려준다 — 디스코드 요청(세창, 2026-11-04): AI의 자동 레시피 조정은 AI 자신의 학습용 레시피에만 쌓이고,
+    사람이 온라인에서 고르는 공식 덱(app/session.py official_decks)의 레시피는 바꾸지 않아야 한다."""
     decks = {}
     for f in sorted(glob.glob('decks/시제_*.deck')):
         d = D.load(f)[0]; sk = d['스킬']; p = os.path.join(DECK_DIR, f'{sk}.json')
-        if os.path.exists(p): d = json.load(open(p, encoding='utf-8')); d = {k: [tuple(x) for x in v] if isinstance(v, list) else v for k, v in d.items()}
+        if adjusted and os.path.exists(p):
+            d = json.load(open(p, encoding='utf-8')); d = {k: [tuple(x) for x in v] if isinstance(v, list) else v for k, v in d.items()}
         decks[sk] = d
     return decks
 

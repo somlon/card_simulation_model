@@ -93,6 +93,42 @@ class SeasonAdjustTest(unittest.TestCase):
         self.assertEqual(log, [rec])
 
 
+class UnadjustedOfficialDeckTest(unittest.TestCase):
+    """디스코드 요청(세창, 2026-11-04): AI 학습(season.py 자동 조정)이 쌓은 learned/decks/<스킬>.json은
+    AI 자신의 학습용 레시피일 뿐 — 사람이 온라인에서 고르는 공식 덱(app/session.py official_decks)의
+    레시피는 그걸로 바뀌면 안 된다. load_decks(adjusted=False)와 official_decks가 그 분리를 지키는지 확인."""
+    SK = '세제'
+
+    def setUp(self):
+        self.path = os.path.join(SE.DECK_DIR, f'{self.SK}.json')
+        self.had = os.path.exists(self.path)
+        self.orig = open(self.path, encoding='utf-8').read() if self.had else None
+        seed = SE.load_decks(adjusted=False)[self.SK]
+        fake = dict(seed, 이름=seed['이름'] + ' [자동 조정 — 테스트용 가짜]')
+        json.dump(fake, open(self.path, 'w', encoding='utf-8'), ensure_ascii=False)
+
+    def tearDown(self):
+        if self.had: open(self.path, 'w', encoding='utf-8').write(self.orig)
+        else: os.remove(self.path)
+
+    def test_load_decks_adjusted_false_ignores_training_override(self):
+        self.assertIn('자동 조정', SE.load_decks(adjusted=True)[self.SK]['이름'])      # 학습 쪼그 조정판은 그대로 보임
+        self.assertNotIn('자동 조정', SE.load_decks(adjusted=False)[self.SK]['이름'])  # 공식(사람용)은 원본 시드
+
+    def test_official_decks_uses_unadjusted_recipe(self):
+        import sys
+        here = os.path.dirname(os.path.abspath(__file__))
+        added = [os.path.join(here, 'app'), os.path.join(here, 'viewer')]
+        sys.path[:0] = added
+        try:
+            import session as APPS
+            store = APPS.Store(tempfile.mkdtemp(prefix='nny_officialdeck_'))
+            od = store.official_decks()
+        finally:
+            for p in added: sys.path.remove(p)
+        self.assertNotIn('자동 조정', od[f'o:{self.SK}']['이름'])
+
+
 class StageTest(unittest.TestCase):
     def test_deck_rows_roundtrip(self):
         rows = TT.deck_rows(DECKS['세제'])
