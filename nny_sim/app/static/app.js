@@ -289,7 +289,7 @@ $('g-join').onclick = async () => {
     clearTimeout(G.poll); pollLive();
   } catch (e) { toast(e.message, 6000); }
 };
-$('g-abort').onclick = async () => { if (!confirm('대전을 그만둘까요? (끝낸 라운드까지는 기록 · 학습됩니다)')) return; await api('match/abort', {}); };
+$('g-abort').onclick = async () => { if (!confirm('대전을 그만둘까요? (끝낸 라운드까지는 기록 · 학습됩니다)')) return; await api('match/abort', {id: G.id, key: G.key}); };
 
 // ── 대기실(방): 플레이어/관전 자리 · 내 덱 · 방장 시작 · 나가기 (2026-11-03 화면 분리) ──
 const liveNow = () => !!(G.id && !G.done);
@@ -311,12 +311,26 @@ function showRoom(r) {
   const me = r.members.find(m => m.me) || null;
   const players = r.members.filter(m => m.role === 'player');
   const mode = $('g-mode').value;
+  // 플레이어 자리 최대 4(매치 2개 × 좌석 2, 2026-11-04 동시 매치) — 이미 대전 중인 사람은 「대전 중」으로 표시
+  const maxP = r.max_players || 4;
   const seatHtml = (i, m) => {
-    if (m) return `<div class="seat-card${m.me ? ' me' : ''}"><div class="lab">좌석 ${i} (P${i + 1})</div><div class="nm">${esc(m.name)}${m.host ? ' 👑' : ''}${m.me ? ' (나)' : ''}</div><div class="dk">${esc(m.deck_label || '덱을 아직 안 골랐다')}</div></div>`;
-    const ai = (mode === 'ai' && i === 1) || mode === 'aivai';
-    return `<div class="seat-card"><div class="lab">좌석 ${i} (P${i + 1})</div><div class="nm empty">${ai ? 'AI' : '비어 있음 — 플레이어 자리'}</div><div class="dk">${ai ? '방장이 시작 설정에서 덱을 고른다' : ''}</div></div>`;
+    if (m) return `<div class="seat-card${m.me ? ' me' : ''}"><div class="lab">자리 ${i + 1}${m.match ? ' · 대전 중' : ''}</div><div class="nm">${esc(m.name)}${m.host ? ' 👑' : ''}${m.me ? ' (나)' : ''}</div><div class="dk">${esc(m.deck_label || '덱을 아직 안 골랐다')}</div></div>`;
+    const ai = (mode === 'ai' && i === 1) || (mode === 'aivai' && i < 2);
+    return `<div class="seat-card"><div class="lab">자리 ${i + 1}</div><div class="nm empty">${ai ? 'AI' : '비어 있음 — 플레이어 자리'}</div><div class="dk">${ai ? '방장이 시작 설정에서 덱을 고른다' : ''}</div></div>`;
   };
-  $('lobby-seats').innerHTML = seatHtml(0, players[0]) + seatHtml(1, players[1]);
+  $('lobby-seats').innerHTML = Array.from({length: maxP}, (_, i) => seatHtml(i, players[i])).join('');
+  const lives = r.lives || (r.live ? [r.live] : []);
+  $('lobby-lives').innerHTML = lives.length
+    ? `대전 중 ${lives.length}/${r.max_live || 2}판: ` + lives.map(li => `${esc(li.title)} <button class="btn sm" data-spectate="${esc(li.id)}"${G.id === li.id ? ' disabled' : ''}>${G.id === li.id ? '보는 중' : '관전'}</button>`).join(' · ')
+    : '';
+  $('lobby-lives').querySelectorAll('button[data-spectate]').forEach(b => { b.onclick = () => { const li = lives.find(x => x.id === b.dataset.spectate); if (li) checkSpectate(li, true); }; });
+  // 사람 대 사람 상대 고르기 — 아직 대전에 안 들어간 플레이어가 (나를 빼고) 둘 이상일 때만
+  const free = players.filter(m => !m.match);
+  const cands = free.filter(m => !(me && me.role === 'player' && m.me));
+  const oppSel = $('g-opp'); const prev = oppSel.value;
+  oppSel.innerHTML = cands.map(m => `<option value="${esc(m.ip)}">${esc(m.name)}</option>`).join('');
+  if ([...oppSel.options].some(o => o.value === prev)) oppSel.value = prev;
+  $('g-opp-f').style.display = mode === 'pvp' && cands.length >= 2 ? '' : 'none';
   $('lobby-host').textContent = r.host ? `· 방장 ${r.host}` : '';
   $('lobby-list').textContent = r.members.length
     ? '들어와 있는 사람: ' + r.members.map(m => `${m.name}${m.host ? '👑' : ''}(${m.role === 'player' ? '플레이어' : '관전'})`).join(', ') : '방이 비었다 — 「플레이어로 앉기」나 「관전으로」로 들어온다.';
@@ -330,10 +344,11 @@ function showRoom(r) {
   let need = '';
   if (!me) need = '먼저 방에 들어와라.';
   else if (!amHost) need = `방장(${r.host})이 시작하기를 기다리는 중…`;
-  else if (mode === 'pvp') need = players.length === 2 ? (players.every(m => m.deck) ? '둘 다 앉았다 — 시작을 누르면 판이 선다' : '덱을 아직 안 고른 사람이 있다') : `플레이어 자리에 둘이 앉아야 한다 (지금 ${players.length}명)`;
-  else if (mode === 'ai') need = players.length === 1 ? (players[0].deck ? '시작을 누르면 AI 와 붙는다' : '플레이어가 덱을 골라야 한다') : `플레이어 자리에 한 명만 앉아야 한다 (지금 ${players.length}명)`;
+  else if (lives.length >= (r.max_live || 2)) need = `동시 대전은 ${r.max_live || 2}판까지 — 한 판이 끝나야 새로 시작할 수 있다`;
+  else if (mode === 'pvp') need = free.length >= 2 ? (free.every(m => m.deck) ? (free.length > 2 ? '상대를 골라 시작을 누르면 판이 선다' : '둘 다 앉았다 — 시작을 누르면 판이 선다') : '덱을 아직 안 고른 사람이 있다') : `대전에 안 들어간 플레이어가 둘 이상 앉아야 한다 (지금 ${free.length}명)`;
+  else if (mode === 'ai') need = free.length >= 1 ? (free.every(m => m.deck) ? (me.role === 'player' && !me.match ? '시작을 누르면 내가 AI 와 붙는다' : free.length === 1 ? `${free[0].name} 이(가) AI 와 붙는다` : '플레이어가 여럿이면 방장 본인이 플레이어로 앉아야 한다') : '플레이어가 덱을 골라야 한다') : '플레이어 자리에 한 명이 앉아야 한다';
   else need = '시작을 누르면 방 전체가 AI끼리 두는 판을 본다';
-  $('g-startmsg').textContent = r.live ? `대전 중: ${r.live.title}` : need;
+  $('g-startmsg').textContent = need;
   if ($('v-home').classList.contains('on')) renderHome();
 }
 function enterMatch(m, label) {
@@ -349,8 +364,9 @@ function enterMatch(m, label) {
   clearTimeout(G.poll); pollLive();
 }
 function checkMyMatch(m) { enterMatch(m, '참가함(대기실)'); }
-function checkSpectate(li) {   // 관전(④): 방에 들어와 있는데 내 좌석이 없는 매치가 떠 있으면 양쪽 패를 가린 채 따라붙는다(AI끼리 판도 포함)
+function checkSpectate(li, force) {   // 관전(④): 방에 들어와 있는데 내 좌석이 없는 매치가 떠 있으면 양쪽 패를 가린 채 따라붙는다(AI끼리 판도 포함)
   if (lobbyRole === null || !li || G.id === li.id) return;
+  if (!force && liveNow()) return;   // 동시 매치: 내가 두는/보는 판이 있으면 다른 판으로 끌려가지 않는다(관전 버튼으로만 옮긴다)
   G.id = li.id; G.pending = null; G.done = false; G.human = false; G.seat = null; G.key = null; G.spectating = true;
   stages.play.ended = false;
   stages.play.viewerLabel = '관전';
@@ -382,7 +398,8 @@ $('lobby-leave').onclick = async () => {
 $('lobby-start').onclick = async () => {
   const mode = $('g-mode').value;
   try {
-    const r = await api('room/start', {mode, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value,
+    const opp = $('g-opp-f').style.display !== 'none' ? $('g-opp').value : undefined;
+    const r = await api('room/start', {mode, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value, opponent: opp,
                                        ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
     if (r.my_match) enterMatch(r.my_match, '대전 중');
     else checkSpectate({id: r.id, names: r.names, title: r.title});
@@ -523,7 +540,7 @@ function drawDecision() {
 }
 async function answerDec(p, box, i) {
   box.innerHTML = '<div class="decision wait"><div class="q">처리 중…</div></div>'; stages.play.setHighlight([]); stages.play.clearZonePick();
-  try { await api('match/answer', {rid: p.id, idx: i, seat: G.seat, key: G.key}); } catch (e) { toast(e.message); }
+  try { await api('match/answer', {id: G.id, rid: p.id, idx: i, seat: G.seat, key: G.key}); } catch (e) { toast(e.message); }
   G.pending = null; delete box.dataset.rid; box.innerHTML = '';
 }
 // 라운드 사이 전략 덱 교체 — 서버가 보낸 할 수 있는 교체(opts)를 넣을 카드별로 묶어 보여 주고, 하나씩 고른다(고를 때마다 서버가 다시 계산)
