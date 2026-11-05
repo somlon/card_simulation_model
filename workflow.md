@@ -242,6 +242,21 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 
 ## 진행 중
 
+- **【진행 중 — 2026-11-05】 온라인판에 오프라인판 기능 중 난이도 낮은 것 이식 (사용자 지시 「난이도 낮은 것들부터 온라인 브랜치에 적용해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
+  - 매시 루틴 「온라인판 낮은 난이도 이식 자동 이어하기(매시)」(trig_013Pmcxn17YwaAbqkPpT4Nop, 매시 58분, 이 세션).
+  - 규칙: 온라인 쪽 정책(코드 · 룰 엔진 → `online/<작업명>` → online/main PR, 머지는 사용자). online/main 은 VM 서버가 받아 쓰는 배포 브랜치라 직접 푸시하지 않음.
+    `online` 계열은 CLAUDE.md R2 표에 없음(기록만 — 기존 관례대로 `online/` 접두어 사용).
+  - 계획(쌓음 — 앞 PR 머지 뒤 다음 PR 기준을 online/main 으로):
+    ① `online/port-offline-human`(기준 online/main 04f44d8): #97 족보 재료 · 레벨/속성 · 짐승조커 · 번식지, #108 선택 코스트 · 처리, #98 같은 이름 칸 구별(질문 sub · u + 화면), 공유 존 칸 번호,
+       #112 후보 · 판단 줄 이름 감춤, #90 배분 이름표 — app/main human.py 기반 + 온라인 전용(Bridge.reply 경쟁 수정 · 재배분 학습 키) 유지.
+    ② `online/port-offline-view`: #109 Recorder.sync · board.js sync 프레임, #91 발동 중인 체인 고리.
+    ③ `online/port-offline-deck`: #89 덱 편집 동명 3장 초과 차단 · 스킬 교체 태그 안 맞는 카드 표시.
+    ④ `online/port-offline-ai`: #101 자리별 AI 종류 · AI끼리 녹화 AI 종류 · #105 AI 체인 순서 학습(policy · ai) · #100 Table.update(w).
+    ⑤ 시험(git 작업 트리 안 전체 discover) · PR 4개 · 보고 · 루틴 끄기.
+  - 이번에 빼는 것(사용자 결정 필요): 데이터버그 23장 제외 · 재배분 학습 키 「남은 상급 k」.
+  - 진행 기록:
+    - 2026-11-05 시작 · 루틴 생성 · human.py 비교(app/main 판이 online 의 soltop_ 1 · 3 · 4 · 7 · 제물 선택을 이미 포함).
+
 - **【조사 기록 — 2026-11-05, 사용자 지시 「app/main 에 있는 오프라인 버전에만 있고, online 브랜치에는 없는 기능들을 찾아서 리스트업」】 app/main(3ccc67c) ↔ online/main(04f44d8) 기능 대조 (코드 변경 없음, 결과는 채팅 답변):**
   - 방법: 두 브랜치의 `nny_sim/app` · `nny_sim/viewer` 파일 · 함수 · API 목록 비교 + app 쪽 PR(#89 ~ #116)별 식별자를 online 코드에서 검색. 엔진은 model/main ↔ online/main, 데이터는 data/main ↔ online/main.
   - online 에 없음: 신경망 AI · 학습 · 내보내기 · GitHub 올리기(#92 · #94, nnai · nn_train · nn_samples · merge_nn, `/api/nn/*`) · 자리별 AI 종류(#101) · AI끼리 녹화의 AI 종류(online RecordJob 은 학습표만) ·
