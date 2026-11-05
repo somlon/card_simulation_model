@@ -10,8 +10,8 @@ choose 를 거치지 않는 판단 중 선후공 선택 · 덱 위 제외할 덱
 import sys, threading
 
 import policy as P
-from ai import HeuristicAI
-from cards import act_score
+from ai import HeuristicAI, INTERFERE
+from cards import act_score, value
 
 # 수의 가치를 계산하는 함수 — 이 안에서 불린 고르기는 「가정」이므로 사람에게 묻지 않고 AI와 같은 기본 방식으로 고른다
 # (블록 가치 v_search 가 「이 효과라면 무엇을 서치할까」를 pick_search 로 가정한다 — blocks/lib.py)
@@ -61,21 +61,24 @@ class HumanAI(P.LearnedAI):
         super().__init__(skill, learn=learn, table=table)
         self.bridge = bridge; self.hints = hints
 
-    def _ask(self, g, p, decision, labels, values=None, extra=None):
-        opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {})} for i, lab in enumerate(labels)]
+    def _ask(self, g, p, decision, labels, values=None, extra=None, subs=None, marks=None):
+        """subs: 후보마다 덧붙일 설명(같은 이름 카드를 칸으로 구별 — 「상대 몬스터 존 3」 등), marks: 후보마다 보드에서 빛낼 카드(기록기 번호)"""
+        rec = getattr(g, 'log', None)
+        if hasattr(rec, 'sync'): rec.sync()   # 묻기 전에 지금 필드를 화면에(마지막 처리 뒤의 상태 — viewer/record.Recorder.sync)
+        opts = [{'label': lab, **({'v': values[i]} if values and self.hints else {}),
+                 **({'sub': subs[i]} if subs and subs[i] else {}), **({'u': marks[i]} if marks and marks[i] else {})} for i, lab in enumerate(labels)]
         return self.bridge.ask({'kind': 'choose', 'p': p, 'decision': decision, 'opts': opts,
                                 'turn': getattr(g, 'turn', 0), 'phase': getattr(g, 'phase', ''), **(extra or {})})
 
     # ── 놓을 존 · 소환 표시 형식 (사람이 직접) ──
     def choose_zone(self, g, p, c, kind, opts):
-        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'sharedN'(빈 공유 존 칸, 공유 존 2칸이라
-        N=0·1) / 빈 마법 존 번호. 화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)
-        (사용자 지시 2026-10-30 — 공유 존이 1칸→2칸이 되며 'shared' 단일 문자열이 'shared0'·'shared1'로 바뀜)"""
+        """엔진(Game.place_monster · place_spell)이 묻는 놓을 존: 빈 몬스터 존 번호 · 'shared0' · 'shared1'(빈 공유 존 칸) / 빈 마법 존 번호.
+        화면은 그 존들을 보드에 표시해 눌러 고르게 한다(zones). 가치 계산(가정) 안이면 첫 빈칸(엔진 기본)"""
         if len(opts) == 1 or evaluating(): return opts[0]
         name = {'monster': '몬스터', 'spell': '마법'}[kind]
-        labels = [f'공유 존 {int(z[len("shared"):]) + 1}' if isinstance(z, str) else f'{name} 존 {z + 1}' for z in opts]
-        zones = [{'seat': p, 'zone': 'shared' if isinstance(z, str) else ('m' if kind == 'monster' else 's'),
-                  'i': int(z[len('shared'):]) if isinstance(z, str) else z} for z in opts]
+        sh = lambda z: isinstance(z, str) and z.startswith('shared')
+        labels = [f'공유 존 {int(z[6:]) + 1}' if sh(z) else f'{name} 존 {z + 1}' for z in opts]
+        zones = [{'seat': p, 'zone': 'shared', 'i': int(z[6:])} if sh(z) else {'seat': p, 'zone': 'm' if kind == 'monster' else 's', 'i': z} for z in opts]
         return opts[self._ask(g, p, f'놓을 존:{c.name}', labels, extra={'zones': zones, 'card': c.name})]
 
     def choose_summon_pos(self, g, p, c, how):
@@ -91,8 +94,39 @@ class HumanAI(P.LearnedAI):
         빈 몬스터 존이 있을 때 공유 존을 고르는 것은 choose_zone 의 후보로 묻는다(엔진이 choose_zone 을 부르면 여기는 쓰지 않음)"""
         return bool(full)
 
-    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps'):
+    # ── 시작 패 · 멀리건 메인 · 상급 배분 (사람이 직접) ──
+    def choose_split(self, g, p, n):
+        """시작 패 n장 중 메인 덱에서 뽑을 매수 — 학습표 AI 와 같은 판단 키(「시작 패 배분(선공|후공)」 · 후보 「메인 k」)로 사람에게 묻는다
+        (LearnedAI.choose_split 은 LearnedAI.choose 를 직접 불러 사람 자리의 choose 를 거치지 않았다)"""
+        pl = g.p[p]
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        k0 = max(lo, min(hi, self.split_default(g, p, n)[0]))
+        if evaluating() or lo >= hi: return k0
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 배분({pos})', self.split_opts(k0, lo, hi), scale=10, shown=split_labels(n))
+
+    def mulligan_split(self, g, p, back):
+        """멀리건으로 되돌린 장수만큼 다시 뽑을 때 메인 덱 몫 — 처음 배분과 달라도 된다(§4 STEP 6).
+        판단 키는 학습표 AI 와 같은 「시작 패 재배분(선공|후공·n장·남은 상급 k)」"""
+        n0 = HeuristicAI.mulligan_split(self, g, p, back)
+        pl = g.p[p]; n = len(back)
+        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
+        if evaluating() or lo >= hi: return max(lo, min(hi, n0))
+        ups = sum(1 for c in pl.hand if c.deck_kind() == '상급')
+        pos = '선공' if g.first == p else '후공'
+        return self.choose(g, p, f'시작 패 재배분({pos}·{n}장·남은 상급 {min(ups, 3)})',
+                           self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10, shown=split_labels(n))
+
+    def choose(self, g, p, decision, opts, scale=40.0, log=True, explore='eps', shown=None, forced=None, subs=None, marks=None):
+        """shown: 화면에 보일 이름표(후보 라벨 → 표시 문자열). 학습 키는 후보 라벨 그대로.
+        forced: 이미 사람이 다른 화면에서 고른 후보 번호 — 다시 묻지 않고 학습 기록 · 판단 줄만 남긴다(breeding_pick).
+        subs · marks: 화면 설명 · 빛낼 카드(_ask) — 같은 이름 카드를 후보로 따로 낼 때. 학습 키는 후보 라벨(카드 이름) 그대로"""
         if not opts: return None
+        # 상대 필드의 뒷면 카드는 이름을 감춘다(사용자 지시 2026-10-30) — 학습 키는 라벨 그대로, 화면 · 판단 줄에는 「뒷면 카드」와 칸
+        if shown is None and any(hidden_card(g, p, o[2]) for o in opts):
+            hid = {o[0]: mask_label(o[0], o[2].name) for o in opts if hidden_card(g, p, o[2])}
+            shown = lambda lab: hid.get(lab, lab)
+            if subs is None: subs = [slot_label(g, p, o[2]) if hidden_card(g, p, o[2]) else None for o in opts]
         me = g.p[p].skill.name; op = g.p[1 - p].skill.name
         base = f'{me} vs {op}|{decision}|'; b = self.bucket(g, p)
         keyed = []
@@ -100,31 +134,46 @@ class HumanAI(P.LearnedAI):
             k1 = base + lab; k2 = k1 + '|' + b
             v, n1, n2 = self.T.value(k1, k2, P.prior_of(h, scale))
             keyed.append((k1, k2, round(v * 100, 1)))
-        idx = 0 if len(opts) == 1 else self._ask(g, p, decision, [o[0] for o in opts], [k[2] for k in keyed])
+        idx = forced if forced is not None else 0 if len(opts) == 1 else \
+            self._ask(g, p, decision, [shown(o[0]) if shown else o[0] for o in opts], [k[2] for k in keyed], subs=subs, marks=marks)
         if self.learn: self.trace.append(keyed[idx][:2])
         if log and len(opts) > 1:
-            g.L(f'판단[{g.pname(p)}] {decision}: → {opts[idx][0]} (사람)', 'decision')
-            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': opts[idx][0], 'why': '사람',
-                                 'opts': [(o[0], keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
+            sh = shown or (lambda lab: lab)
+            g.L(f'판단[{g.pname(p)}] {decision}: → {sh(opts[idx][0])} (사람)', 'decision')
+            g.log[-1]['data'] = {'p': p, 'decision': decision, 'pick': sh(opts[idx][0]), 'why': '사람',
+                                 'opts': [(sh(o[0]), keyed[i][2], 0) for i, o in enumerate(opts)][:6]}
         return self._rec(g, p, idx, opts)
 
-    def choose_split(self, g, p, n):
-        """시작 패 메인/상급 배분 — LearnedAI.choose_split 은 choose_summon_pos 와 같은 문제로 LearnedAI.choose 를
-        직접 불러 사람 자리의 choose 를 거치지 않는다(soltop_ 제보 2026-11-03) — 사람은 직접 고른다"""
-        pl = g.p[p]
-        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
-        k0 = max(lo, min(hi, self.split_default(g, p, n)[0]))
-        pos = '선공' if g.first == p else '후공'
-        return self.choose(g, p, f'시작 패 배분({pos})', self.split_opts(k0, lo, hi), scale=10)
+    # ── 제물 · 번식지 (사람이 직접 — AI는 가치가 낮은 제물 · 견제/엔진 안의 우선순위로 골랐다) ──
+    def do_extra(self, g, p, pay):
+        """제물 소환 · 표시 형식 변경. 제물 소환의 후보(HeuristicAI.extra_summon_options)는 AI가 가치가 낮은 몬스터를 제물로 미리 정해 두므로,
+        실행할 때 릴리스할 몬스터를 사람에게 다시 묻는다(사용자 지시 2026-10-29)"""
+        kind, c, ts, pos = pay
+        if kind == 'summon' and ts and not evaluating():
+            ts = self.ask_tributes(g, p, c, len(ts))
+        return super().do_extra(g, p, (kind, c, ts, pos))
 
-    def mulligan_split(self, g, p, back):
-        """멀리건으로 다시 뽑을 매수 중 메인 덱 몫 — choose_split 과 같은 이유로 사람이 직접 고른다"""
-        n0 = HeuristicAI.mulligan_split(self, g, p, back)
-        pl = g.p[p]; n = len(back)
-        lo, hi = max(0, n - len(pl.upper)), min(n, len(pl.main))
-        if lo >= hi: return lo
-        pos = '선공' if g.first == p else '후공'
-        return self.choose(g, p, f'시작 패 재배분({pos}·{n}장)', self.split_opts(max(lo, min(hi, n0)), lo, hi), scale=10)
+    def ask_tributes(self, g, p, c, n):
+        """자신 필드의 릴리스할 수 있는 몬스터(Game.release_cands)에서 n장. 몬스터 존이 가득 차 있으면 1장 이상은 몬스터 존의 몬스터여야
+        소환할 자리가 생긴다(HeuristicAI.pick_tributes 와 같은 조건) — 마지막 1장에서 그 조건을 맞춘다"""
+        pool = list(g.release_cands(p)); out = []
+        while len(out) < n:
+            cand = pool
+            if len(out) == n - 1 and not g.free_m(p) and not any(t.zone == 'm' for t in out):
+                cand = [x for x in pool if x.zone == 'm']
+            x = ask_card(self, g, p, f'「{c.name}」 제물 소환 — 릴리스할 몬스터' + (f' {len(out) + 1}/{n}' if n > 1 else ''), cand)
+            out.append(x); pool.remove(x)
+        return tuple(out)
+
+    def breeding_pick(self, g, p, cands):
+        """번식지: 패에 넣을 카드를 사람이 직접 고르고, 학습표 기록(「번식지(…)」의 견제 · 엔진)은 고른 카드의 종류로 남긴다"""
+        if evaluating(): return super().breeding_pick(g, p, cands)
+        x = ask_card(self, g, p, '번식지 — 패에 넣을 카드', cands)
+        k = sum(1 for y in g.p[p].hand if y.name in INTERFERE)
+        when = '자신턴' if g.turn_player == p else '상대턴'
+        opts = [('견제', 5, x), ('엔진', 0, x)]
+        self.choose(g, p, f'번식지({when}·견제패{min(k, 3)})', opts, forced=0 if x.name in INTERFERE else 1)
+        return x
 
     def choose_first(self, me_skill, opp_skill, rnd, rng, log=None, pname=''):
         """이전 라운드 패자가 정하는 rnd라운드 선후공"""
@@ -146,25 +195,19 @@ class HumanAI(P.LearnedAI):
 
     def pick_target(self, g, p, cands, purpose='remove', any_side=False):
         if evaluating(): return HeuristicAI.pick_target(self, g, p, cands, purpose, any_side)
-        return super().pick_target(g, p, cands, purpose, any_side)
+        if not any(hidden_card(g, p, x) for x in cands): return super().pick_target(g, p, cands, purpose, any_side)
+        # 상대의 뒷면 카드가 후보면 카드마다 따로 낸다 — 이름이 같은 뒷면 카드를 하나로 합치면 같은 카드라는 것이 드러난다(학습 키는 학습표 AI와 같음)
+        pool = cands
+        if any_side: pool = [x for x in cands if x.controller != p] or cands
+        heur = HeuristicAI.pick_target(self, g, p, cands, purpose, any_side)
+        opts = [(f'{"자" if x.controller == p else "상"}:{x.name}@{x.zone}', (10 if x is heur else 0) + value(g, x) * 3, x) for x in pool]
+        return self.choose(g, p, f'대상:{purpose}', opts, scale=20, marks=[rec_uids(g, x) for x in pool])
 
     def choose_mill_deck(self, g, chooser, target, n):
         pl = g.p[target]
         idx = self._ask(g, chooser, f'덱 위에서 {n}장 제외할 덱({"자신" if target == chooser else "상대"})',
                         [f'메인 덱 ({len(pl.main)}장)', f'상급 덱 ({len(pl.upper)}장)'])
         return ('main', 'upper')[idx]
-
-    def pick_tribute_set(self, g, p, c, n):
-        """제물 일반소환: 릴리스할 몬스터 n장을 사람이 직접 고른다 — 1장씩 n번 물어서 조합을 만든다
-        (ai.py HeuristicAI.pick_tributes 는 가치가 낮은 순으로 AI가 자동으로 고른다 — 사람은 직접 고름)"""
-        chosen = []; remaining = list(g.release_cands(p))
-        for i in range(n):
-            if not remaining: return None
-            idx = self._ask(g, p, f'{c.name} 제물 {i + 1}/{n} — 릴리스할 몬스터', [f'{x}' for x in remaining])
-            chosen.append(remaining.pop(idx))
-        ts = tuple(chosen)
-        if not g.free_m(p) and not any(t.zone == 'm' for t in ts): return None
-        return ts
 
     def cont_apply(self, g, p, src, num, why=''):
         idx = self._ask(g, p, f'「{src.name}」 {num}번 [지속]을 지금 적용할까요? ({why})', ['적용', '적용 안 함'])
@@ -212,20 +255,25 @@ class HumanAI(P.LearnedAI):
         return order
 
     def respond(self, g, p, opts):
-        cand = [('패스', 0, None)]; seen = set()
+        cand = [('패스', 0, None)]; seen = set(); subs = [None]; marks = [None]
         for c, e in opts:
-            lab = f'{c.name}#{e.num}'
-            if lab in seen: continue
-            seen.add(lab); cand.append((lab, act_score(g, c, e, p, g.chain, 0), (c, e)))
+            lab = f'{c.name}#{e.num}'; key = (lab, c.uid if g.on_field(c) else None)   # 필드의 같은 이름 카드는 따로(어느 카드로 발동할지)
+            if key in seen: continue
+            seen.add(key); cand.append((lab, act_score(g, c, e, p, g.chain, 0), (c, e)))
+            subs.append(slot_label(g, p, c) if g.on_field(c) else None); marks.append(rec_uids(g, c))
         if len(cand) == 1: return None
-        return self.choose(g, p, '대응' if g.chain else '우선권', cand)
+        return self.choose(g, p, '대응' if g.chain else '우선권', cand, subs=subs, marks=marks)
 
     def main_phase(self, g, p, ph):
         failed = set()
         for _ in range(MAX_ACTIONS):
-            acts = [('종료', 0, None)]; seen = set()
-            def add(lab, s, pay):
-                if lab not in seen: seen.add(lab); acts.append((lab, s, pay))
+            acts = [('종료', 0, None)]; seen = set(); subs = [None]; marks = [None]
+            def add(lab, s, pay, card=None):
+                """같은 라벨(카드 이름)이어도 필드의 카드는 카드마다 따로 낸다 — 어느 카드로 발동 · 표시 형식 변경할지 고르게"""
+                f = card is not None and g.on_field(card)
+                key = (lab, card.uid if f else None)
+                if key in seen: return
+                seen.add(key); acts.append((lab, s, pay)); subs.append(slot_label(g, p, card) if f else None); marks.append(rec_uids(g, card) if card is not None else None)
             if ph == '진행' and g.can_normal(p):
                 for c in g.p[p].hand:
                     if c.type != '몬스터' or c.flags.get('effect_only') or c.flags.get('no_normal') or g.tributes_needed(c.level) > 0: continue
@@ -235,16 +283,16 @@ class HumanAI(P.LearnedAI):
                 for c in g.p[p].hand:
                     alt = getattr(c, 'alt_normal', None)
                     if alt and alt[0](g, p) and g.can_place(c, p) and g.can_normal(p, c): add(f'특수 일반소환:{c.name}', 70, ('alt', c, None))
-            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph): add(lab, s, ('extra', pay[1], pay))
+            for lab, s, pay in self.extra_summon_options(g, p) + self.position_options(g, p, ph): add(lab, s, ('extra', pay[1], pay), pay[1])
             for c, e in g.options(p, ('ignition', 'quick')):
-                if (c.uid, e.num) not in failed: add(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e))
+                if (c.uid, e.num) not in failed: add(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e), c)
             if g.free_s(p):
                 for c in g.p[p].hand:
                     if c.type == '마법' and c.d.get('subtype') in ('트리거', '신속') and not getattr(c.effects[0], 'hand_ok', False) \
                        and any(e.kind in ('resp', 'trigger', 'quick') for e in c.effects):
                         add(f'세트:{c.name}', 8, ('set', c, None))
             if len(acts) == 1: return
-            pick = self.choose(g, p, f'{ph} 행동', acts)
+            pick = self.choose(g, p, f'{ph} 행동', acts, subs=subs, marks=marks)
             if pick is None: return
             kind, c, e = pick
             if kind == 'summon': g.normal_summon(c, p); g.after_action(p)
@@ -255,18 +303,8 @@ class HumanAI(P.LearnedAI):
             elif kind == 'extra': self.do_extra(g, p, e)
             else: g._remove(c); g.place_spell(c, p, False); g.L(f'{g.pname(p)} 마법 1장 세트')
 
-    def do_extra(self, g, p, pay):
-        """HeuristicAI.do_extra 와 같되, 제물 일반소환(kind == 'summon')은 AI가 자동으로 고른 제물 대신
-        사람이 pick_tribute_set 으로 직접 골라 g.normal_summon 을 그대로 호출한다(룰 불가침 — 엔진은 안 건드림)"""
-        kind, c, ts, pos = pay
-        if kind == 'summon':
-            if ts:
-                chosen = self.pick_tribute_set(g, p, c, len(ts))
-                if chosen is None:
-                    g.L(f'{g.pname(p)} {c} 제물 소환 취소 (제물 선택 불가)', 'sys'); return
-                ts = chosen
-            g.normal_summon(c, p, ts, pos); g.after_action(p)
-        else: g.change_position(c, p); g.triggers()
+    # 제물 일반소환의 제물은 위 do_extra · ask_tributes 가 사람에게 묻는다(칸 이름표 · 몬스터 존이 가득 차면 마지막 제물은 몬스터 존에서).
+    # 예전 이 자리의 두 번째 do_extra · pick_tribute_set(online 660a4e9)은 위 do_extra 를 덮어써 칸 이름표가 빠졌다 — 하나로 정리.
 
     def battle_phase(self, g, p):
         failed = set()
@@ -274,28 +312,29 @@ class HumanAI(P.LearnedAI):
             if g.no_attack.get(p) == g.turn: g.L('공격 봉인 상태', 'sys'); return
             attackers = [m for m in g.battle_cards(p) if m.faceup and m.pos == 'atk' and m.summon_turn <= g.turn
                          and m.attacks_made < self.max_attacks(g, m) and not g.attack_banned(m)]
-            atk_opts = []; seen = set()
+            # 공격하는 몬스터 · 공격 대상은 카드마다 따로 낸다 — 같은 이름 카드가 여러 장이어도 어느 카드로 · 어느 카드를 공격할지 고른다(사용자 지시 2026-10-30).
+            # 학습 키(라벨)는 카드 이름 그대로, 화면 설명(subs)은 칸 · 빛낼 카드(marks)는 그 카드들
+            opts = [('공격 종료', 0, None)]; subs = [None]; marks = [None]
             for a in attackers:
                 av = g.atk(a)
                 if g.can_direct(a) and not (g.cont_flag(a, 'attack_all') and g.battle_cards(1 - p)):
-                    lab = f'{a.name}→직접'
-                    if lab not in seen: seen.add(lab); atk_opts.append((lab, av + 500, (a, None)))
+                    opts.append((f'{a.name}→직접', av + 500, (a, None))); subs.append(f'{slot_label(g, p, a)} → 직접공격'); marks.append(rec_uids(g, a))
                 for t in g.attack_targets(a):
                     tv = g.atk(t) if t.pos == 'atk' else g.df(t)
-                    lab = f'{a.name}→{t.name}'
-                    if lab not in seen: seen.add(lab); atk_opts.append((lab, av - tv, (a, t)))
+                    opts.append((f'{a.name}→{t.name}', av - tv, (a, t))); subs.append(f'{slot_label(g, p, a)} → {slot_label(g, p, t)}')
+                    marks.append(rec_uids(g, a, t))
             # soltop_ 제보(4번) — 전투 단계도 발동 시점 제한이 없다(engine.py spell_speed_ok 주석) — 공격 명령만
             # 만들고 ignition/quick 발동 후보를 넣지 않아 전투 단계에서는 사람이 효과를 아예 발동할 수 없었다.
-            # main_phase(208~209행)와 같은 방식으로 더한다 — 우선권을 포기(공격 종료 선택 가능)해도 그대로 있어야 함
-            act_opts = [(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e))
+            # main_phase와 같은 방식으로 더한다 — 우선권을 포기(공격 종료 선택 가능)해도 그대로 있어야 함
+            act_opts = [(f'발동:{c.name}#{e.num}', act_score(g, c, e, p, None, 0), ('act', c, e), c)
                         for c, e in g.options(p, ('ignition', 'quick')) if (c.uid, e.num) not in failed]
-            act_opts = [o for o in act_opts if o[0] not in seen]
-            if atk_opts and any(g.must_attack(o[2][0]) for o in atk_opts):
-                opts = atk_opts   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료·발동 불가 (규칙)
+            if len(opts) > 1 and any(g.must_attack(o[2][0]) for o in opts[1:]):
+                opts, subs, marks = opts[1:], subs[1:], marks[1:]   # 격투가의 투기장: 반드시 공격해야 하는 몬스터가 공격할 수 있으면 공격 종료·발동 불가 (규칙)
             else:
-                opts = [('공격 종료', 0, None)] + atk_opts + act_opts
-            if not atk_opts and not act_opts: return
-            pick = self.choose(g, p, '공격', opts, scale=400)
+                for lab, s, pay, c in act_opts:
+                    opts.append((lab, s, pay)); subs.append(slot_label(g, p, c) if g.on_field(c) else None); marks.append(rec_uids(g, c))
+            if len(opts) == 1 and opts[0][2] is None: return   # 공격할 몬스터도 발동할 효과도 없음
+            pick = self.choose(g, p, '공격', opts, scale=400, subs=subs, marks=marks)
             if pick is None: return
             if isinstance(pick, tuple) and len(pick) == 3 and pick[0] == 'act':
                 _, c, e = pick
@@ -310,12 +349,58 @@ ZONE_LABEL = {'hand': '패', 'm': '몬스터 존', 's': '마법 존', 'grave': '
               'shared': '공유 존', 'fieldz': '필드 존', 'skill': '스킬 존'}
 
 
+def split_labels(n):
+    """후보 라벨 「메인 k」 → 화면 이름표 「메인 k / 상급 n-k」"""
+    return lambda lab: f'{lab} / 상급 {n - int(lab.split()[-1])}'
+
+
+def optional_phrase(c, num, mark):
+    """카드 c의 num번 효과 문장에서 선택을 나타내는 문장(「…할 수도 있다」 · 「…할 수 있다」) — 화면 설명용"""
+    import cards
+    line = next((x for x in (c.d.get('text') or '').split('\n') if x.startswith(f'{num}.')), '')
+    return next((s.strip() for s in cards.sentences(line) if mark in s), line)[:120]
+
+
+def slot_label(g, who, x):
+    """필드의 카드가 있는 칸 — 「자신 몬스터 존 2」 · 「상대 공유 존」 · 「상대 몬스터 존 3 (수비)」(같은 이름 카드를 구별)"""
+    s = g.side_of(x); side = '자신' if s == who else '상대'; z = ZONE_LABEL.get(x.zone, x.zone)
+    if x.zone in ('m', 's'):
+        row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
+        if x in row: z += f' {row.index(x) + 1}'
+    elif x.zone == 'shared' and x in g.shareds: z += f' {g.shared_index(x) + 1}'   # 공유 존 2칸
+    pos = ' (뒷면)' if not x.faceup else ' (수비)' if x.is_monster() and getattr(x, 'pos', 'atk') == 'def' else ''
+    return f'{side} {z}{pos}'
+
+
+def rec_uids(g, *cards):
+    """카드들의 기록기 번호(화면이 보드에서 빛낼 카드) — 기록기가 없으면 None"""
+    rec = getattr(g, 'log', None)
+    if not hasattr(rec, 'reg'): return None
+    return [rec.reg(c) for c in cards if c is not None] or None
+
+
+HIDDEN_NAME = '뒷면 카드'   # 상대 필드의 뒷면 카드를 사람에게 보일 때의 이름
+
+
+def hidden_card(g, who, x):
+    """x가 who에게 감춰진 카드인가: 상대 필드에 뒷면으로 있는 카드(세트 카드 · 뒷면 수비 몬스터)"""
+    from engine import Card
+    return isinstance(x, Card) and g.on_field(x) and not x.faceup and g.side_of(x) != who
+
+
+def mask_label(lab, name):
+    """후보 라벨 속 카드 이름을 감춘다"""
+    return lab.replace(name, HIDDEN_NAME)
+
+
 def card_label(g, who, x):
     """후보 카드 이름표 — 필드의 카드는 칸 번호까지(같은 이름 몬스터 둘을 구별), 패 · 덱 · 묘지는 이름만(같은 이름은 같은 선택)"""
     s = g.side_of(x); side = '자신' if s == who else '상대'; z = ZONE_LABEL.get(x.zone, x.zone)
     if x.zone in ('m', 's'):
         row = g.p[x.controller].m if x.zone == 'm' else g.p[x.controller].s
         if x in row: z += f' {row.index(x) + 1}'
+    elif x.zone == 'shared' and x in g.shareds: z += f' {g.shared_index(x) + 1}'   # 공유 존 2칸
+    if hidden_card(g, who, x): return f'{side} {z}: {HIDDEN_NAME}'
     return f'{side} {z}: {x.name}' + ('' if x.faceup or s == who else ' (뒷면)')
 
 
@@ -561,6 +646,54 @@ def install_block_hooks():
         return False
     L.swapped = swapped
 
+    # 포커짐승들: 족보 재료(지금 낼 수 있는 재료 조합 중에서 — cards8.plan_options) · 「원하는 레벨과 원하는 속성」 부여 · 짐승조커 선언
+    if hasattr(L, 'combo_pick'):
+        import cards8
+        orig_combo = L.combo_pick
+
+        def combo_pick(g, c, p, k):
+            ai = human_at(g, p)
+            if not ai: return orig_combo(g, c, p, k)
+            opts = cards8.plan_options(g, c, p, k['kind'])
+            if not opts: return orig_combo(g, c, p, k)
+            labs = [' + '.join(card_label(g, p, m.card) for m in sel) for _, sel in opts]
+            i = 0 if len(opts) == 1 else ai._ask(g, p, f'「{c.name}」 {cards8.KIND_LABEL[k["kind"]]} 재료', labs)
+            g.L(f'판단[{g.pname(p)}] {c.name} 족보 재료: {labs[i]} (사람)', 'decision')
+            return opts[i][1]
+        L.combo_pick = combo_pick
+        orig_grant, orig_joker = L.grant_pick, L.joker_pick
+
+        def grant_pick(g, p, t):
+            ai = human_at(g, p)
+            return ask_level_attr(cards8, ai, g, p, f'「{t.name}」에 부여할') if ai else orig_grant(g, p, t)
+        L.grant_pick = grant_pick
+
+        def joker_pick(g, p, c):
+            ai = human_at(g, p)
+            return ask_level_attr(cards8, ai, g, p, f'「{c.name}」 선언할') if ai else orig_joker(g, p, c)
+        L.joker_pick = joker_pick
+
+    # 「…하고 발동할 수도 있다」 선택 코스트 · 「…할 수 있다」 선택 처리 — AI는 가치(L.wants_cost · L.wants)로 정하고, 사람은 직접 고른다
+    # (사용자 지시 2026-10-30: 「강제로 발동한다」가 아니면 모든 선택을 플레이어에게 묻는다 — 행운의 도적 1번 코스트를 낼지 묻지 않던 것)
+    orig_wants_cost, orig_wants = L.wants_cost, L.wants
+
+    def wants_cost(g, c, p, l, k):
+        ai = human_at(g, p)
+        if not ai: return orig_wants_cost(g, c, p, l, k)
+        bd = L.BLOCKS[k['blk']]
+        if bd.can is not L._always and not bd.can(g, c, p, l.ctx.get('ev'), k): return False   # 낼 수 없는 코스트는 묻지 않는다
+        phrase = optional_phrase(c, l.eff.num, '수도 있다')
+        return ai.choose(g, p, f'선택 코스트:{c.name}#{l.eff.num}', [('코스트를 낸다', 1, True), ('내지 않는다', 0, False)],
+                         subs=[phrase, '코스트 없이 발동'], marks=[rec_uids(g, c), None])
+    L.wants_cost = wants_cost
+
+    def wants(g, c, p, l, b):
+        ai = human_at(g, p)
+        if not ai: return orig_wants(g, c, p, l, b)
+        return ai.choose(g, p, f'선택 처리:{c.name}#{l.eff.num}', [('한다', 1, True), ('하지 않는다', 0, False)],
+                         subs=[optional_phrase(c, l.eff.num, '수 있다'), None], marks=[rec_uids(g, c), None])
+    L.wants = wants
+
     # 일반 서치 — 서치할 카드(같은 이름 · 같은 곳은 같은 선택)
     orig_search = L.BLOCKS['search'].run
 
@@ -584,6 +717,14 @@ def install_block_hooks():
         return len(got) == n or (k.get('upto') and bool(got))
     set_run('search', do_search)
     _HOOKED = True
+
+
+def ask_level_attr(cards8, ai, g, p, title):
+    """「원하는 레벨과 원하는 속성」 — 레벨(cards8.LEVELS) · 속성(cards8.SUITS)을 차례로 묻는다 → (레벨, 속성)"""
+    lv = list(cards8.LEVELS)[ai._ask(g, p, f'{title} 레벨', [f'레벨 {x}' for x in cards8.LEVELS])]
+    at = cards8.SUITS[ai._ask(g, p, f'{title} 속성', list(cards8.SUITS))]
+    g.L(f'판단[{g.pname(p)}] {title} 레벨 · 속성: 레벨 {lv} · {at} (사람)', 'decision')
+    return lv, at
 
 
 def kinds_ask(L, ai, g, c, p, k):

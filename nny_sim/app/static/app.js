@@ -504,8 +504,8 @@ function finishLive(d) {
 }
 // 판단 패널
 const DEC_TITLE = [[/^진행 행동$/, '진행 단계 — 할 행동을 고르세요'], [/^정비 행동$/, '정비 단계 — 할 행동을 고르세요'], [/^우선권$/, '우선권 — 효과를 발동할까요?'],
-  [/^대응$/, '체인 대응 — 응답할까요?'], [/^공격$/, '전투 — 공격할 몬스터와 대상'], [/^대상:(.+)$/, '대상 고르기 ($1)'], [/^트리거:(.+)#(\d+)$/, '「$1」 $2번 트리거 — 발동할까요?'],
-  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
+  [/^대응$/, '체인 대응 — 응답할까요?'], [/^공격$/, '전투 — 공격할 몬스터와 대상'], [/^대상:(.+)$/, '대상 고르기 ($1)'], [/^트리거:(.+)#(\d+)$/, '「$1」 $2번 트리거 — 발동할까요?'], [/^선택 코스트:(.+)#(\d+)$/, '「$1」 $2번 — 코스트를 내고 발동할까요?'], [/^선택 처리:(.+)#(\d+)$/, '「$1」 $2번 — 이 처리를 할까요?'],
+  [/^멀리건:(.+)$/, '멀리건 — 「$1」을(를) 되돌릴까요?'], [/^시작 패 배분\((선공|후공)\)$/, '시작 패($1) — 메인 덱 · 상급 덱에서 몇 장씩 뽑을까요?'], [/^시작 패 재배분\((선공|후공)·(\d+)장·.*\)$/, '멀리건($1) — 되돌린 $2장을 메인 · 상급에서 몇 장씩 다시 뽑을까요? (처음과 달라도 됩니다)'], [/^드로우 덱/, '드로우할 덱'], [/^소환 표시 형식:(일반|특수)$/, '$1소환 — 표시 형식(앞면 공격 · 앞면 수비)'], [/^놓을 존:(.+)$/, '「$1」을(를) 놓을 존 — 보드에서 빛나는 칸을 누르거나 아래에서 고르세요'], [/^버릴 카드$/, '버릴 카드'], [/^서치:(.+)$/, '서치 — $1']];
 function decTitle(q) { for (const [re, t] of DEC_TITLE) if (re.test(q)) return q.replace(re, t); return q; }
 function optText(lab) {
   let m;
@@ -526,12 +526,16 @@ function drawDecision() {
   if (box.dataset.rid === String(p.id)) return;
   box.dataset.rid = String(p.id);
   if (p.kind === 'side') { drawSide(p, box); return; }
+  // o.sub: 같은 이름 카드를 구별하는 칸 설명(「자신 몬스터 존 1 → 상대 몬스터 존 3」), o.u: 빛낼 카드(기록기 번호) — 사람 자리 HumanAI._ask
   const opts = p.opts.map((o, i) => { const x = optText(o.label); const src = x.card && faceUrl(x.card);
     const eff = x.eff && x.card && POOL[x.card] ? effText(POOL[x.card], x.eff).split('\n')[0] : '';
-    return `<button class="opt" data-i="${i}" data-card="${esc(x.card || '')}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(x.t)}${x.s || eff ? `<small>${esc(x.s || '')}${eff ? ' — ' + esc(eff.replace(/^\d+\.\s*/, '')) : ''}</small>` : ''}</span>${o.v != null ? `<span class="v">${o.v}%</span>` : ''}</button>`; }).join('');
+    const sub = [o.sub, x.s].filter(Boolean).join(' · ');
+    return `<button class="opt" data-i="${i}" data-card="${esc(x.card || '')}" data-u="${esc((o.u || []).join(','))}">${src ? `<img src="${src}" alt="">` : ''}<span class="t">${esc(x.t)}${sub || eff ? `<small>${esc(sub)}${eff ? ' — ' + esc(eff.replace(/^\d+\.\s*/, '')) : ''}</small>` : ''}</span>${o.v != null ? `<span class="v">${o.v}%</span>` : ''}</button>`; }).join('');
   box.innerHTML = `<div class="decision"><div class="q">${esc(decTitle(p.decision))}<small>${p.turn ? p.turn + '턴 · ' + esc(p.phase) : ''}</small></div><div class="opts">${opts}</div></div>`;
   box.querySelectorAll('.opt').forEach(b => {
-    b.onmouseenter = () => { const c = b.dataset.card; if (c) { stages.play.showName(c); stages.play.setHighlight([c]); } };
+    b.onmouseenter = () => { const c = b.dataset.card, u = b.dataset.u ? b.dataset.u.split(',') : [];
+      if (c) stages.play.showName(c);
+      if (u.length) stages.play.setHighlight([], u); else if (c) stages.play.setHighlight([c]); };   // 칸이 정해진 후보는 그 카드만 빛낸다
     b.onmouseleave = () => stages.play.setHighlight([]);
     b.onclick = () => answerDec(p, box, +b.dataset.i);
   });
