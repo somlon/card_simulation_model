@@ -256,6 +256,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
   - 이번에 빼는 것(사용자 결정 필요): 데이터버그 23장 제외 · 재배분 학습 키 「남은 상급 k」.
   - 진행 기록:
     - 2026-11-05 시작 · 루틴 생성 · human.py 비교(app/main 판이 online 의 soltop_ 1 · 3 · 4 · 7 · 제물 선택을 이미 포함).
+    - 2026-11-05 ① `online/port-offline-human` 98ea1c1 푸시 — app/main human.py 기반 + Bridge 경쟁 수정 유지, app.js 질문 sub · u · board.js setHighlight(uids),
+      재배분 키는 online policy 의 AI 키(「남은 상급 k」)와 같게(사람 쪽만 빠져 있었음 — 이식에 포함). app/main human.py 의 do_extra 중복 정의(#124 로 생김 — 제물 칸 이름표 · 조건이 덮임)를 #97 판 하나로 정리.
+      시험: human_choice_test 13개 통과(test_online_human_choices 로 discover 에 넣음) · 전체 513개 OK. 다음: ② view.
 
 - **【조사 기록 — 2026-11-05, 사용자 지시 「app/main 에 있는 오프라인 버전에만 있고, online 브랜치에는 없는 기능들을 찾아서 리스트업」】 app/main(3ccc67c) ↔ online/main(04f44d8) 기능 대조 (코드 변경 없음, 결과는 채팅 답변):**
   - 방법: 두 브랜치의 `nny_sim/app` · `nny_sim/viewer` 파일 · 함수 · API 목록 비교 + app 쪽 PR(#89 ~ #116)별 식별자를 online 코드에서 검색. 엔진은 model/main ↔ online/main, 데이터는 data/main ↔ online/main.
