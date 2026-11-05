@@ -7,7 +7,7 @@ const HAND_Y = [1750, 100], HAND_X = [96, 1568];
 const CH = 262, HAND_SCALE = 0.68;
 const PHASES = ['준비', '진행', '전투', '정비', '종료'];
 // 1× 재생의 기록 줄 사이 시간(ms) · 카드 이동 연출 시간 — 사람이 따라가기 쉽게 예전(발동 1000 · 이동 380)의 약 1.6배 (사용자 지시 2026-10-29)
-const BASE_DELAY = {act: 1600, res: 1450, draw: 850, sys: 1100, turn: 1700, round: 3000, end: 3200, side: 2400, decision: 650};
+const BASE_DELAY = {act: 1600, res: 1450, draw: 850, sys: 1100, turn: 1700, round: 3000, end: 3200, side: 2400, decision: 650, sync: 200};   // sync: 줄 없이 지금 필드만 보여 주는 프레임(Recorder.sync)
 const MOVE_MS = 640, MOVE_MS_MAX = 1100;
 const ARROW = {start: 80, end: 120, head: 64, bend: 0.16, bendMax: 150, min: 60};   // 화살표: 카드 중심에서 띄우는 길이 · 머리 크기 · 휘는 정도
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -502,7 +502,7 @@ class Stage {
     const frag = document.createDocumentFragment();
     for (let i = start; i < this.F.length; i++) {
       const fr = this.F[i]; const r = document.createElement('div'); r.className = 'row k-' + fr.k; r.dataset.i = i;
-      if (this.hidden(fr)) r.style.display = 'none';
+      if (this.hidden(fr) || fr.k === 'sync') r.style.display = 'none';
       r.innerHTML = this.rowHtml(fr, i); frag.appendChild(r); this.rows[i] = r;
     }
     this.logEl.appendChild(frag);

@@ -35,6 +35,7 @@ class Recorder(list):
         self.cards = {}                       # uid → [카드 이름, 주인 자리]
         self.pending = []                     # 다음 기록 줄에 붙일 연출
         self.chain_prev = []
+        self.activating = []                  # 발동 중인 고리 [(카드, 효과, 자리, 그때 체인 길이)] — 엔진은 발동 줄을 체인에 넣기 전에 남긴다
 
     def append(self, e):
         super().append(e)
@@ -53,6 +54,15 @@ class Recorder(list):
         if fx: fr['fx'] = fx
         self.frames.append(fr)
         if k == 'end': self.game = None
+
+    def sync(self):
+        """지금 상태를 보여 주는 숨은 프레임(k 'sync' — 기록 패널에 줄이 없다)을 덧붙인다. 상태가 마지막 프레임과 같으면 하지 않는다.
+        기록 줄은 엔진이 행동하기 직전에 남기므로 프레임의 상태는 그 줄의 행동 전이다 — 다음 줄이 오기 전에 엔진이 멈추면(사람의 판단을 기다림)
+        마지막 처리 뒤의 필드가 화면에 나오지 않았다(오프라인판 app/main #109 이식 — 효과가 처리된 뒤에도 처리 전 필드가 보이던 것) → 멈추기 전에 부른다"""
+        if self.game is None: return
+        n = len(self.states); i = self.snapshot()
+        if len(self.states) == n: return   # 바뀐 것이 없다
+        self.frames.append({'k': 'sync', 'm': '', 'r': self.round, 's': i, '_e': {'k': 'sync', 'm': ''}})
 
     # ── 상태 ──
     def reg(self, c):
@@ -73,27 +83,35 @@ class Recorder(list):
         return d
 
     def state(self, g):
-        from engine import link_targets
         P = []
         for pl in g.p:
             P.append({'hp': pl.hp, 'hand': [self.reg(c) for c in pl.hand], 'main': len(pl.main), 'upper': len(pl.upper),
                       'grave': [self.reg(c) for c in pl.grave], 'ban': [self.reg(c) for c in pl.banish],
                       'm': [self.cell(g, c) for c in pl.m], 's': [self.cell(g, c) for c in pl.s], 'sk': self.cell(g, pl.skill)})
-        ch = []
-        for l in g.chain:   # [카드, 효과 번호, 발동한 자리, 무효, 대상 카드들(engine.link_targets — 발동 때 고른 「대상」)]
-            lk = [self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))]
-            to = [self.reg(x) for x in link_targets(l) if x is not l.card]
-            if to: lk.append(to)
-            ch.append(lk)
         # 공유 존 2칸(사용자 지시 2026-10-30) — 'sh'·'so'·'sc'는 칸마다 하나씩(인덱스로 맞춰) 담는 리스트(예전: 단일 값).
         # 화면(board.js)도 칸마다 표시하도록 맞춰졌다(2026-10-31) — 'sc'는 칸이 비어 있으면 그 인덱스에 None을 넣어
         # 'sh'와 어긋나지 않게 한다(예전엔 빈 칸을 걸러내 인덱스가 밀렸었다 — 이번에 같이 고침).
-        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': ch,
+        st = {'P': P, 't': g.turn, 'tp': g.turn_player, 'fp': g.first, 'ph': g.phase, 'ch': self.chain_state(g),
               'sh': [self.cell(g, c) for c in g.shareds], 'so': list(g.shared_owners), 'fz': self.cell(g, g.fieldz)}
         sc = [c.controller if c is not None else None for c in g.shareds]
         if any(x is not None for x in sc): st['sc'] = sc
         if g.fieldz is not None: st['fc'] = g.fieldz.controller
         return st
+
+    def chain_state(self, g):
+        """체인 고리 [카드, 효과 번호, 발동한 자리, 무효, 대상 카드들(engine.link_targets — 발동 때 고른 「대상」)].
+        engine.Game.activate 는 「… 발동 — 체인 k」 줄과 코스트를 고리를 체인에 넣기 전에 처리한다 → 발동 중인 고리를 체인 끝에 덧붙여
+        그 사이의 프레임에도 고리 k 가 보이게 한다(처리는 높은 번호부터 — 체인 패널 · res 연출이 이 고리를 찾는다, 오프라인판 #91 이식)"""
+        from engine import link_targets
+        ch = []
+        for l in g.chain:
+            lk = [self.reg(l.card), l.eff.num, l.player, int(bool(l.negated))]
+            to = [self.reg(x) for x in link_targets(l) if x is not l.card]
+            if to: lk.append(to)
+            ch.append(lk)
+        for c, e, p, n0 in self.activating:
+            if len(g.chain) <= n0: ch.append([self.reg(c), e.num, p, 0])
+        return ch
 
     def snapshot(self):
         g = self.game
@@ -147,8 +165,14 @@ def install_hooks():
         if isinstance(log, Recorder): log.game = self
 
     def activate(self, p, c, e, ev=None):
-        if isinstance(self.log, Recorder): self.log.pending.append({'t': 'act', 'u': self.log.reg(c), 'n': e.num, 'p': p})
-        return o_act(self, p, c, e, ev)
+        log = self.log
+        if not isinstance(log, Recorder): return o_act(self, p, c, e, ev)
+        log.pending.append({'t': 'act', 'u': log.reg(c), 'n': e.num, 'p': p})
+        if self is not log.game: return o_act(self, p, c, e, ev)   # 가치 계산용 복사 게임 등 — 기록 중인 게임의 발동만 고리로 둔다
+        log.activating.append((c, e, p, len(self.chain)))
+        try: return o_act(self, p, c, e, ev)
+        finally:   # 고리가 체인에 들어갔으면(대상 포함) 다음 처리 줄이 찾을 직전 체인도 지금 체인으로
+            log.activating.pop(); log.chain_prev = log.chain_state(self)
 
     def attack(self, a, target):
         if isinstance(self.log, Recorder):
