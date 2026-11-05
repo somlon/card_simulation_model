@@ -252,6 +252,11 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
     덱 편집 동명 3장 초과 차단 · 스킬 교체 때 태그 안 맞는 카드 표시(#89, misfit) · 시작 패 배분 「메인 k / 상급 n-k」 표시와 재배분 학습 키 「남은 상급 k」 ·
     배포 · 도구: Windows 빌드(build_windows · win/launcher), 기본 재생 기록 녹화(make_library · --rerecord), 단독 재생 HTML(viewer/replay · template · assets · 카드 시트), README, 앱 시험(app/tests).
     엔진(model/main): AI 의 같은 타이밍 체인 순서 학습(LearnedAI · HeuristicAI.order_triggers, #105) · 학습표 가중 갱신(Table.update w, #100). 데이터: online 은 데이터버그 23장이 그대로(풀 200장 — data/main 은 #114 로 177장).
+  - (같은 날 후속 — 온라인 적용 난이도 분류, 채팅 답변) 구조적 근거: online/blocks/lib 에 combo_pick · grant_pick · joker_pick · wants_cost · wants 훅 자리, ai.breeding_pick, cards8.plan_options, engine.shared_index,
+    session.human_side(좌석별 bridge) 가 이미 있음 → 사람 선택 · 화면 갱신 · 체인 표시 · 덱 편집 등은 난이도 낮음.
+    **online `LiveMatch.poll` 은 모든 좌석 · 관전자에게 같은 frames · states · cards 를 통째로 보내고 감춤은 board.js 에서만 함** → 뒷면 카드 · 전략 덱 교체 감춤을 사람 대 사람에서 실제로 지키려면 서버 좌석별 거르기가 필요(난이도 높음).
+    그 밖에 높음: 사람 체인 순서(#106 — online choose_triggers 와 두 구현 충돌, #128 과 같은 문제), 학습 데이터 계열(#102 · #113 · #103 — online 학습은 사람 대전만 · 기록 파일 하나 · 공유 서버 권한),
+    신경망(#92 · #94 — VM 런타임 numpy 없음 · 공유 서버 CPU · PC 기준 내보내기 흐름).
 
 - **【완료 — 2026-11-05, 사용자 지시 「열린 pr들 전부 확인해서 머지해도 문제 없는 것들 전부 머지해줘」, 세션 claude/keen-thompson-9zx1rw】 열린 PR 6개 점검 · #129 → #130 머지:**
   - 점검 방법: PR 마다 지금 기준 브랜치 위에 로컬 모의 머지(`git merge-tree`) → 충돌 확인 → 전체 시험(`python3 -m unittest discover -p 'test*.py'`, numpy 2.4.6 · scipy 1.17.1 있음).
