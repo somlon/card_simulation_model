@@ -3,7 +3,8 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-11-05 (2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 — 사용자 지시. 10-30 19:34 UTC 기록 뒤 바뀐 것: PR #105 · #113 머지(11-03, somlon) · #112 · #123 · #124 · #125 머지(11-03, chainedcreeper — #112 는 app/main 3ccc67c 충돌 해결 머지),
+마지막 갱신: 2026-11-05 (열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
+#128 은 기존 시험 2개를 깨뜨려 보류 · #106 · #127 은 대체돼 열린 채로 둠 — 「진행 중」 첫 항목. 이전: 2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 — 사용자 지시. 10-30 19:34 UTC 기록 뒤 바뀐 것: PR #105 · #113 머지(11-03, somlon) · #112 · #123 · #124 · #125 머지(11-03, chainedcreeper — #112 는 app/main 3ccc67c 충돌 해결 머지),
 #106 은 아직 열림 → 충돌 해결판 #128(열림, 세창 확인 뒤 머지), online 계열(chainedcreeper 쪽 온라인판 `online/main` · 매시 루틴 · 디스코드 비서 봇) 10-30 시작 — PR #104 · #117 ~ #122 중복으로 닫힘, #126 · #127 → #129(통합) · #130 열림,
 Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`data/human-games-ksc` · `data/human-games-laptop1211`), 기준 브랜치 머리 model/main d0049bf · app/main 3ccc67c · data/main d66c665, main 미반영 — 상세는 「진행 중」 첫 항목.
 이전: 2026-10-30 데이터버그 제외 · 학습 리셋 v1.3.3 — PR #110 ~ #116 머지(「진행 중」 10-30 항목들). 이전: AI 학습 데이터 7건 시작 — 사용자 지시. 이전: 같은 이름 공격 대상 구별 · 휴리스틱 AI 완료 — PR #98 · #99, 배포본 v1.2.2 채팅창 전달, 루틴 끔. 이전: 공격 대상 같은 이름 구별 · 휴리스틱 AI 시작 — 사용자 지시. 이전: PR #96 → #97 머지 — 사용자 지시, v1.2.1 채팅창 재전달. 이전: v1.2 발견 4건 완료 — PR #96 · #97, 배포본 v1.2.1 exp/windows-app c15bf01 · 채팅창 전달, 루틴 끔. 이전: v1.2 발견 4건 시작 — 사용자 지시, 조사 · 브랜치 계획. 이전: PR #93 충돌 해결 · 머지 — 사용자 지시, app/main 3c18d0b, #86 ~ #95 모두 머지 · main 미반영. 이전: 게임 프로그램 v1.2.0 배포본 완료 — exp/windows-app 3dc28f9 · 채팅창 전달, PR #92 ~ #95, 루틴 끔. 이전: 상대 전략 덱 교체 감춤 · 재생 카드 이미지 · 신경망 내보내기 구현 — 사용자 지시, 배포 통합 a3e5816 · 기본 신경망 data/drl-base-v2. 이전: 시작 패 비율 · 멀리건 재배분 · 체인 표시 — 사용자 지시, 세션 압축으로 새 세션에 인계. 이전: 앱 수정 5건 시작 — 사용자 지시, 루틴 trig_01L86qUTU8TXNxxjEx752USr, 신경망 학습 버튼과 병행(배포본 v1.2.0에 함께). 이전: 게임 프로그램 「신경망 학습」 버튼 시작 — 사용자 지시, 루틴 trig_01M2dNk3Efw6eufGG2GwpSyQ, 기본 신경망 재학습 필요(시험 모델 스키마 불일치). 이전: 재생 화면 시각화 개선 완료 — v1.1.0 배포본 `exp/windows-app` 96ca656 채팅창 전달, 관전 탭 보드 크기 수정 693b4cd(배포본 미포함 — 재빌드 사용자 확인), 루틴 끔. 이전: 재생 화면 시각화 개선 ① ~ ⑥ 완료 · 새 기본 재생 기록 `exp/windows-app` release/library_v1.1 · 샘플 HTML 전달 — v1.1.0 빌드는 새 세션이 다시 빌드 중. 이전: 재생 화면 시각화 개선 시작 — 사용자 지시, 루틴 trig_01HH6JwhAaGVg35FQke2uhC5, 하위 선택 · 전략 덱 교체는 새 세션이 병행. 이전: 게임 프로그램 하위 선택 · 사람 전략 덱 교체 — 사용자 지시, 루틴 trig_017Ut2zBxoU5FagqEyJt9SVC · 세션 압축으로 새 세션에 인계(시험 도구 ccfc11b). 이전: Windows 게임 프로그램 완료 — 배포본 `exp/windows-app` bb9974f release/NNY_Simulator_v1.0.0_win64.zip(90.3MB) · 채팅창 전달, 코드 `claude/vibrant-euler-jekich` 23e66ce, 루틴 끔 · 후속: 실제 Windows 확인 · 브랜치 이름/PR. 이전: Windows 게임 프로그램(.exe) 시작 — 사용자 지시, 시트 3장 반영 완료(풀 200장 이미지), 매시 루틴 trig_01NGDQ2xXsYm42enmCG5SH8D. 이전: 매치 재생 화면 — 시트 5장 추가 · 카드 이름으로 연결(시트 코드 ≠ 풀 코드 테마 발견) · 7개 덱 대진 6개 HTML 전달, 남은 시트 3장 재업로드 대기. 이전: 매치 재생 화면 완료 — `claude/vibrant-euler-jekich` 316d9fa `nny_sim/viewer/`, 학습표 AI 4매치 HTML 대화창 전달, 루틴 끔 · 후속: 카드 시트 8장 재업로드 · 브랜치 이동/PR 사용자 확인. 이전: 매치 재생 화면 시작 — 사용자 지시 · 업로드 이미지 5장, 매시 루틴 trig_01Q7atcsbexQahDHdB97Kg49. 이전: 사용자 지시: `docs/block-library` → `docs/main` PR #85 머지(`docs/main` 7ddc643, main 미반영) · `model/cost-slot` 삭제는 원격 삭제가 403으로 거부돼 미완(사용자가 GitHub에서 직접 삭제 필요). 이전: 사용자 답변 4건 — PR #83 머지(`model/main` e09332f, main 미반영) · 명계의 규율은 앞선 처리 대기 효과 중 묘지에서 발동한 것만 무효(사용자 재지시) → `model/netherworld-rule` 80a3572 · PR #84 머지(`model/main` 9d6d5ae, main 미반영) · 데이터버그 승수 하락 대응 안 함 · 재학습 / 리그 아직 안 함. 이전: 2026-10-28 블록 체계 전체 구현 완료 — 카드 200장 조립표 · 옛 카드 함수 삭제, PR #83(`model/block-system` → `model/main`, 사용자 머지 대기) · 루틴 끔 — 데이터버그 승수 하락(60 → 39)과 명계의 규율 확인 필요는 PR에 명시. 이전: 블록 체계 ① ~ ⑤ 완료 · ⑥ 소원의 분수 작업 중 2d0472e — 세션 압축으로 새 세션에 인계. 이전: 블록 체계 전체 구현 시작 — 사용자 지시 · B안 · 텍스트대로, `model/block-system` · 매시 루틴. 이전: 코스트 칸 · 부여 효과 문장 연결 — 사용자 지시로 멈춤, `model/cost-slot` 2076764 작업 중 커밋 · 루틴 끔. 이전: 사용자 지시: PR #79 → #81 → #82 · #80 순서대로 머지 — `model/main` 1746540 · `docs/main` 95ddea5, main 미반영 · 올인 부여 효과 이슈를 카드 텍스트로 쉽게 설명 전달 · 세션 압축 — 남은 일이 이 채팅방 설명뿐이라 새 세션 인계 없이 마무리. 이전: 목표 기준에 덱 밸런스 정의 추가 — 무조건 이기려는 판단일 때의 종합 승률, 49~51%는 판정 기준일 뿐 AI 목표가 아님. 이전: 종류별 색인 PR #81 · 재정 반영(「패에 넣었을 때」 드로우 포함 · 자기편 효과 내성) PR #82 · 재정 문서 PR #80 갱신 · 블록 통합판 27개판 PDF 대화창 전달 · 생성 스크립트 `docs/block-library` 보관, 루틴 끔 — PR #79 → #81 → #82 · #80 사용자 머지 대기. 이전: 사용자 답변 7건 — 「패에 넣었을 때」 드로우 포함 · 블록 통합판 27개판 PDF · 종류별 색인 먼저 구현 · 재정 ③ 엔진 반영 · 조립식 보류, 작업 시작 · 매시 루틴 trig_01BpPivQnET6Zt5PLeQjgw7z. 이전: 사용자 지시: 행동 세금 코스트 `model/action-tax-cost` → PR #79, 재정 문서 10-25 · 10-27 · 10-28 반영 `docs/rulings-1025-1028` → PR #80 — 둘 다 사용자 머지 대기, 리그 · 재학습 보류. 이전: 행동 세금 코스트 구현 완료 — 전체 338개 통과 · 같은 시드 스모크 비교, 루틴 끔. 이전: 아이라리움 구현 범위 답변 5건 + 추가 답변 4건 — 세제 1번 · 취득세 1번도 같은 「행동 세금」 코스트 규칙. 이전: 2026-10-27 블록 추가 통합 결정 39 → 27개 — 시간 우선 · 같으면 메모리, 측정 근거 · 재정 답변 3건(아이라리움 코스트 · 인페르노 내성 · 내성 카드는 자기편 효과도 안 받음) 기록. 이전: 2026-10-27 PR #77 → #78 머지(`model/main` a925f24) · 블록 통합판 PDF(124 → 39개 — E5 카운터 + E7 HP → 값 변화, 사용자 지시) 전달 · [지속] 횟수 표기 누락 19줄 — 사용자 텍스트 수정 대기. 이전: 2026-10-26 실패 테스트 11개 갱신 PR #78 — #77 위, 전체 295개 통과 · 사용자 머지 대기. 이전: 2026-10-25 PR #77 — 뒷면 마법 · 버터플라이 · 두플리카토르 `model/rulings-1025` → `model/main`, 사용자 머지 대기. 이전: 소원의 분수 4장 효과 번호 2 → 1 수정 PR #75 · #76 머지 · 카드 텍스트 전수 조사 PDF 전달. 이전: 블록 라이브러리 목록 PDF 전달 — 사용자 검토 중. 이전: 카드 효과 조립식 전환 계획 PDF 전달 — 사용자 결정 대기. 이전: 버터플라이 새 텍스트 data/main 반영 PR #74 머지 · 효과 명세표 전환 계획 PDF 전달 — 사용자 결정 대기. 이전: 뒷면 마법 무효 내성 · 버터플라이 2번 새 텍스트 · 두플리카토르 「이 카드」 코스트 — 브랜치 `claude/loving-faraday-ekyq7w`(d6a8474), PR · 데이터 텍스트 갱신은 사용자 확인 대기. 이전: 2026-10-24 재정 질문 · 답변 정리 PDF 대화창 전달 · 루틴 끔. 이전: 시뮬레이터 · AI 학습 동작 구조 PDF 대화창 전달 · 루틴 끔. 이전: 2026-10-23 PR #72 · #73 머지 완료 — 열린 PR 없음, 남은 재정 0건, main 미반영. 이전: PR #69 ~ #71 머지 · 남은 재정 9차 · 필드 존 뒷면 완료 · PR #72 · #73(머지 대기) · 루틴 끔 — 남은 재정 0건(9차 후속 반영) · 테스트 미실행(사용자 지시). 이전: 남은 재정 8차(PDF Q1 ~ Q5) 완료 · PR #70 · #71(머지 대기) — 남은 재정 10건(PDF Q6 ~ Q15). 이전: PR #63 ~ #68 머지 완료(main 미반영) · 남은 재정 15건 PDF(재정_질문_남은것_2026-10-23.pdf, Q1 ~ Q15) 대화창 전달 · PR #69(머지 대기) · 루틴 끔. 이전: 남은 재정 7차(Q53 ~ Q60) 완료 · PR #67 · #68(머지 대기) · 루틴 끔 — 남은 재정 10건(재질문 5) · 테스트 미실행(사용자 지시)). 이전: 2026-10-22 ([지속] 스탯 증감 턴 제한 없음 완료 · PR #65 · #66(머지 대기, #63 · #64 위) · 루틴 끔. 이전: 남은 재정 6차(Q33 ~ Q52) 완료 · PR #63 · #64(머지 대기) · PR #62 머지 · 루틴 끔 — 남은 재정 13건 · 테스트 미실행(사용자 지시). 이전: 작업 규칙 R7 PR #62(머지 대기). 이전: PR #50 ~ #61 순서대로 머지(사용자 지시, main 미반영) — 남은 재정 28건 · 테스트 미실행. 이전: [지속] 불리 효과 · 버터플라이 2번 완료 · PR #59 · #60 · #61 에 추가 · 루틴 끔 — 남은 재정 28건. 이전: [지속] 1턴 1번 · 스킬 무효 대상 등 완료 · PR #59 · #60 · #61(머지 대기) · 루틴 끔. 이전: [지속] 범위 확인 답변 반영 완료 · PR #56 · #57 · #58 에 추가 · 루틴 끔. 이전: 몬스터 소환 조건 [제약] 키워드 분리 완료 · PR #56 · #57 · #58(머지 대기) · 루틴 끔 — 남은 재정 29건. 이전: 남은 재정 5차(Q30 ~ Q32) 구현 완료 · PR #54 · #55(머지 대기) · 루틴 끔 — 남은 재정 30건 · 테스트 미실행(사용자 지시). 이전: 남은 재정 4차(Q21 ~ Q29) 완료 · PR #52 · #53(머지 대기) · 루틴 끔 — 남은 재정 32건 · 테스트 미실행(사용자 지시). 이전: 남은 재정 4차(Q21 ~ Q29) 모델 구현 완료(4900526) · 세션 압축으로 새 세션에 인계 — 「진행 중」 첫 항목. 이전: 남은 재정 4차 구현 시작 · 루틴. 이전: Q14 같은 이름 규칙 범위 재수정 — 소환 · 패에 넣기에만. 이전: 남은 재정 3차(Q11 ~ Q20) 구현 완료 · PR #50 · #51(머지 대기) · 루틴 끔 — 남은 재정 41건 · 테스트 미실행(사용자 지시). 이전: PR #45 ~ #49 머지(사용자 지시, main 미반영) · 퇴마의 부적 「카운터 4개 제거」 유지 확정 — 남은 재정 51건 · 재학습 지시 대기. 이전: 남은 재정 답변 5건 구현 완료 · PR #45 · #46(머지 대기) · 규칙 R5 · R6 · 허용 규칙(PR #44 main 머지) · 루틴 끔 — 남은 재정 56건. 이전: PR #39 ~ #43 머지(사용자 지시) · 남은 재정 60건 PDF 갱신판 대화창 전달 · 재학습은 사용자가 나중에 지시. 이전: 룰지 재정 구현 · 설계도 반영 · 시뮬레이터 설계도 완료. 이전: 정본 룰지로 재정 질문 31건 해결 · 남은 60건 PDF 전달, 브랜치 `docs/rulebook-rulings`. 이전: 새 카드 반영 · 재학습 · 리그 · 보고서 완료, 자동 재개 루틴 끔, 새 카드 브랜치 PR #29 ~ #38 머지 완료 · main 미반영 — 사용자 결정 대기 항목은 「진행 중」)
@@ -224,7 +225,8 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | 2026-10-30 | 데이터버그 카드풀 제외 · 학습 데이터 · 모델 백지 | PR #114 ~ #116 머지(10-30, data/main b24ac1f · model/main 1d8ad27 · app/main 676a466) · 배포본 v1.3.3 `exp/windows-app` 9f5bfb5 |
 | 2026-10-30 ~ 11-04 | (chainedcreeper 쪽) 온라인판 `online/main` — 기능 v1 · 디스코드 비서 봇 · 매시 루틴, 오프라인판 수정 포팅, AI 실력 트랙, 공개 접속 · 동시 매치 2개 | `online/main` e322fba · PR #126 · #127 · #129 · #130 열림 · #104 · #117 ~ #122 닫힘(중복) · Release `runtime-v1.1.0` |
 | 2026-11-02 ~ 03 | (chainedcreeper) online 에서 먼저 고친 룰 7건 · 사람 판단 5건 · 마도서 텍스트를 정본에 반영 | PR #123 → model/main d0049bf · #124 → app/main cbb3dc7 · #125 → data/main d66c665 (11-03 머지) |
-| 2026-11-05 | 10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 · workflow.md 갱신 | `default` (이 기록) |
+| 2026-11-05 | 10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 · workflow.md 갱신 | `default` 133e8c8 |
+| 2026-11-05 | 열린 PR 6개 점검(모의 머지 · 전체 시험 · 보안 검토) → 공개 접속 · 동시 매치 2개 머지(사용자 지시) | PR #129 → online/main 04096cb · #130 → 04f44d8 (#126 함께 머지 처리) · #128 보류(기존 시험 2개 오류) |
 
 ## 실행 환경 메모
 
@@ -239,6 +241,25 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
   - PyTorch 재설치(세션마다, 학습할 때만): `python3 -m venv --system-site-packages <임시폴더>/drl_venv && <임시폴더>/drl_venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu`. 지난 세션은 PyPI판 `torch==2.14.0` 을 썼고, `ckpt.pt` 를 불러올 때 버전 차이로 문제가 생기면 같은 버전으로 맞춘다. 유지하려면 Setup script에 넣는다.
 
 ## 진행 중
+
+- **【완료 — 2026-11-05, 사용자 지시 「열린 pr들 전부 확인해서 머지해도 문제 없는 것들 전부 머지해줘」, 세션 claude/keen-thompson-9zx1rw】 열린 PR 6개 점검 · #129 → #130 머지:**
+  - 점검 방법: PR 마다 지금 기준 브랜치 위에 로컬 모의 머지(`git merge-tree`) → 충돌 확인 → 전체 시험(`python3 -m unittest discover -p 'test*.py'`, numpy 2.4.6 · scipy 1.17.1 있음).
+    app PR 은 실행 폴더를 model/main + data/main + app 브랜치 `nny_sim/` 를 겹쳐 만들어 돌림(앞선 회차 방식). 머리 커밋은 머지 직전에 다시 확인하고 `expectedHeadSha` 로 머지.
+  - **#129** `online/public-access` → online/main: 충돌 없음, 전체 508개 중 실패 1(test_online_update_panel 「git 체크아웃 안에서만」 — 기준 online/main 도 같은 실패, git 작업 트리에서는 통과).
+    보안 검토로 찾은 위험(사용자에게 알리고 사용자가 머지를 고름): 로그인 시도 횟수 제한 없음 · HTTP 라 암호 · 쿠키가 평문 · 로그인한 누구나 `/api/quit` · `/api/settings` 호출 가능.
+    실제 공개는 VM 에서 `--public` + 입장 암호 + 방화벽 8899 를 열어야 시작됨(장인준 VM 작업, PR 본문 절차). → **머지 04096cb**(merge commit).
+  - **#130** `online/two-matches`: 충돌 없음, 전체 512개 중 실패 1(위와 같은 환경 실패). #129 머지 뒤 기준을 online/main 으로 바꾸고 자기 커밋 1개(5파일)만 보이는 것 확인 → **머지 04f44d8**.
+    머지 뒤 online/main 트리 = 시험한 로컬 병합 트리(04119c0)와 같음, online 시험 72개 통과.
+  - **#126** `online/ui-menu-lobby`: online/main 과 app.js · index.html 충돌(ai_kind 포팅) — #129 가 해결해 포함 → #129 머지로 GitHub 가 머지됨으로 처리.
+  - **#127** `online/login-gate`(base online/ui-menu-lobby): 내용이 #129 에 포함 — 머지하지 않고 열린 채(닫을지 사용자 확인).
+  - **#128** `app/trigger-order-merge` → app/main: **보류(문제 있음).** app/main 에 있는 기존 시험 `nny_sim/test_trigger_order.py`(#124 soltop_ 1번 — HumanAI.choose_triggers 순서 묻기)가
+    #128 뒤 2개 ERROR(test_two_optional_triggers_ask_order_and_respect_choice · test_mandatory_triggers_are_all_kept_but_order_is_asked) —
+    #128 의 human.order_triggers 가 where_label(c.zone) · e.kind 를 쓰는데 시험의 FakeCard · FakeEffect 에 없음. 같은 기능의 두 구현(#106 · soltop_ 1번)을 human.py 에서는 합쳤지만 그 시험은 그대로 둠.
+    PR 본문도 앱 시험 trigger_order_test 의 일부가 대진 · 시드에 따라 불안정하다고 적음. → 시험을 새 구현에 맞게 고친 뒤 머지(chainedcreeper 브랜치라 여기서 고치지 않음).
+  - **#106** `app/trigger-order`: app/main 과 README · human.py 충돌 — #128 이 대체본. #128 이 머지되면 GitHub 가 머지됨으로 처리할 것(머리 커밋 ddb9b1c 가 #128 에 들어 있음).
+  - **점검 중 찾은 기존 문제(열린 PR 과 무관, 기록만):**
+    - model/main 의 `test_rulings_1101`(#123) 3개 ERROR — 데이터버그 카드 「데이터버그 디지털 웜」을 쓰는데 #114 로 카드 풀에서 빠짐(online/main 에는 아직 데이터버그가 있어 거기서는 통과). databug_fixture 를 쓰거나 다른 카드로 바꿔야 함.
+    - `nny_sim/test_trigger_order.py` 이름이 model/main(#105 — LearnedAI.order_triggers)과 app/main(#124 — HumanAI.choose_triggers)에 서로 다른 내용으로 있음 → 실행 폴더 · 배포 통합에서 겹쳐 놓으면 한쪽이 덮임. 한쪽 이름을 바꿔야 함.
 
 - **【점검 기록 — 2026-11-05, 사용자 지시 「workflow.md 읽고 올해 10월 29일부터 올라온 푸시, pr, 머지된 것들 전부 확인해서 workflow.md를 업데이트」, 세션 claude/keen-thompson-9zx1rw】 2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검:**
   - 점검 범위: 원격 브랜치 전부(2026-10-29 00:00 KST 이후 커밋이 있는 브랜치 60개) · PR #83 ~ #130 · 태그 · Release. 이 기록은 GitHub 원격 상태(2026-11-05 점검 시점)만 근거로 함.
@@ -1192,10 +1213,15 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 ## 다음 할 일 (우선순위 순)
 
 0. (2026-11-05 점검 결과 — 사용자 확인 필요, 가장 우선)
-   - PR **#128**(`app/trigger-order-merge` → app/main, #106 충돌 해결판) 확인 · 머지 → **#106 닫기**. 본문상 앱 시험 trigger_order_test 일부가 대진 · 시드에 따라 불안정.
+   - PR **#128**(`app/trigger-order-merge` → app/main, #106 충돌 해결판): **기존 시험 `nny_sim/test_trigger_order.py`(app/main) 2개 ERROR** 로 보류(「진행 중」 첫 항목).
+     시험을 새 order_triggers 에 맞게 고친 뒤 다시 확인 · 머지 → #106 은 자동으로 머지 처리됨. 고치는 주체(chainedcreeper 브랜치에 추가 · 새 app 브랜치) 사용자 결정.
+   - 열린 채인 **#127**(#129 에 포함) 닫기 여부.
+   - model/main `test_rulings_1101` 3개 ERROR(데이터버그 카드 사용) 수정 · `test_trigger_order.py` 이름 겹침(model/main ↔ app/main) 정리 — model · app 새 브랜치.
+   - #129 머지로 공개 접속 코드가 online/main 에 들어감 — 로그인 시도 제한 · HTTPS(또는 앞단 프록시) · `/api/quit` · `/api/settings` 를 호스트만 쓰게 하는 보강 검토(online 쪽).
+   - (완료 2026-11-05) #129 → #130 머지.
    - online/main 에만 있는 엔진 · 학습 수정 3건을 정본에 반영할지: e67c31c(스킬 카드는 효과로 위치가 안 바뀜) · f3cc806(호박옥 마르모르 · 카르분쿨루스 1번 코스트에서 아우렘 · 녹스 제외) ·
      71f9fdc(공식 덱은 자동 레시피 조정과 분리) → 반영하면 model 새 브랜치(기준 model/main d0049bf, app/session.py 부분은 app 브랜치).
-   - online 계열 PR: #129(`online/public-access`, #126 · #127 대체) → #130(`online/two-matches`) — 공개 접속(입장 암호)은 「공인 IP 에 열지 말 것」 전제를 바꾸는 결정이라 세창 · 장인준 합의 확인. 머지 뒤 #126 · #127 닫기.
+   - (완료 2026-11-05 — 사용자가 공개 접속 전제 변경을 수락하고 머지 지시) online 계열 PR #129 → #130 머지. #126 머지 처리, #127 은 열림.
    - `online` 계열을 CLAUDE.md R2 표에 넣을지(기준 `online/main`), `online/main` 의 옛 CLAUDE.md 사본 처리.
    - 사람 대전 학습 기록 브랜치 `data/human-games-ksc`(백지 리셋 전 기록) · `data/human-games-laptop1211`(리셋 뒤 기록) 을 합칠지(`merge_learning.py` · `merge_nn.py`) 또는 버릴지.
    - 10-30 후속 그대로: 백지 모델 재학습 · 데이터버그 수정 뒤 보류 자료 되돌리기 · 실제 Windows 확인 · 희생의 성녀 재현 자료.
@@ -1295,7 +1321,7 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | `app/human-all-choices` · `app/attack-target-pick` · `app/heuristic-ai` · `app/ai-kinds-per-seat` · `app/learning-data` · `app/heuristic-learning` | v1.2.1 ~ v1.3.0 | PR #97 · #98 · #99 · #101 · #102 · #103 머지 완료(10-29 ~ 30), 삭제 가능 |
 | `app/play-fixes-1030` · `app/live-board-refresh` · `app/shared-zones` · `app/databug-free-tests` · `app/decision-curation` · `app/hide-set-cards` | v1.3.1 ~ v1.3.3 | PR #108 · #109 · #111 · #116(10-30) · #113 · #112(11-03) 머지 완료, 삭제 가능 |
 | `app/trigger-order` | 같은 타이밍 체인 순서 — 사람 · 학습 (ddb9b1c) | PR #106 열림 — #128 로 대체 예정 |
-| `app/trigger-order-merge` | #106 충돌 해결판 (chainedcreeper, 8a0b737) | PR #128 열림 — 세창 확인 뒤 머지 |
+| `app/trigger-order-merge` | #106 충돌 해결판 (chainedcreeper, 8a0b737) | PR #128 열림 — 2026-11-05 점검에서 기존 시험 2개 오류로 보류 |
 | `model/netherworld-rule` · `model/play-fixes-1029` · `model/play-fixes-1029b` · `model/table-weights` · `model/trigger-order` · `model/play-fixes-1030` · `model/shared-zones` · `model/databug-fixture` | 10-29 ~ 30 엔진 수정 | PR #84 · #87 · #96 · #100 · #105(11-03) · #107 · #110 · #115 머지 완료, 삭제 가능 |
 | `model/block-system` | 블록 체계 전체 구현 | PR #83 머지 완료(10-29), 삭제 가능 |
 | `data/fix-swrm004-text` · `data/drl-base-v2` · `data/reset-learning` | 메뚜기여왕 텍스트 · 기본 신경망 base_v2 · 데이터버그 제외 · 학습 백지 | PR #88 · #95 · #114 머지 완료, 삭제 가능 |
@@ -1304,9 +1330,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | `online/data-games` | 온라인판 기보 · 디스코드 커서 (2c0b23f) | 루틴이 직접 커밋, 기보 0건 |
 | `online/to-model-fixes-1102` · `online/to-app-fixes-1102` · `online/to-data-cardtext-1102` | online 수정의 정본 반영 | PR #123 · #124 · #125 머지 완료(11-03), 삭제 가능 |
 | `online/human-tribute-choice` · `online/spectate-leave-endlive` · `online/progress-doc-round` · `online/chat-delete-message` · `online/progress-doc-chat-delete` · `online/progress-doc-stale-pr-triage` · `online/fix-white-theme-gold-contrast` | 온라인판 작업 PR | PR #104 · #117 ~ #122 닫힘(중복 — online/main 에 이미 반영), 삭제 가능 |
-| `online/ui-menu-lobby` · `online/login-gate` | 메인 메뉴 · 대기실 개편 / 입장 암호 로그인 | PR #126 · #127 열림 — #129 로 대체 |
-| `online/public-access` | #126 + #127 통합 · 게이트 보강 (2b0d94c) | PR #129 열림 (base online/main) |
-| `online/two-matches` | 동시 매치 2개 (bde45db) | PR #130 열림 (#129 위) |
+| `online/ui-menu-lobby` · `online/login-gate` | 메인 메뉴 · 대기실 개편 / 입장 암호 로그인 | #126 은 #129 머지로 머지 처리(2026-11-05) · #127 은 열림(내용은 #129 에 포함) — 삭제 가능 |
+| `online/public-access` | #126 + #127 통합 · 게이트 보강 (2b0d94c) | PR #129 머지 완료(2026-11-05, online/main 04096cb), 삭제 가능 |
+| `online/two-matches` | 동시 매치 2개 (bde45db) | PR #130 머지 완료(2026-11-05, online/main 04f44d8), 삭제 가능 |
 | `new_card_co_work` | 디스코드 비서 봇 첫 커밋까지의 online/main 사본 (d81c26f) | 이후 커밋 없음, 내용은 online/main 에 포함 |
 | `DuelModel` | 별도 저장소 card_ai(뉴 네오 대전 AI) 반영본 (MaybeDiedCat, main 에서 분기, ef63b9e) | 푸시만, PR 없음 |
 | 태그 `runtime-v1.1.0` | Release — NNY_Simulator_v1.1.0_win64.zip 원본 빌드(온라인판 런타임, chainedcreeper 2026-11-02) | 공개됨 |
