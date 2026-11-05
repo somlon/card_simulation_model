@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-11-05 (열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
+마지막 갱신: 2026-11-05 (app/main ↔ online/main 기능 대조 — 오프라인판에만 있는 기능 목록, 「진행 중」 첫 항목. 이전: 열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
 #128 은 기존 시험 2개를 깨뜨려 보류 · #106 · #127 은 대체돼 열린 채로 둠 — 「진행 중」 첫 항목. 이전: 2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 — 사용자 지시. 10-30 19:34 UTC 기록 뒤 바뀐 것: PR #105 · #113 머지(11-03, somlon) · #112 · #123 · #124 · #125 머지(11-03, chainedcreeper — #112 는 app/main 3ccc67c 충돌 해결 머지),
 #106 은 아직 열림 → 충돌 해결판 #128(열림, 세창 확인 뒤 머지), online 계열(chainedcreeper 쪽 온라인판 `online/main` · 매시 루틴 · 디스코드 비서 봇) 10-30 시작 — PR #104 · #117 ~ #122 중복으로 닫힘, #126 · #127 → #129(통합) · #130 열림,
 Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`data/human-games-ksc` · `data/human-games-laptop1211`), 기준 브랜치 머리 model/main d0049bf · app/main 3ccc67c · data/main d66c665, main 미반영 — 상세는 「진행 중」 첫 항목.
@@ -241,6 +241,17 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
   - PyTorch 재설치(세션마다, 학습할 때만): `python3 -m venv --system-site-packages <임시폴더>/drl_venv && <임시폴더>/drl_venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu`. 지난 세션은 PyPI판 `torch==2.14.0` 을 썼고, `ckpt.pt` 를 불러올 때 버전 차이로 문제가 생기면 같은 버전으로 맞춘다. 유지하려면 Setup script에 넣는다.
 
 ## 진행 중
+
+- **【조사 기록 — 2026-11-05, 사용자 지시 「app/main 에 있는 오프라인 버전에만 있고, online 브랜치에는 없는 기능들을 찾아서 리스트업」】 app/main(3ccc67c) ↔ online/main(04f44d8) 기능 대조 (코드 변경 없음, 결과는 채팅 답변):**
+  - 방법: 두 브랜치의 `nny_sim/app` · `nny_sim/viewer` 파일 · 함수 · API 목록 비교 + app 쪽 PR(#89 ~ #116)별 식별자를 online 코드에서 검색. 엔진은 model/main ↔ online/main, 데이터는 data/main ↔ online/main.
+  - online 에 없음: 신경망 AI · 학습 · 내보내기 · GitHub 올리기(#92 · #94, nnai · nn_train · nn_samples · merge_nn, `/api/nn/*`) · 자리별 AI 종류(#101) · AI끼리 녹화의 AI 종류(online RecordJob 은 학습표만) ·
+    학습하는 휴리스틱(#103 — online 'heuristic' 은 규칙만) · AI끼리 대전 학습 기록 · 사람 3 : AI 1 가중치 · 학습 데이터 정리(매치 · 판단 단위, #102 · #113, learndata · `/api/learning/items·exclude*·decisions`) ·
+    사람이 직접 고르기 — 족보 재료 · 레벨/속성 부여 · 짐승조커 선언 · 번식지 카드(#97) · 선택 코스트 · 「할 수 있다」 처리(#108) · 같은 이름 카드를 칸으로 구별(공격 · 행동 · 대응, #98) ·
+    상대 뒷면 카드 이름 감춤(후보 · 판단 줄 · 기록 줄, #112 — online 은 후보에 「상대 마법 존 3: 이름 (뒷면)」 그대로) · 공유 존 칸 번호 표시(card_label) ·
+    효과 처리 뒤 화면 즉시 갱신(Recorder.sync, #109) · 발동 중인 체인 고리 표시(#91) · 재생 화면의 전략 덱 교체 카드 이미지 · 상대 교체 프레임 전체 감춤(#93, online 은 기록 줄 이름만 가림) ·
+    덱 편집 동명 3장 초과 차단 · 스킬 교체 때 태그 안 맞는 카드 표시(#89, misfit) · 시작 패 배분 「메인 k / 상급 n-k」 표시와 재배분 학습 키 「남은 상급 k」 ·
+    배포 · 도구: Windows 빌드(build_windows · win/launcher), 기본 재생 기록 녹화(make_library · --rerecord), 단독 재생 HTML(viewer/replay · template · assets · 카드 시트), README, 앱 시험(app/tests).
+    엔진(model/main): AI 의 같은 타이밍 체인 순서 학습(LearnedAI · HeuristicAI.order_triggers, #105) · 학습표 가중 갱신(Table.update w, #100). 데이터: online 은 데이터버그 23장이 그대로(풀 200장 — data/main 은 #114 로 177장).
 
 - **【완료 — 2026-11-05, 사용자 지시 「열린 pr들 전부 확인해서 머지해도 문제 없는 것들 전부 머지해줘」, 세션 claude/keen-thompson-9zx1rw】 열린 PR 6개 점검 · #129 → #130 머지:**
   - 점검 방법: PR 마다 지금 기준 브랜치 위에 로컬 모의 머지(`git merge-tree`) → 충돌 확인 → 전체 시험(`python3 -m unittest discover -p 'test*.py'`, numpy 2.4.6 · scipy 1.17.1 있음).
