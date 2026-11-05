@@ -1,6 +1,6 @@
 """서버 — 게임 화면(static/)과 API. 하마치 어댑터 IP(25.x)에만 열고, 실행마다 새로 만드는 토큰을 요구한다(다른 웹사이트의 호출 차단).
 온라인판: 사람vs사람 대전은 좌석(0·1)마다 Bridge 가 따로 있고, 참가 키로 poll · answer 를 그 좌석에만 묶는다(session.LiveMatch 참고)."""
-import json, mimetypes, os, re, secrets, socket, subprocess, sys, threading, time, traceback
+import hashlib, hmac, json, mimetypes, os, re, secrets, socket, subprocess, sys, threading, time, traceback
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -70,6 +70,53 @@ class App:
         self.chat_seq = 0   # 끊기지 않고 늘어나는 메시지 id — 링버퍼에서 오래된 메시지가 밀려나도 커서(마지막으로 받은 id) 비교는 계속 올바름
         with open(os.path.join(paths['cards'], 'index.json'), encoding='utf-8') as f: self.cards = json.load(f)
         self.pool = {n: {k: c[k] for k in POOL_KEYS if c.get(k) not in (None, '', [])} for n, c in POOL.items()}
+        # 로그인 게이트(2026-11-03, 장인준): 하마치 없이 링크 하나로 들어오게 — 이름 + 입장 암호로 로그인하면 쿠키를 주고,
+        # 그 쿠키가 있는 접속은 등록 IP 와 똑같이 통과한다. 암호는 <user>/online_login.json {"암호": "..."} 또는 환경변수
+        # NNY_LOGIN_PASSWORD. 둘 다 없으면 로그인 게이트는 꺼진 채(기존 하마치 IP 게이트만) 돈다.
+        self.login_path = os.path.join(paths['user'], 'online_login.json')
+        self.login_secret = secrets.token_bytes(32)
+        self.login_sessions = {}   # sid -> {'name', 'ip', 't'}  (프로세스 수명 동안만 — 서버를 다시 켜면 다시 로그인)
+        self.login_names = {}      # ip -> 로그인 이름 (방·채팅·접속중 명단 표시는 ip 가 열쇠라 여기에 겹쳐 둔다)
+
+    # ── 로그인 게이트 ──
+    def login_password(self):
+        pw = os.environ.get('NNY_LOGIN_PASSWORD', '').strip()
+        if pw: return pw
+        try:
+            with open(self.login_path, encoding='utf-8-sig') as f: j = json.load(f)
+            pw = str(j.get('암호') or j.get('password') or '').strip()
+        except (OSError, ValueError, AttributeError): pw = ''
+        return pw or None
+
+    def login(self, ip, name, password):
+        """이름 + 입장 암호 → 세션 id(쿠키 값). 틀리면 ValueError. 이름은 등록 유저 이름과 겹쳐도 되지만 같은 ip 가 열쇠라
+        한 PC(한 공인 IP)에서 둘이 따로 로그인하면 나중 이름이 이긴다(알려진 한계 — 하마치 게이트와 같은 전제)."""
+        want = self.login_password()
+        if not want: raise ValueError('로그인 게이트가 꺼져 있습니다(입장 암호가 설정되지 않음). 하마치로 들어오세요.')
+        name = (name or '').strip()[:40]
+        if not name: raise ValueError('이름을 적어 주세요.')
+        if not hmac.compare_digest((password or '').strip().encode('utf-8'), want.encode('utf-8')): raise ValueError('입장 암호가 틀립니다.')
+        # 오래된 세션 정리(30일) — 메모리만 쓰므로 가볍게
+        now = time.time()
+        for sid in [k for k, v in self.login_sessions.items() if now - v['t'] > 30 * 86400]: del self.login_sessions[sid]
+        sid = secrets.token_urlsafe(24)
+        self.login_sessions[sid] = {'name': name, 'ip': ip, 't': now}
+        self.login_names[ip] = name
+        return sid
+
+    def login_check(self, sid, ip):
+        """쿠키의 sid 가 살아 있으면 True(이름을 이 ip 에 다시 묶는다 — 공인 IP 가 바뀌어도 쿠키만 있으면 계속 통과)."""
+        if not sid: return False
+        v = self.login_sessions.get(sid)
+        if not v: return False
+        v['t'] = time.time(); v['ip'] = ip; self.login_names[ip] = v['name']
+        return True
+
+    def logout(self, ip):
+        """쿠키는 HttpOnly 라 화면이 sid 를 모른다 — 이 ip 에 묶인 세션을 전부 지운다(브라우저 쪽 쿠키는 화면이 지운다)."""
+        for sid in [k for k, v in self.login_sessions.items() if v['ip'] == ip]: del self.login_sessions[sid]
+        self.login_names.pop(ip, None)
+        return {'ok': True}
 
     def _users(self):
         """online_users.json(이름 → 하마치 IP, discord_bot.py 의 /유저등록 이 쓰는 그 파일) — 없거나 깨졌으면 {}."""
@@ -96,12 +143,14 @@ class App:
             self.clients[ip] = time.time()
             if ip in self.room: self.room[ip]['last_seen'] = time.time()  # 재접속 유예: 방에 있던 자리는 heartbeat 가 계속 오면 안 비워진다
         return {'ok': True, 'online': self.connected(), 'room': self.room_status(), 'my_match': self.my_match(ip),
-                'live_info': self.live_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from)}
+                'live_info': self.live_info(), 'commit': self.commit, 'chat': self.chat_since(chat_from), 'me_ip': ip}
 
     def _ip_names(self):
         """online_users.json 을 ip → 등록 이름으로 거꾸로 뒤집은 것(이름 → ip 인 _users() 를 접속중 명단 ·
         로비 · 채팅이 전부 같은 식으로 표시에 쓴다 — 한곳에 모아 중복을 없앤다, R6)."""
-        return {ip: name for name, ip in self._users().items()}
+        names = {ip: name for name, ip in self._users().items()}
+        names.update(self.login_names)   # 로그인으로 들어온 사람은 로그인 이름이 등록 이름 노릇을 한다
+        return names
 
     def connected(self):
         """접속중 명단 — 마지막 CLIENT_TTL 초 안에 heartbeat 를 보낸 IP들, 등록 이름이 있으면 이름으로 표시."""
@@ -116,15 +165,69 @@ class App:
         now = time.time()
         for ip in [ip for ip, m in self.room.items() if now - m['last_seen'] > ROOM_GRACE]: del self.room[ip]
 
+    def room_host(self):
+        """방장 = 방에 가장 먼저 들어온 사람(나가면 그 다음). 대기실에서 「시작」은 방장만 누른다(2026-11-03 대기실 개편)."""
+        self.room_gc()
+        if not self.room: return None
+        return min(self.room.items(), key=lambda kv: kv[1]['joined'])[0]
+
     def room_status(self):
         self.room_gc()
         names = self._ip_names()
-        rows = [{'ip': ip, 'name': names.get(ip, m['name']), 'role': m['role']} for ip, m in self.room.items()]
+        host = self.room_host()
+        rows = []
+        for ip, m in self.room.items():
+            d = self.store.deck(m.get('deck') or '') if m.get('deck') else None
+            rows.append({'ip': ip, 'name': names.get(ip, m['name']), 'role': m['role'], 'host': ip == host,
+                         'deck': m.get('deck'), 'deck_label': self.deck_label(m['deck'], d) if d else None})
         players = [r for r in rows if r['role'] == 'player']
         return {'members': sorted(rows, key=lambda r: (r['role'] != 'player', r['name'])),
-                'players': len(players), 'open_seat': len(players) < 2}
+                'players': len(players), 'open_seat': len(players) < 2,
+                'host': (names.get(host, self.room[host]['name']) if host else None),
+                'live': self.live_info()}
 
-    def room_join(self, ip, name, role):
+    def room_deck(self, ip, deck):
+        """대기실에서 내 덱을 고른다(방에 있어야 함). 사람 대 사람은 각자 고른 덱으로 붙고, 사람 vs AI 는 이게 내 덱이 된다."""
+        m = self.room.get(ip)
+        if not m: raise ValueError('방에 참가해야 덱을 고를 수 있습니다.')
+        if deck and not self.store.deck(deck): raise ValueError('덱을 찾을 수 없습니다')
+        m['deck'] = deck or None
+        return self.room_status()
+
+    def room_start(self, ip, j):
+        """대기실의 「시작」 — 방장만. mode: 'pvp'(사람 대 사람, player 2명) · 'ai'(사람 vs AI, player 1명 + ai_deck)
+        · 'aivai'(AI vs AI, 방 전체가 관전). 좌석은 방에 들어온 순서(먼저 앉은 쪽이 좌석0)."""
+        self.room_gc()
+        if ip != self.room_host(): raise ValueError('방장만 시작할 수 있습니다')
+        if self.live and self.live.status in ('starting', 'running'): raise ValueError('이미 대전이 진행 중입니다')
+        mode = j.get('mode', 'pvp')
+        players = sorted((pip for pip, m in self.room.items() if m['role'] == 'player'), key=lambda pip: self.room[pip]['joined'])
+        body = {'first': j.get('first'), 'learn': j.get('learn', True), 'hints': j.get('hints', False), 'seed': j.get('seed'),
+                'ai_kind': j.get('ai_kind', 'table')}
+        if mode == 'pvp':
+            if len(players) != 2: raise ValueError('사람 대 사람은 플레이어 자리에 둘이 앉아야 시작할 수 있습니다')
+            for pip in players:
+                if not self.room[pip].get('deck'): raise ValueError(f'{self.room[pip]["name"]} 이(가) 아직 덱을 고르지 않았습니다')
+            body.update(humans=[True, True], deck=self.room[players[0]]['deck'], ai_deck=self.room[players[1]]['deck'])
+            r = self.start_match(body)
+            self.live_ips = {players[0]: 0, players[1]: 1}
+        elif mode == 'ai':
+            if len(players) != 1: raise ValueError('사람 vs AI 는 플레이어 자리에 한 명만 앉아야 합니다(나머지는 관전)')
+            if not self.room[players[0]].get('deck'): raise ValueError('플레이어가 아직 덱을 고르지 않았습니다')
+            if not j.get('ai_deck'): raise ValueError('AI 덱을 고르세요')
+            body.update(humans=[True, False], deck=self.room[players[0]]['deck'], ai_deck=j['ai_deck'])
+            r = self.start_match(body)
+            self.live_ips = {players[0]: 0}
+        elif mode == 'aivai':
+            if not j.get('deck') or not j.get('ai_deck'): raise ValueError('AI 두 쪽의 덱을 고르세요')
+            body.update(humans=[False, False], deck=j['deck'], ai_deck=j['ai_deck'])
+            r = self.start_match(body)
+            self.live_ips = {}
+        else:
+            raise ValueError('모르는 방식입니다')
+        return dict(r, mode=mode, my_match=self.my_match(ip))
+
+    def room_join(self, ip, name, role, deck=None):
         """방 참가(참가=player 자리 요청, 관전=spectator) — 이미 있던 사람의 재접속·역할 변경도 같은 호출로 처리한다.
         등록된 하마치 유저(online_users.json)면 로비에서 직접 타이핑한 이름을 무시하고 등록 이름을 그대로 쓴다
         (「다음 회차 지시」 2번 — 이러면 room_status() 뿐 아니라 채팅 발신자 이름(chat_post 의 m['name'])도
@@ -139,7 +242,8 @@ class App:
         now = time.time()
         reg = self._ip_names().get(ip)
         self.room[ip] = {'name': reg or (name or '').strip()[:40] or (cur['name'] if cur else ip), 'role': role,
-                          'joined': cur['joined'] if cur else now, 'last_seen': now}
+                          'joined': cur['joined'] if cur else now, 'last_seen': now,
+                          'deck': deck if deck is not None else (cur.get('deck') if cur else None)}
         return self.room_status()
 
     def room_leave(self, ip):
@@ -217,6 +321,11 @@ class App:
         return {'id': self.live.id, 'seat': seat, 'key': self.live.keys[seat], 'names': self.live.names, 'title': self.live.title}
 
     # ── 덱 이름 · 대전 시작 ──
+    def _may_shortcut(self, ip):
+        """키 없는 poll/answer 를 사람 자리에 귀속시켜도 되는 ip 인가 — 매치를 시작한 ip(또는 로비 좌석 ip)만."""
+        if ip is None: return True   # 서버 내부 호출(시험 등) — 네트워크 접속이 아니다
+        return ip == getattr(self, 'live_owner_ip', None) or ip in self.live_ips
+
     def deck_label(self, did, d):
         return d['스킬'] if did.startswith('o:') else d['이름']
 
@@ -250,6 +359,10 @@ class App:
         # 자동으로 좌석1에 묶어 둔다 — 수동으로 시작했으면(방에 없는 ip 거나 player 가 둘이 아니면) 비워 둬서 기존
         # 매치 ID·참가 키 수동 공유 방식이 그대로 동작한다(호환).
         self.live_ips = {}
+        # 사람 자리가 하나뿐인 매치(사람vsAI)는 키 없이도 그 자리로 귀속되는 옛 호환 경로가 있다(session.poll/answer).
+        # 그 지름길은 **매치를 시작한 ip 에게만** 연다(2026-11-03, 「사용자 결정 대기」의 /api/match/answer 지름길 건 —
+        # 하마치망/공개 서버의 다른 사람이 남의 사람vsAI 판에 대신 답하지 못하게). 키를 들고 오면 누구든 기존대로.
+        self.live_owner_ip = ip
         if humans[0] and humans[1]:
             players = [pip for pip, m in self.room.items() if m['role'] == 'player']
             if ip in players and len(players) == 2:
@@ -288,7 +401,7 @@ class App:
                 'live': self.live.id if self.live and self.live.status in ('starting', 'running') else None,
                 'limits': {k: list(v) for k, v in D.LIMITS.items()}, 'max_copies': D.MAX_COPIES, 'online': self.connected(),
                 'room': self.room_status(), 'my_match': self.my_match(ip), 'live_info': self.live_info(), 'commit': self.commit,
-                'chat': self.chat_since(chat_from)}
+                'chat': self.chat_since(chat_from), 'me_ip': ip}
 
     def learning(self):
         st = T.log_stats(self.store.log_path)
@@ -321,8 +434,10 @@ class App:
         if path == '/api/match/poll':
             if not self.live or self.live.id != g('id'): return {'status': 'none'}
             seat = g('seat'); seat = int(seat) if seat not in (None, '') else None
-            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=bool(g('spectate')))
+            spectate = bool(g('spectate')) or (not g('key') and not self._may_shortcut(ip))
+            return self.live.poll(seat, g('key'), int(g('f', 0)), int(g('s', 0)), int(g('c', 0)), spectate=spectate)
         if path == '/api/match/answer':
+            if self.live and not body.get('key') and not self._may_shortcut(ip): return {'ok': False}
             ok = bool(self.live) and self.live.answer(int(body.get('rid', -1)), int(body.get('idx', -1)), body.get('seat'), body.get('key'))
             return {'ok': ok}
         if path == '/api/match/abort':
@@ -348,11 +463,15 @@ class App:
             return {'ok': bool(target), 'path': target}
         if path == '/api/heartbeat': return self.heartbeat(ip, int(body.get('chat_from', 0) or 0))
         if path == '/api/room/status': return self.room_status()
-        if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'))
+        if path == '/api/room/join': return self.room_join(ip, body.get('name'), body.get('role'), body.get('deck'))
+        if path == '/api/room/deck': return self.room_deck(ip, body.get('deck'))
+        if path == '/api/room/start': return self.room_start(ip, body)
         if path == '/api/room/leave': return self.room_leave(ip)
         if path == '/api/room/chat': return self.chat_post(ip, body.get('text'))
         if path == '/api/room/chat/edit': return self.chat_edit(ip, body.get('id'), body.get('text'))
         if path == '/api/room/chat/delete': return self.chat_delete(ip, body.get('id'))
+        if path == '/api/logout': return self.logout(ip)
+        if path == '/api/whoami': return {'name': self._ip_names().get(ip), 'ip': ip, 'login_gate': bool(self.login_password())}
         if path == '/api/quit':
             threading.Thread(target=self.shutdown, daemon=True).start(); return {'ok': True}
         raise KeyError(path)
@@ -392,14 +511,36 @@ def make_handler(app):
             if token: data = data.replace(b'__TOKEN__', app.token.encode())
             self._send(200, data, mimetypes.guess_type(path)[0] or 'application/octet-stream', cache)
 
+        def _cookie(self, key):
+            for part in (self.headers.get('Cookie') or '').split(';'):
+                k, _, v = part.strip().partition('=')
+                if k == key: return v
+            return None
+
         def _registered(self):
+            ip = self.client_address[0]
+            if app.login_check(self._cookie('nny_sid'), ip): return True
             ips = app.allowed_ips()
-            return ips is None or self.client_address[0] in ips
+            if ips is None: return not app.login_password()   # 등록 유저가 없어도 입장 암호가 켜져 있으면 로그인 없이는 안 열린다(--public 보호)
+            return ip in ips
+
+        def _login(self):
+            """POST /api/login {name, password} — 게이트 밖에서 받는 유일한 쓰기. 맞으면 쿠키(nny_sid)를 심는다."""
+            n = int(self.headers.get('Content-Length') or 0)
+            try: body = json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
+            except ValueError: body = {}
+            try: sid = app.login(self.client_address[0], body.get('name'), body.get('password'))
+            except ValueError as ex: return self._send(400, {'error': str(ex)})
+            data = json.dumps({'ok': True, 'name': app.login_names.get(self.client_address[0])}, ensure_ascii=False).encode('utf-8')
+            self.send_response(200); self.send_header('Content-Type', 'application/json; charset=utf-8'); self.send_header('Content-Length', str(len(data)))
+            self.send_header('Set-Cookie', f'nny_sid={sid}; Path=/; Max-Age={30 * 86400}; HttpOnly; SameSite=Lax')
+            self.send_header('Cache-Control', 'no-store'); self.end_headers(); self.wfile.write(data)
 
         def _api(self, method):
             u = urlparse(self.path)
-            if u.path == '/api/ping': return self._send(200, {'ok': True, 'app': 'nny-sim', 'version': VERSION})
-            if not self._registered(): return self._send(403, {'error': '등록되지 않은 접속입니다. 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
+            if u.path == '/api/ping': return self._send(200, {'ok': True, 'app': 'nny-sim', 'version': VERSION, 'login_gate': bool(app.login_password())})
+            if u.path == '/api/login' and method == 'POST': return self._login()
+            if not self._registered(): return self._send(403, {'error': '등록되지 않은 접속입니다. 로그인하거나(입장 암호), 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
             if self.headers.get('X-NNY-Token') != app.token: return self._send(403, {'error': 'token'})
             body = {}
             if method == 'POST':
@@ -413,7 +554,11 @@ def make_handler(app):
         def do_GET(self):
             u = urlparse(self.path)
             if u.path.startswith('/api/'): return self._api('GET')
-            if not self._registered(): return self._send(403, {'error': '등록되지 않은 접속입니다. 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
+            if u.path in ('/login', '/login.html'): return self._file(static, 'login.html')
+            if not self._registered():
+                # 등록 안 된 접속이 첫 화면을 열면 로그인 페이지로(암호가 설정돼 있을 때만) — 자산·API 는 그대로 403
+                if u.path in ('/', '/index.html') and app.login_password(): return self._file(static, 'login.html')
+                return self._send(403, {'error': '등록되지 않은 접속입니다. 로그인하거나(입장 암호), 하마치 IP를 호스트에게 알려 등록을 요청하세요.'})
             if u.path in ('/', '/index.html'): return self._file(static, 'index.html', token=True)
             if u.path.startswith('/cards/'): return self._file(cards, u.path[len('/cards/'):], cache=True)
             return self._file(static, u.path.lstrip('/'))

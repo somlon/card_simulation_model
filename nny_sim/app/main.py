@@ -45,6 +45,13 @@ HAMACHI_GUIDE = """하마치 가상 어댑터(25.x.x.x)를 찾지 못했습니�
 """
 
 
+PUBLIC_GUIDE = """--public 으로 열려면 입장 암호가 있어야 합니다 — 암호 없이 공인 IP 에 열지 않습니다.
+
+  {path} 에 {{"암호": "친구들에게 알려줄 암호"}} 를 적거나, 환경변수 NNY_LOGIN_PASSWORD 를 두고 다시 실행하세요.
+  (등록 유저제 online_users.json 은 그대로 살아 있고, 로그인은 그 위에 얹힙니다.)
+"""
+
+
 def open_window(url, user):
     """Edge 앱 창(주소창 없는 창)으로 연다. Edge가 없으면 기본 브라우저"""
     if sys.platform == 'win32':
@@ -62,8 +69,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     for k in ('sim', 'split', 'cards', 'library', 'user', 'viewer'): ap.add_argument('--' + k)
     ap.add_argument('--port', type=int, default=0); ap.add_argument('--no-browser', action='store_true')
-    ap.add_argument('--host')   # 하마치 자동 탐색 대신 쓸 주소 — 개발 · 자동 스모크 전용(배포 bat 은 이 옵션을 넘기지 않는다)
+    ap.add_argument('--host')   # 하마치 자동 탐색 대신 쓸 주소 — 개발 · 자동 스모크, 그리고 공개 서버(0.0.0.0 + 로그인 게이트)용
+    ap.add_argument('--public', action='store_true', help='0.0.0.0 에 열고 로그인 게이트(입장 암호)를 요구한다 — 하마치 없이 링크로 들어오는 상시 서버용')
     a = ap.parse_args(argv)
+    if a.public:
+        a.host = a.host or '0.0.0.0'; a.no_browser = True
     P = paths_from(a)
     os.makedirs(P['user'], exist_ok=True)
     if sys.stderr is None or sys.stdout is None:   # 창 없는 실행(pythonw): 출력 · 오류를 사용자 폴더의 app.log 로
@@ -80,6 +90,8 @@ def main(argv=None):
         app, srv = server.serve(P, a.port, host=a.host)
     except server.HamachiNotFound:
         print(HAMACHI_GUIDE, flush=True); return
+    if a.public and not app.login_password():
+        print(PUBLIC_GUIDE.format(path=app.login_path), flush=True); srv.server_close(); return
     host, port = srv.server_address[0], srv.server_address[1]
     with open(os.path.join(P['user'], 'server.json'), 'w', encoding='utf-8') as f:
         json.dump({'port': port, 'host': host, 'pid': os.getpid()}, f)
