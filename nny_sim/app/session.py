@@ -18,6 +18,7 @@ from cards import POOL
 from engine import StalledGame
 
 import record as REC
+import seatview as SV
 import tables as T
 from human import Abort, Bridge, HumanAI
 
@@ -388,6 +389,7 @@ class LiveMatch:
             if k not in AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
         self.ai_kind = ai_kind; self.ai0_kind = ai0_kind
         self.bridges = [Bridge(), Bridge()]; self.keys = [secrets.token_hex(8) if h else None for h in self.humans]
+        self.views = {}; self.view_lock = threading.Lock()   # 보는 사람별 걸러 쌓은 기록(seat_view)
         self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
         # 인게임 메신저(수다+로그 수집) — 방 전체 채팅 중 이 매치가 떠 있던 구간(start_ts~end_ts)만 기보에 묶어 올린다.
@@ -462,18 +464,34 @@ class LiveMatch:
                 'cards': {str(u): v for u, v in self.rec.cards.items()}, 'pool': pool,
                 'states': list(self.rec.states), 'frames': self.rec.export_frames()}
 
+    def seat_view(self, viewer):
+        """보는 사람(좌석 번호 · None = 관전자)의 걸러 쌓은 기록(app/seatview — 숨기는 좌석이 없으면 None = 원본 그대로)"""
+        hid = SV.hidden_seats(self.humans, viewer)
+        if not hid: return None
+        with self.view_lock:
+            if hid not in self.views: self.views[hid] = SV.SeatView(self.rec, self.names, hid)
+            return self.views[hid]
+
     def poll(self, seat=None, key=None, f_from=0, s_from=0, c_from=0, spectate=False):
         rec = self.rec
-        frames = rec.export_frames(f_from); states = rec.states[s_from:]
-        cards = list(rec.cards.items())[c_from:]
-        pending = None
+        pending = None; viewer = None
         if not spectate:   # spectate=True: 관전 화면의 명시적 요청 — 사람 자리가 하나뿐인 매치(기존 사람vsAI)라도 자동 귀속하지 않는다
             human_seats = [i for i, h in enumerate(self.humans) if h]
             if seat is None and len(human_seats) == 1: seat = human_seats[0]   # 사람 자리가 하나뿐이면(기존 사람vsAI) 키 없이도 그 자리
             if seat is not None and self.humans[seat] and (len(human_seats) == 1 or key == self.keys[seat]):
-                pending = self.bridges[seat].pending
+                pending = self.bridges[seat].pending; viewer = seat
         else:
             seat = None
+        # 보는 사람마다 비공개 정보를 걸러 보낸다(온라인 O2) — 키로 확인된 사람 자리는 그 좌석, 나머지(관전 · 키 없음)는 관전자
+        sv = self.seat_view(viewer)
+        if sv is None:
+            frames = rec.export_frames(f_from); states = rec.states[s_from:]
+            cards = list(rec.cards.items())[c_from:]
+        else:
+            frames, states, cards = sv.view(f_from, s_from, c_from, final=self.status not in ('starting', 'running'),
+                                            settled=any(b.pending for b in self.bridges))
+            if pending and any(o.get('u') for o in pending.get('opts', [])):   # 빛낼 카드도 그 사람의 번호(별칭)로
+                pending = dict(pending, opts=[dict(o, u=sv.map_uids(o['u'])) if o.get('u') else o for o in pending['opts']])
         return {'id': self.id, 'status': self.status, 'frames': frames, 'f_from': f_from, 'states': states, 's_from': s_from,
                 'cards': {str(u): v for u, v in cards}, 'c_from': c_from, 'pending': pending, 'seat': seat,
                 'result': self.result if self.status not in ('starting', 'running') else None, 'error': self.error,

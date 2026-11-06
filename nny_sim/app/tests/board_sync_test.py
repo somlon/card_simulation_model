@@ -24,7 +24,7 @@ for da, db, seed in [('호박옥 - 몽식의 계약', '던전마스터 셔플!',
             rec = app.live.rec
             if pd['kind'] == 'choose' and rec.game is not None and f:
                 last = next((x['s'] for x in reversed(rec.export_frames(0)[:f]) if x['s'] >= 0), -1)
-                asked += 1; stale += int(last < 0 or key(S[last]) != key(rec.state(rec.game)))
+                asked += 1; stale += int(last < 0 or key(rec.states[last]) != key(rec.state(rec.game)))   # 받은 상태는 좌석별로 걸러져 있다(seatview) — 같은 번호의 원본 상태와 비교
             app.route('POST', '/api/match/answer', {}, {'rid': pd['id'], 'idx': 0 if pd['kind'] == 'side' else rng.randrange(len(pd['opts']))})
         elif res['status'] not in ('starting', 'running'): break
         time.sleep(0.003)
