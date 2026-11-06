@@ -116,10 +116,14 @@ $('w-stage').querySelector('[data-x=prevm]').onclick = () => playlistGo(W.idx - 
 $('w-stage').querySelector('[data-x=nextm]').onclick = () => playlistGo(W.idx + 1);
 function setLists(show) { $('w-lists').style.display = show ? '' : 'none'; $('w-toggle').textContent = show ? '목록 접기' : '목록 펼치기'; setTimeout(() => stages.watch.fit(), 0); }
 $('w-toggle').onclick = () => setLists($('w-lists').style.display === 'none');
+const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(규칙 기반, 학습 없음)'};   // AI 종류 이름(대전 · 녹화 선택 상자 · 재생 목록)
 function repLabel(r) {
   const win = r.winner == null ? (r.status === 'done' ? '무승부' : r.status) : (r.names[r.winner] + ' 승');
   const score = r.rounds && r.rounds.length ? ` (${r.rounds.filter(x => x[0] === 0).length}–${r.rounds.filter(x => x[0] === 1).length})` : '';
-  return {t: r.title, s: `${r.source === 'library' ? '기본 제공' : r.kind === 'human' ? '내 대전' : '내 녹화'} · ${win}${score} · ${r.created || ''}`};
+  // 학습표 AI가 아닌 AI가 둔 매치는 AI 종류를 덧붙인다(meta.ai = P1 · meta.ai2 = P2 — session.LiveMatch, 오프라인판 #99 · #101)
+  const nm = k => AI_KIND_LABEL[k] ? AI_KIND_LABEL[k].replace(/\(.*\)$/, '') : k;
+  const kinds = r.kind === 'human' ? (r.ai && r.ai !== 'table' ? [nm(r.ai)] : []) : r.ai2 ? [`${nm(r.ai || 'table')} vs ${nm(r.ai2)}`] : r.ai && r.ai !== 'table' ? [nm(r.ai)] : [];
+  return {t: r.title, s: `${r.source === 'library' ? '기본 제공' : r.kind === 'human' ? '내 대전' : '내 녹화'}${kinds.length ? ' · ' + kinds.join(' · ') : ''} · ${win}${score} · ${r.created || ''}`};
 }
 function repById(id) { return BOOT.replays.find(r => r.id === id); }
 function renderReplays() {
@@ -211,7 +215,7 @@ function playlistNext(auto) { if (W.idx < 0 || !$('pl-auto').checked) return; se
 $('r-b').selectedIndex = Math.min(1, $('r-b').options.length - 1);
 let jobT = null;
 $('r-go').onclick = async () => {
-  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1}); W.job = j.id; watchJob(); }
+  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value}); W.job = j.id; watchJob(); }
   catch (e) { toast(e.message); }
 };
 $('r-stop').onclick = () => W.job && api('jobs/stop', {id: W.job});
@@ -232,14 +236,17 @@ $('g-ai').selectedIndex = Math.min(1, $('g-ai').options.length - 1);
 $('g-learn').checked = !!BOOT.settings.learn; $('g-hints').checked = !!BOOT.settings.hints;
 ['g-deck', 'g-ai', 'lobby-deck'].forEach(id => deckOptions($(id)));
 $('lobby-deck').selectedIndex = 0;
-const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(규칙 기반, 학습 없음)'};
-(BOOT.ai_kinds || ['table']).forEach(k => $('g-ai-kind').add(new Option(AI_KIND_LABEL[k] || k, k)));
+['g-ai-kind', 'g-ai0-kind', 'r-ai0', 'r-ai1'].forEach(id => (BOOT.ai_kinds || ['table']).forEach(k => $(id).add(new Option(AI_KIND_LABEL[k] || k, k))));   // 자리마다 AI 종류(오프라인판 #101)
+['r-ai0', 'r-ai1'].forEach(id => { if ((BOOT.ai_kinds || []).includes('table')) $(id).value = 'table'; });   // 녹화 기본은 예전처럼 학습표 AI
+$('g-ai0-kind').value = $('g-ai-kind').value;   // AI vs AI 의 P1 기본 = P2 와 같은 종류(예전: 두 자리 모두 「AI 종류」 하나)
 $('g-mode').onchange = () => {
   const mode = $('g-mode').value;
   // pvp: 두 사람이 각자 대기실에서 고른 덱 · ai: 플레이어 덱 + AI 덱 · aivai: AI 둘 다 여기서
   $('g-deck-f').style.display = mode === 'aivai' ? '' : 'none';
   $('g-ai-f').style.display = mode === 'pvp' ? 'none' : '';
   $('g-ai-kind-f').style.display = mode === 'pvp' ? 'none' : '';   // 사람 대 사람엔 AI 자리가 없음
+  $('g-ai0-kind-f').style.display = mode === 'aivai' ? '' : 'none';   // AI vs AI 는 자리마다 AI 종류(P1 · P2)
+  $('g-aikindlabel').textContent = mode === 'aivai' ? 'P2 AI 종류' : 'AI 종류';
   $('g-mylabel').textContent = 'P1 AI 덱'; $('g-oplabel').textContent = mode === 'ai' ? 'AI 덱 (상대)' : 'P2 AI 덱';
   $('g-learn').disabled = mode !== 'ai'; $('g-hints').disabled = mode !== 'ai';
   showRoom(LAST_ROOM);
@@ -255,7 +262,7 @@ $('g-start').onclick = async () => {
     const mode = $('g-mode').value, humans = mode === 'pvp' ? [true, true] : mode === 'ai' ? [true, false] : [false, false];
     const myDeck = mode === 'aivai' ? $('g-deck').value : $('lobby-deck').value;
     const r = await api('match/start', {humans, deck: myDeck, ai_deck: $('g-ai').value, first: $('g-first').value,
-                                        ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
+                                        ai_kind: $('g-ai-kind').value, ai0_kind: $('g-ai0-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
     G.id = r.id; G.pending = null; G.done = false; G.human = humans[0] || humans[1]; G.spectating = false;
     G.seat = (0 in r.seats) ? 0 : null; G.key = G.seat != null ? r.seats[G.seat] : null;   // 사람 자리가 있으면 이 화면이 시작한 쪽은 항상 좌석0
     const lab = sel => sel.options[sel.selectedIndex].textContent.replace(/ — 규칙 오류$/, '');
@@ -400,7 +407,7 @@ $('lobby-start').onclick = async () => {
   try {
     const opp = $('g-opp-f').style.display !== 'none' ? $('g-opp').value : undefined;
     const r = await api('room/start', {mode, deck: $('g-deck').value, ai_deck: $('g-ai').value, first: $('g-first').value, opponent: opp,
-                                       ai_kind: $('g-ai-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
+                                       ai_kind: $('g-ai-kind').value, ai0_kind: $('g-ai0-kind').value, learn: $('g-learn').checked, hints: $('g-hints').checked});
     if (r.my_match) enterMatch(r.my_match, '대전 중');
     else checkSpectate({id: r.id, names: r.names, title: r.title});
   } catch (e) { toast(e.message, 6000); }

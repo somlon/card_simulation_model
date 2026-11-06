@@ -258,7 +258,7 @@ class App:
         seated = self.live_ips
         players = sorted((pip for pip, m in self.room.items() if m['role'] == 'player' and pip not in seated), key=lambda pip: self.room[pip]['joined'])
         body = {'first': j.get('first'), 'learn': j.get('learn', True), 'hints': j.get('hints', False), 'seed': j.get('seed'),
-                'ai_kind': j.get('ai_kind', 'table')}
+                'ai_kind': j.get('ai_kind', 'table'), 'ai0_kind': j.get('ai0_kind')}
         if mode == 'pvp':
             pair = self._pick_pair(ip, players, j.get('opponent'))
             for pip in pair:
@@ -406,7 +406,9 @@ class App:
         first = {'me': 0, 'ai': 1}.get(j.get('first'), None)
         if first is None: first = secrets.randbelow(2)
         ai_kind = j.get('ai_kind', 'table')
-        if ai_kind not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {ai_kind}')
+        ai0_kind = (j.get('ai0_kind') or ai_kind) if not humans[0] else ai_kind   # 좌석0이 AI일 때(AI끼리)만 따로 — 오프라인판 #101
+        for k in (ai_kind, ai0_kind):
+            if k not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
         s = self.store.settings()
         a, b = self.deck_label(j['deck'], da), self.deck_label(j['ai_deck'], db)
         if humans[0] and humans[1]:
@@ -418,7 +420,7 @@ class App:
         seed = j.get('seed'); seed = int(seed) if seed not in (None, '') else None
         m = SS.LiveMatch(self.store, self.p['split'], [da, db], names, human=humans, seed=seed, first=first,
                          learn=bool(j.get('learn', s['learn'])), hints=bool(j.get('hints', s['hints'])), title=title,
-                         chat_fn=self.chat_between, ai_kind=ai_kind)
+                         chat_fn=self.chat_between, ai_kind=ai_kind, ai0_kind=ai0_kind)
         seats = {i: m.keys[i] for i in (0, 1) if m.humans[i]}
         # 로비(방)에서 짝지어 시작했으면(둘 다 사람 · 시작한 ip 가 아직 대전에 안 들어간 player 이고 그런 player 가 둘 이상) 상대 ip 를
         # 자동으로 좌석1에 묶어 둔다(opponent 로 지정 가능, 없으면 먼저 앉은 사람) — 수동으로 시작했으면(방에 없는 ip 거나 짝이
@@ -456,8 +458,11 @@ class App:
             x, y = self.deck_label(a, da), self.deck_label(b, db)
             pairs.append(((da, db), [x, y] if x != y else [f'{x} (P1)', f'{y} (P2)']))
         if not pairs: raise ValueError('대진이 없습니다')
+        ai_kind = j.get('ai_kind') or 'table'; ai0_kind = j.get('ai0_kind') or ai_kind   # 자리마다 AI 종류(오프라인판 #99 · #101)
+        for k in (ai_kind, ai0_kind):
+            if k not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
         job = SS.RecordJob(self.store, self.p['split'], pairs, matches=max(1, min(20, int(j.get('matches', 1)))),
-                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None)
+                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind, ai0_kind=ai0_kind)
         self.jobs[job.id] = job
         return job.info()
 

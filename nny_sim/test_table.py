@@ -69,3 +69,15 @@ class TrainerOpsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WeightedUpdateTest(unittest.TestCase):
+    """Table.update(w): 기록 출처별 가중치(게임 프로그램 — 사람 대전 기록을 크게). 기본 1 은 예전과 같다"""
+    def test_weight(self):
+        import policy as P
+        t = P.Table('none')
+        t.update('A vs B|d|x', 'A vs B|d|x|b', 1)
+        self.assertEqual(t.L1['A vs B|d|x'], [1, 1])
+        t.update('A vs B|d|x', 'A vs B|d|x|b', 0, w=3)
+        self.assertEqual(t.L1['A vs B|d|x'], [1, 4]); self.assertEqual(t.L2['A vs B|d|x|b'], [1, 4])
+        self.assertEqual(t.L0['A vs *|d|x'], [1, 4])

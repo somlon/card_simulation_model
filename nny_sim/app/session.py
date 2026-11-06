@@ -152,7 +152,8 @@ class Store:
         return {'title': m.get('title') or ' vs '.join(m['names']), 'names': m['names'], 'decks': m['decks'], 'winner': m.get('winner'),
                 'kind': m.get('kind', 'ai'), 'created': m.get('created', ''), 'seed': m.get('seed'), 'frames': len(rec['frames']),
                 'rounds': [[r['winner'], r['reason']] for r in m.get('rounds', [])], 'status': m.get('status', 'done'),
-                'memos': len(rec.get('memos') or []), 'chat': len(rec.get('chat') or [])}
+                'memos': len(rec.get('memos') or []), 'chat': len(rec.get('chat') or []),
+                'ai': m.get('ai', 'table'), **({'ai2': m['ai2']} if m.get('ai2') else {})}   # 재생 목록에 AI 종류(오프라인판 #99 · #101)
 
     def save_replay(self, rec, base=None, rid=None):
         base = base or os.path.join(self.dir, 'replays')
@@ -374,14 +375,18 @@ class LiveMatch:
     사람 자리마다 Bridge 가 따로 있다(self.bridges) — 사람vs사람이면 좌석마다 참가 키(self.keys)로 poll · answer 를 묶는다"""
 
     def __init__(self, store, split_dir, decks, names, human=False, seed=None, first=0, learn=True, hints=False, title='', chat_fn=None,
-                 ai_kind='table'):
+                 ai_kind='table', ai0_kind=None):
         self.store = store; self.split = split_dir; self.decks = decks; self.names = names
         self.humans = tuple(bool(x) for x in human) if isinstance(human, (tuple, list)) else (bool(human), False)
         self.human = any(self.humans)   # 사람 자리가 하나 이상 있는가(기존 코드 호환)
         self.seed = random.randrange(2 ** 31) if seed is None else seed; self.first = first
         self.learn = learn and self.human; self.hints = hints; self.title = title
-        if ai_kind not in AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {ai_kind}')
-        self.ai_kind = ai_kind
+        # AI 종류(AI_KINDS): ai_kind = P2(좌석1) AI, ai0_kind = 좌석0이 AI일 때(AI끼리 관전 · 녹화) — 없으면 ai_kind 와 같다
+        # (오프라인판 app/main #101 이식 — 다른 종류의 AI끼리 대전)
+        ai0_kind = ai0_kind or ai_kind
+        for k in (ai_kind, ai0_kind):
+            if k not in AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
+        self.ai_kind = ai_kind; self.ai0_kind = ai0_kind
         self.bridges = [Bridge(), Bridge()]; self.keys = [secrets.token_hex(8) if h else None for h in self.humans]
         self.rec = REC.Recorder(); self.status = 'starting'; self.error = None
         self.result = None; self.replay_id = None; self.learned = 0; self.id = uuid.uuid4().hex[:8]
@@ -403,6 +408,8 @@ class LiveMatch:
         REC.install_hooks()
         meta = {'decks': [d['스킬'] for d in self.decks], 'names': self.names, 'seed': self.seed, 'first': self.first,
                 'ai': self.ai_kind, 'kind': 'human' if self.human else 'ai', 'created': now(), 'title': self.title}
+        if not self.humans[0] and self.ai0_kind != self.ai_kind:   # 재생 기록 정보: 자리마다 AI 종류가 다르면 ai = P1 · ai2 = P2
+            meta['ai'] = self.ai0_kind; meta['ai2'] = self.ai_kind
         rounds = []; mw = None
         try:
             table = T.matchup_table(self.split, self.skills(), logs=[self.store.log_path])
@@ -411,7 +418,7 @@ class LiveMatch:
             def make_ai(d):
                 seat = d['_seat']
                 if self.humans[seat]: return HumanAI(d['스킬'], self.bridges[seat], table, learn=self.learn, hints=self.hints)
-                if self.ai_kind == 'heuristic': return HeuristicAI(d['스킬'])
+                if (self.ai0_kind if seat == 0 else self.ai_kind) == 'heuristic': return HeuristicAI(d['스킬'])
                 return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로
@@ -539,8 +546,11 @@ def human_side(bridge, decks, i, wins, rnd, log):
 class RecordJob:
     """AI vs AI 매치 여러 개를 차례로 녹화(사용자 재생 기록에 저장)"""
 
-    def __init__(self, store, split_dir, pairs, matches=1, seed=None):
+    def __init__(self, store, split_dir, pairs, matches=1, seed=None, ai_kind='table', ai0_kind=None):
         self.store = store; self.split = split_dir; self.pairs = pairs; self.n = matches
+        for k in (ai_kind, ai0_kind or ai_kind):
+            if k not in AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
+        self.ai_kind = ai_kind; self.ai0_kind = ai0_kind or ai_kind   # P2 · P1 자리 AI 종류(오프라인판 #99 · #101 — AI끼리 녹화도 종류를 고른다)
         self.seed = random.randrange(2 ** 31) if seed is None else seed
         self.done = []; self.total = len(pairs) * matches; self.status = 'running'; self.current = None; self.stop = False
         self.id = uuid.uuid4().hex[:8]
@@ -552,7 +562,7 @@ class RecordJob:
             for j in range(self.n):
                 if self.stop: break
                 m = LiveMatch(self.store, self.split, [da, db], names, human=False, seed=self.seed + k, first=k % 2,
-                              title=f'{names[0]} vs {names[1]}')
+                              title=f'{names[0]} vs {names[1]}', ai_kind=self.ai_kind, ai0_kind=self.ai0_kind)
                 self.current = m; m._run(); k += 1
                 self.done.append({'replay_id': m.replay_id, 'status': m.status, 'winner': m.result and m.result.get('winner')})
         self.status = 'stopped' if self.stop else 'done'; self.current = None
