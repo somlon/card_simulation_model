@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-11-05 (온라인판에 오프라인판 낮은 난이도 기능 이식 완료 — PR #131 ~ #134 사용자 머지 대기 · 루틴 끔, 「진행 중」 첫 항목. 이전: app/main ↔ online/main 기능 대조 — 오프라인판에만 있는 기능 목록, 「진행 중」 첫 항목. 이전: 열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
+마지막 갱신: 2026-11-06 (신경망 제외 남은 작업 전부 완료 — PR #135 ~ #142 사용자 머지 대기 · #127 닫음 · R2 online 계열 · 루틴 끔, 「진행 중」 첫 항목. 이전: 2026-11-05 온라인판에 오프라인판 낮은 난이도 기능 이식 완료 — PR #131 ~ #134 사용자 머지 대기 · 루틴 끔, 「진행 중」 첫 항목. 이전: app/main ↔ online/main 기능 대조 — 오프라인판에만 있는 기능 목록, 「진행 중」 첫 항목. 이전: 열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
 #128 은 기존 시험 2개를 깨뜨려 보류 · #106 · #127 은 대체돼 열린 채로 둠 — 「진행 중」 첫 항목. 이전: 2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 — 사용자 지시. 10-30 19:34 UTC 기록 뒤 바뀐 것: PR #105 · #113 머지(11-03, somlon) · #112 · #123 · #124 · #125 머지(11-03, chainedcreeper — #112 는 app/main 3ccc67c 충돌 해결 머지),
 #106 은 아직 열림 → 충돌 해결판 #128(열림, 세창 확인 뒤 머지), online 계열(chainedcreeper 쪽 온라인판 `online/main` · 매시 루틴 · 디스코드 비서 봇) 10-30 시작 — PR #104 · #117 ~ #122 중복으로 닫힘, #126 · #127 → #129(통합) · #130 열림,
 Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`data/human-games-ksc` · `data/human-games-laptop1211`), 기준 브랜치 머리 model/main d0049bf · app/main 3ccc67c · data/main d66c665, main 미반영 — 상세는 「진행 중」 첫 항목.
@@ -227,6 +227,7 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | 2026-11-02 ~ 03 | (chainedcreeper) online 에서 먼저 고친 룰 7건 · 사람 판단 5건 · 마도서 텍스트를 정본에 반영 | PR #123 → model/main d0049bf · #124 → app/main cbb3dc7 · #125 → data/main d66c665 (11-03 머지) |
 | 2026-11-05 | 10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 · workflow.md 갱신 | `default` 133e8c8 |
 | 2026-11-05 | 열린 PR 6개 점검(모의 머지 · 전체 시험 · 보안 검토) → 공개 접속 · 동시 매치 2개 머지(사용자 지시) | PR #129 → online/main 04096cb · #130 → 04f44d8 (#126 함께 머지 처리) · #128 보류(기존 시험 2개 오류) |
+| 2026-11-06 | 신경망 제외 남은 작업 — 오프라인: #128 시험 정리 · 시험 이름 겹침 · do_extra 중복 · test_rulings_1101 데이터버그 / 온라인: 사람 체인 순서 통합 · 서버 좌석별 비공개 정보 거르기 · 학습 데이터(AI끼리 · 가중치 · 정리) · 학습하는 휴리스틱 · data/main 카드 풀 맞춤 / #127 닫음 · R2 online 계열 | PR #135 ~ #137(app · model) · #138 ~ #142(online, 쌓음) — 사용자 머지 대기 |
 | 2026-11-05 | 오프라인판 기능 중 온라인 적용 난이도 낮은 것 이식 — 사람 선택(족보 재료 · 부여 · 선언 · 번식지 · 선택 코스트 · 같은 이름 칸 구별 · 뒷면 이름 감춤) · 화면 갱신 · 체인 고리 · 덱 편집 3장 · 스킬 교체 태그 · 자리별 AI 종류 · AI 체인 순서 학습 | `online/port-offline-human` · `-view` · `-deck` · `-ai` → PR #131 ~ #134(쌓음, 사용자 머지 대기) |
 
 ## 실행 환경 메모
@@ -243,8 +244,8 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 
 ## 진행 중
 
-- **【진행 중 — 2026-11-06】 신경망 제외 남은 작업 전부 (사용자 지시 「신경망 학습 기능을 제외한 나머지 작업 전부 해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
-  - 매시 루틴 「신경망 제외 남은 작업 전부 자동 이어하기(매시)」(trig_01Tgz4preJ99gEHgWTij7Bj8, 매시 46분, 이 세션).
+- **【완료 — 2026-11-06, PR #135 ~ #142 사용자 머지 대기 · 루틴 끔】 신경망 제외 남은 작업 전부 (사용자 지시 「신경망 학습 기능을 제외한 나머지 작업 전부 해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
+  - 매시 루틴 「신경망 제외 남은 작업 전부 자동 이어하기(매시)」(trig_01Tgz4preJ99gEHgWTij7Bj8, 매시 46분, 이 세션) — 2026-11-06 끔.
   - 범위(직전 보고의 남은 항목 — 신경망 #92 · #94 와 #102 · #113 의 신경망 표본 부분은 뺌). 기준 브랜치에는 직접 푸시하지 않음(PR 만, 머지는 사용자):
     온라인(#134 `online/port-offline-ai` 위에 쌓음):
     O1 `online/trigger-order-human` 사람 체인 순서 #106 판 통합(사람 · AI 같은 판단 키 「체인 순서(같은 타이밍)」, soltop_ 7번 공유 한도 묻기 유지) · 시험 갱신
@@ -265,6 +266,11 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
       답 기다리는 중엔 마지막 줄도 바로. 누출 검사 대진 8개 × 3시점 0건, Playwright 정상, 전체 531개 OK. 다음: O3.
     - 2026-11-06 O3 `online/learning-data` 832d553(O2 위) — learndata · tables(가중치 · 제외) · AI끼리 기록 · Store 정리 API · 학습 탭 정리 화면(정리는 로컬 · 방장만),
       test_online_learning_data 5개 · Playwright 정상 · 전체 536개 OK. 다음: O4.
+    - 2026-11-06 O4 `online/heuristic-learning` ea2168d(O3 위) — LearningHeuristicAI('heuristic' 자리), 전체 538개 OK.
+    - 2026-11-06 O5 `online/sync-data-main` 444a135(O4 위) — card_pool = data/main(177장), 데이터버그 공식 덱 · 레시피 제외, 보류 자료 · databug_fixture · 시험 8개 model 판, 전체 538개 OK · 누출 0.
+    - 2026-11-06 **완료** — 온라인 PR **#138** O1(base #134 머리) · **#139** O2 · **#140** O3 · **#141** O4 · **#142** O5(쌓음, 맨 위를 online/main 45e4d62 에 모의 머지해도 충돌 없음).
+      정리: #127 닫음(내용은 #129 로 online/main 에 들어감 — base 변경은 「새 커밋 없음」으로 막혀 코멘트 남기고 닫음) · CLAUDE.md R2 에 `online` 계열 추가(default fb11ba7). 루틴 끔.
+      머지 순서: 오프라인 #135 → #136(base 를 app/main 으로) · #137, 온라인 #131 → #132 → #133 → #134 → #138 → #139 → #140 → #141 → #142(앞 PR 머지 뒤 다음 base 를 online/main 으로).
 
 - **【완료 — 2026-11-05, PR #131 ~ #134 사용자 머지 대기 · 루틴 끔】 온라인판에 오프라인판 기능 중 난이도 낮은 것 이식 (사용자 지시 「난이도 낮은 것들부터 온라인 브랜치에 적용해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
   - 매시 루틴 「온라인판 낮은 난이도 이식 자동 이어하기(매시)」(trig_013Pmcxn17YwaAbqkPpT4Nop, 매시 58분, 이 세션) — 2026-11-05 끔.
@@ -1279,7 +1285,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 
 ## 다음 할 일 (우선순위 순)
 
-0. (2026-11-05 점검 결과 — 사용자 확인 필요, 가장 우선)
+0. (2026-11-06 — 사용자 확인 필요, 가장 우선) PR 머지: 오프라인 #135 → #136 · #137, 온라인 #131 → #134 → #138 → #142(쌓음). 남은 것은 신경망 계열(#92 · #94 — 사용자 지시로 제외)과
+   10-30 후속(백지 모델 재학습 · 데이터버그 수정 뒤 보류 자료 되돌리기 · 실제 Windows 확인). online `/api/quit` · `/api/settings` 호스트 제한 · 로그인 시도 제한 · HTTPS 는 아직(#129 위험 항목).
+0. (2026-11-05 점검 결과 — 대부분 2026-11-06 처리됨)
    - 온라인 이식 PR **#131 → #132 → #133 → #134** 머지(사용자 — 앞 PR 머지 뒤 다음 PR base 를 online/main 으로). 남은 높음 항목: 기록 줄 · 전략 덱 교체 감춤의 서버 좌석별 거르기, 사람 체인 순서(#106 판), 학습 데이터 계열, 신경망.
    - app/main human.py `do_extra` 중복 정의(#124 로 생김 — 제물 칸 이름표 · 몬스터 존 조건이 덮임, 오프라인판 app/tests/human_choice_test 실패) → app 새 브랜치로 #97 판 하나로 정리(온라인은 #131 에서 정리함).
    - PR **#128**(`app/trigger-order-merge` → app/main, #106 충돌 해결판): **기존 시험 `nny_sim/test_trigger_order.py`(app/main) 2개 ERROR** 로 보류(「진행 중」 첫 항목).
@@ -1403,6 +1411,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | `online/public-access` | #126 + #127 통합 · 게이트 보강 (2b0d94c) | PR #129 머지 완료(2026-11-05, online/main 04096cb), 삭제 가능 |
 | `online/two-matches` | 동시 매치 2개 (bde45db) | PR #130 머지 완료(2026-11-05, online/main 04f44d8), 삭제 가능 |
 | `online/port-offline-human` · `-view` · `-deck` · `-ai` | 오프라인판 낮은 난이도 기능 이식(98ea1c1 · 6ced62b · 92eeede · 29e6ec8, 쌓음) | PR #131 ~ #134 — 사용자 머지 대기 |
+| `online/trigger-order-human` · `seat-filter` · `learning-data` · `heuristic-learning` · `sync-data-main` | 남은 작업 O1 ~ O5(ab57f6b · cba6e96 · 832d553 · ea2168d · 444a135, #134 위에 쌓음) | PR #138 ~ #142 — 사용자 머지 대기 |
+| `app/trigger-order-fix` · `app/fix-duplicate-do-extra` | #128 시험 정리(ebadf8d, #128 · #106 대체) · do_extra 중복(07f4a3c, 위에 쌓음) | PR #135 · #136 — 사용자 머지 대기 |
+| `model/fix-rulings-1101-fixture` | test_rulings_1101 데이터버그 보류 자료(45633e0) | PR #137 — 사용자 머지 대기 |
 | `new_card_co_work` | 디스코드 비서 봇 첫 커밋까지의 online/main 사본 (d81c26f) | 이후 커밋 없음, 내용은 online/main 에 포함 |
 | `DuelModel` | 별도 저장소 card_ai(뉴 네오 대전 AI) 반영본 (MaybeDiedCat, main 에서 분기, ef63b9e) | 푸시만, PR 없음 |
 | 태그 `runtime-v1.1.0` | Release — NNY_Simulator_v1.1.0_win64.zip 원본 빌드(온라인판 런타임, chainedcreeper 2026-11-02) | 공개됨 |
