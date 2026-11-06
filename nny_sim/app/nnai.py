@@ -65,11 +65,12 @@ def load_actor(path):
     return MD.load_actor(path)[0]
 
 
-def make_ai(skill, actor, table):
-    """신경망 AI — 학습표 AI(LearnedAI)의 후보 생성 · 지침은 그대로, 판단 고르기만 신경망. 시작 패 배분 · 표시 형식 등 DRL 판단 종류가 아닌 것은 학습표로"""
+def make_ai(skill, actor, table, learn=False):
+    """신경망 AI — 학습표 AI(LearnedAI)의 후보 생성 · 지침은 그대로, 판단 고르기만 신경망. 시작 패 배분 · 표시 형식 · 같은 타이밍 효과의 체인 순서 등
+    DRL 판단 종류가 아닌 것은 학습표로 고른다. learn: 그 학습표 판단을 판 승패로 학습(신경망 판단은 신경망 표본 — nn_samples)"""
     from drl.agent import DRLAI
     ai = DRLAI(skill, actor=actor, mode='greedy')
-    ai.table = table
+    ai.table = table; ai.learn = learn
     return ai
 
 

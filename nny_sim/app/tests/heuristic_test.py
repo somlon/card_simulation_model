@@ -13,7 +13,7 @@ app = server.App({'sim': SIM, 'split': SPLIT, 'cards': CARDS, 'library': LIB, 'u
                   'viewer': os.path.join(os.path.dirname(APP), 'viewer')})
 rng = random.Random(7); ok = True
 TABLE_STYLE = '%(n'   # 학습표 AI(policy.LearnedAI.choose)의 판단 줄 — 후보마다 「승률%(n 표본 수)」. 휴리스틱 AI 전술은 「후보 {라벨=점수}」
-STRATEGY = ('시작 패 배분', '시작 패 재배분', '멀리건:', '드로우 덱', '번식지', '선후공 선택')   # 학습하는 휴리스틱 AI가 학습표로 고르는 판단(session.LearningHeuristicAI.STRATEGY)
+STRATEGY = ('시작 패 배분', '시작 패 재배분', '멀리건:', '드로우 덱', '번식지', '선후공 선택', '체인 순서')   # 학습하는 휴리스틱 AI가 학습표로 고르는 판단(session.LearningHeuristicAI.STRATEGY)
 
 
 def strategic(m):
