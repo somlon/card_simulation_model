@@ -257,6 +257,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
     정리: #127 base → online/main(내용이 #129 로 들어가 있어 머지 처리됨) · CLAUDE.md R2 에 `online` 계열 추가(default).
   - 진행 기록:
     - 2026-11-06 시작 · 루틴 생성 · 범위 정리(#131 ~ #134 아직 열림).
+    - 2026-11-06 오프라인 F1 · F2 · F3 완료 — PR **#135** `app/trigger-order-fix` ebadf8d(#128 위, 시험 이름 test_human_trigger_order · 가짜 카드 zone/kind ·
+      앱 시험 후보 목록 d.opts · AI 대진 반복 → trigger_order_test 6개 통과, #128 · #106 대체) · **#136** `app/fix-duplicate-do-extra` 07f4a3c(#135 위, human_choice_test 등 앱 시험 6종 통과) ·
+      **#137** `model/fix-rulings-1101-fixture` 45633e0(databug_fixture, 392개 OK). 다음: O1.
 
 - **【완료 — 2026-11-05, PR #131 ~ #134 사용자 머지 대기 · 루틴 끔】 온라인판에 오프라인판 기능 중 난이도 낮은 것 이식 (사용자 지시 「난이도 낮은 것들부터 온라인 브랜치에 적용해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
   - 매시 루틴 「온라인판 낮은 난이도 이식 자동 이어하기(매시)」(trig_013Pmcxn17YwaAbqkPpT4Nop, 매시 58분, 이 세션) — 2026-11-05 끔.
