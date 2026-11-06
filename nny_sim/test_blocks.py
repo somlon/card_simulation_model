@@ -12,6 +12,15 @@ def card_of(code):
     return next(d for d in POOL.values() if d.get('code') == code)
 
 
+
+import databug_fixture   # 데이터버그 카드(카드 풀에서 보류 중 — 사용자 지시 2026-10-30)도 조립표 · 텍스트 대조에 넣는다
+
+
+def setUpModule(): databug_fixture.install()
+
+
+def tearDownModule(): databug_fixture.uninstall()
+
 class TemplateTest(unittest.TestCase):
     def test_all_templates_match_text(self):
         bad = []
