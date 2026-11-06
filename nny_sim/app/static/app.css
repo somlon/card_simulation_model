@@ -234,6 +234,9 @@ svg.fxl text.al{font-size:46px;font-weight:900;text-anchor:middle;stroke:#0a0d14
 .decision .q small{display:block;color:var(--muted);font-weight:600;font-size:12px;margin-top:2px}
 .decision .opts{display:flex;flex-direction:column;gap:5px;max-height:46vh;overflow:auto}
 .decision .opt{display:flex;align-items:center;gap:8px;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+/* 전략 덱 교체: 스킬을 바꾼 뒤 새 스킬 태그에 맞지 않는 메인 · 상급 카드(오프라인판 #89 이식 — 테마 3종에 맞게 의미색 --danger 로) */
+.decision .misfit{background:color-mix(in srgb,var(--danger) 16%,var(--panel2));border:1px solid var(--danger);border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:12.5px}
+.decision .opt.misfit{border-color:var(--danger)}
 .decision .opt:hover{border-color:var(--gold);background:var(--panel3)}
 .decision .opt img{width:34px;border-radius:3px;flex:0 0 34px}
 .decision .opt .t{flex:1;min-width:0}
