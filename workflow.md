@@ -260,6 +260,9 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
     - 2026-11-06 오프라인 F1 · F2 · F3 완료 — PR **#135** `app/trigger-order-fix` ebadf8d(#128 위, 시험 이름 test_human_trigger_order · 가짜 카드 zone/kind ·
       앱 시험 후보 목록 d.opts · AI 대진 반복 → trigger_order_test 6개 통과, #128 · #106 대체) · **#136** `app/fix-duplicate-do-extra` 07f4a3c(#135 위, human_choice_test 등 앱 시험 6종 통과) ·
       **#137** `model/fix-rulings-1101-fixture` 45633e0(databug_fixture, 392개 OK). 다음: O1.
+    - 2026-11-06 O1 `online/trigger-order-human` ab57f6b(#134 위) — 사람 체인 순서를 AI 와 같은 판단 키로(#136 판 human.py + Bridge 경쟁 수정), 시험 이름 오프라인과 같게, 전체 524개 OK.
+    - 2026-11-06 O2 `online/seat-filter` cba6e96(O1 위) — app/seatview.py: 보는 사람별 걸러 쌓은 기록(별칭 · 등록표 · 기록 줄 · 판단 · 교체), 체인에 오른 카드는 공개,
+      답 기다리는 중엔 마지막 줄도 바로. 누출 검사 대진 8개 × 3시점 0건, Playwright 정상, 전체 531개 OK. 다음: O3.
 
 - **【완료 — 2026-11-05, PR #131 ~ #134 사용자 머지 대기 · 루틴 끔】 온라인판에 오프라인판 기능 중 난이도 낮은 것 이식 (사용자 지시 「난이도 낮은 것들부터 온라인 브랜치에 적용해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
   - 매시 루틴 「온라인판 낮은 난이도 이식 자동 이어하기(매시)」(trig_013Pmcxn17YwaAbqkPpT4Nop, 매시 58분, 이 세션) — 2026-11-05 끔.
