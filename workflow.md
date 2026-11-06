@@ -243,6 +243,21 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 
 ## 진행 중
 
+- **【진행 중 — 2026-11-06】 신경망 제외 남은 작업 전부 (사용자 지시 「신경망 학습 기능을 제외한 나머지 작업 전부 해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
+  - 매시 루틴 「신경망 제외 남은 작업 전부 자동 이어하기(매시)」(trig_01Tgz4preJ99gEHgWTij7Bj8, 매시 46분, 이 세션).
+  - 범위(직전 보고의 남은 항목 — 신경망 #92 · #94 와 #102 · #113 의 신경망 표본 부분은 뺌). 기준 브랜치에는 직접 푸시하지 않음(PR 만, 머지는 사용자):
+    온라인(#134 `online/port-offline-ai` 위에 쌓음):
+    O1 `online/trigger-order-human` 사람 체인 순서 #106 판 통합(사람 · AI 같은 판단 키 「체인 순서(같은 타이밍)」, soltop_ 7번 공유 한도 묻기 유지) · 시험 갱신
+    O2 `online/seat-filter` 서버가 좌석 · 관전자별로 비공개 정보를 걸러 보냄(poll 의 frames · states · cards) — 기록 줄 · 전략 덱 교체 감춤 포함
+    O3 `online/learning-data` AI끼리 대전 학습 기록 · 사람 3 : AI 1 가중치 · 매치 · 판단 단위 정리(학습표만)
+    O4 `online/heuristic-learning` 학습하는 휴리스틱 AI
+    O5 `online/sync-data-main` data/main 데이터 동기화(데이터버그 23장 제외) · 데이터버그 시험 보류 자료(databug_fixture)
+    오프라인: F1 `app/trigger-order-fix`(#128 위 — test_trigger_order 2 오류 · 앱 시험 불안정 · 시험 이름 겹침, #128 · #106 대체) ·
+    F2 `app/fix-duplicate-do-extra`(F1 위 — do_extra 중복 · human_choice_test 데이터버그 의존) · F3 `model/fix-rulings-1101-fixture`(test_rulings_1101 데이터버그)
+    정리: #127 base → online/main(내용이 #129 로 들어가 있어 머지 처리됨) · CLAUDE.md R2 에 `online` 계열 추가(default).
+  - 진행 기록:
+    - 2026-11-06 시작 · 루틴 생성 · 범위 정리(#131 ~ #134 아직 열림).
+
 - **【완료 — 2026-11-05, PR #131 ~ #134 사용자 머지 대기 · 루틴 끔】 온라인판에 오프라인판 기능 중 난이도 낮은 것 이식 (사용자 지시 「난이도 낮은 것들부터 온라인 브랜치에 적용해줘」, 세션 session_018Feff868KKPkFP9unYF3EE · 브랜치 claude/keen-thompson-9zx1rw):**
   - 매시 루틴 「온라인판 낮은 난이도 이식 자동 이어하기(매시)」(trig_013Pmcxn17YwaAbqkPpT4Nop, 매시 58분, 이 세션) — 2026-11-05 끔.
   - 규칙: 온라인 쪽 정책(코드 · 룰 엔진 → `online/<작업명>` → online/main PR, 머지는 사용자). online/main 은 VM 서버가 받아 쓰는 배포 브랜치라 직접 푸시하지 않음.
