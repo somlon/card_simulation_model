@@ -18,6 +18,7 @@ ROOM_GRACE = 90          # 로비(방) 재접속 유예: 이만큼(초) heartbea
 CHAT_MAX = 200           # 인게임 메신저: 메시지 1개 최대 글자 수(room_join 의 name[:40] 과 같은 식의 사람 입력 캡)
 MAX_LIVE = 2             # 동시에 띄우는 매치 수 상한(2026-11-04, 장인준) — 서버 자원이 아니라 방 운영 단위로 정한 값
 MAX_PLAYERS = 4          # 대기실 플레이어 자리(매치 2개 × 좌석 2)
+LOCAL_IPS = ('127.0.0.1', '::1')   # 서버 컴퓨터에서 연 접속 — 공유 학습 데이터 정리 등 호스트만 하는 일
 CHAT_BUFFER = 200        # 인게임 메신저: 메모리 링버퍼에 유지하는 최근 메시지 수(프로세스 수명 동안만 — 그 이상은 push_game 으로 넘어가야 남음)
 POOL_KEYS = ('code', 'name', 'type', 'subtype', 'level', 'race', 'attr', 'atk', 'def', 'deck', 'color', 'text', 'tags', 'theme', 'skill_tags', 'no_common')
 mimetypes.add_type('image/webp', '.webp'); mimetypes.add_type('text/javascript', '.js')
@@ -462,7 +463,8 @@ class App:
         for k in (ai_kind, ai0_kind):
             if k not in SS.AI_KINDS: raise ValueError(f'알 수 없는 AI 종류: {k}')
         job = SS.RecordJob(self.store, self.p['split'], pairs, matches=max(1, min(20, int(j.get('matches', 1)))),
-                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind, ai0_kind=ai0_kind)
+                           seed=int(j['seed']) if j.get('seed') not in (None, '') else None, ai_kind=ai_kind, ai0_kind=ai0_kind,
+                           learn=bool(j.get('learn', False)))   # 녹화를 학습 데이터로 남길지(출처 AI끼리, 오프라인판 #102)
         self.jobs[job.id] = job
         return job.info()
 
@@ -479,9 +481,15 @@ class App:
                 'chat': self.chat_since(chat_from), 'me_ip': ip}
 
     def learning(self):
-        st = T.log_stats(self.store.log_path)
-        return dict(st, path=self.store.log_path, export_dir=os.path.join(self.store.dir, 'export'),
-                    last_push=self.store.last_push(), last_game_push=self.store.last_game_push())
+        import learndata as LD   # 사람 대전 · AI끼리 기록 통계(뺀 매치 · 판단 제외) · 가중치(오프라인판 #102 이식)
+        return dict(self.store.learning_stats(), path=self.store.log_path, ai_path=self.store.ai_log_path,
+                    export_dir=os.path.join(self.store.dir, 'export'), last_push=self.store.last_push(),
+                    last_game_push=self.store.last_game_push(), weights={'human': LD.HUMAN_WEIGHT, 'ai': LD.AI_WEIGHT})
+
+    def _may_curate(self, ip):
+        """학습 데이터(공유 서버의 학습 기록) 빼고 넣기를 할 수 있는 접속 — 서버 컴퓨터(로컬) 또는 지금 방장.
+        공개 접속(입장 암호)으로 들어온 누구나 공유 학습 데이터를 바꾸지 못하게(2026-11-06)"""
+        return ip is None or ip in LOCAL_IPS or ip == self.room_host()
 
     # ── 요청 처리 ──
     def route(self, method, path, q, body, ip=None):
@@ -529,7 +537,18 @@ class App:
             j = self.jobs.get(body.get('id'));
             if j: j.stop = True
             return {'ok': bool(j)}
-        if path == '/api/learning': return self.learning()
+        if path == '/api/learning': return dict(self.learning(), can_curate=self._may_curate(ip))
+        if path == '/api/learning/items': return self.store.learning_items()
+        if path == '/api/learning/decisions': return self.store.decisions(g('key', ''))
+        if path in ('/api/learning/exclude', '/api/learning/exclude_parts', '/api/learning/exclude_text'):
+            if not self._may_curate(ip): raise ValueError('학습 데이터 정리는 서버 컴퓨터 또는 방장만 할 수 있습니다')
+            if path.endswith('exclude'):
+                return {'ok': True, 'excluded': self.store.set_excluded(body.get('keys', []), bool(body.get('excluded', True)))}
+            if path.endswith('parts'):
+                return {'ok': True, 'dropped': self.store.set_parts(body.get('key', ''), body.get('table', []), (), bool(body.get('excluded', True)))}
+            text = str(body.get('text', '')).strip()
+            if not text: raise ValueError('판단 글을 입력하세요')
+            return {'ok': True, 'changed': self.store.set_decision_text(body.get('keys', []), text, bool(body.get('excluded', True)))}
         if path == '/api/analysis/decisions':
             top = g('top'); return {'report': self.store.decision_report(top=int(top) if top not in (None, '') else None)}
         if path == '/api/learning/export':

@@ -92,11 +92,12 @@
       </div>
       <div class="panel">
         <h2 class="sec">새 AI 대전 녹화</h2>
-        <div class="bigtxt muted" style="margin-bottom:8px">학습표 AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 편집한 덱도 고를 수 있습니다.</div>
+        <div class="bigtxt muted" style="margin-bottom:8px">AI끼리 Bo3 매치를 두어 내 기록에 저장합니다. 편집한 덱도 고를 수 있습니다.</div>
         <div class="field"><span>P1 덱</span><select id="r-a"></select></div>
         <div class="field"><span>P2 덱</span><select id="r-b"></select></div>
         <div class="row2"><div class="field" style="flex:1"><span>P1 AI</span><select id="r-ai0" class="aikind"></select></div>
           <div class="field" style="flex:1"><span>P2 AI</span><select id="r-ai1" class="aikind"></select></div></div>
+        <label class="chk" title="녹화한 매치의 판단을 학습 기록(출처 「AI끼리」 — 사람 대전보다 낮은 가중치)으로 남깁니다. 학습 · 정리 탭에서 매치 · 판단 단위로 뺄 수 있습니다."><input type="checkbox" id="r-learn"> 학습 데이터로 남기기</label>
         <div class="row2"><span class="muted">매치 수</span><input type="number" id="r-n" value="1" min="1" max="20" style="width:70px">
           <button class="btn primary" id="r-go">녹화 시작</button><button class="btn sm" id="r-stop">멈춤</button></div>
         <div style="margin-top:10px"><div class="progress"><b id="r-bar"></b></div><div class="muted" id="r-msg" style="margin-top:4px"></div></div>
@@ -232,18 +233,35 @@
   <section class="view" id="v-learn">
     <div class="cols c2">
       <div class="panel">
-        <h2 class="sec">사람 대전 학습 기록</h2>
+        <h2 class="sec">학습 기록 (사람 대전 · AI끼리)</h2>
         <div id="l-stats"></div>
         <div class="row2" style="margin-top:10px">
           <button class="btn primary" id="l-export">학습 기록 내보내기</button>
           <button class="btn" id="l-open">내보낸 폴더 열기</button>
         </div>
         <div class="muted" id="l-exported" style="margin-top:6px"></div>
+        <h2 class="sec" style="margin-top:14px">학습 데이터 정리</h2>
+        <div class="bigtxt muted" id="c-help"></div>
+        <div class="row2" style="margin-top:6px">
+          <select id="c-src"><option value="">출처 전체</option><option value="human">사람 대전</option><option value="ai">AI끼리</option></select>
+          <select id="c-state"><option value="">넣음 · 뺌 전체</option><option value="in">학습에 넣은 것</option><option value="out">뺀 것</option></select>
+          <input type="text" id="c-q" placeholder="덱 · AI 종류 거르기" style="flex:1;min-width:120px">
+        </div>
+        <div class="row2" style="margin-top:6px">
+          <button class="btn sm" id="c-out">보이는 매치 모두 빼기</button><button class="btn sm" id="c-in">보이는 매치 모두 넣기</button><span class="muted" id="c-count"></span>
+        </div>
+        <div class="row2" style="margin-top:6px">
+          <input type="text" id="c-dq" placeholder="판단 · 후보 글 (예: 멀리건, 대상:, 체인 순서)" style="flex:1;min-width:140px">
+          <button class="btn sm" id="c-dout">보이는 매치에서 이 판단 빼기</button><button class="btn sm" id="c-din">넣기</button>
+        </div>
+        <div id="c-list" style="max-height:360px;overflow:auto;margin-top:6px"></div>
+        <div id="c-detail" style="margin-top:8px"></div>
       </div>
       <div class="panel">
         <h2 class="sec">어떻게 학습하나요</h2>
         <div class="bigtxt">
-          <p>「AI 학습」을 켜고 대전하면, 매치가 끝날 때 AI와 내 판단 기록(어떤 상황에서 무엇을 골랐고 그 라운드를 이겼는지)이 학습표에 더해집니다.
+          <p>「AI 학습」을 켜고 대전하면(사람 vs AI · AI끼리 관전, 녹화는 「학습 데이터로 남기기」), 매치가 끝날 때 AI와 내 판단 기록(어떤 상황에서 무엇을 골랐고 그 라운드를 이겼는지)이 학습표에 더해집니다.
+          <b>사람 대전 기록은 AI끼리 기록보다 큰 가중치</b>로 학습합니다. 「학습 데이터 정리」에서 뺀 매치 · 판단은 학습 · 내보내기 · GitHub 올리기에서 모두 빠집니다(정리는 서버 컴퓨터 또는 방장만).
           <b>프로그램 안에서는 바로 반영</b>되어 다음 대전부터 AI가 그 결과를 씁니다. 기록은 내 컴퓨터의 사용자 폴더에 쌓입니다(인터넷 불필요).</p>
           <p><b>GitHub 반영은 인터넷이 있어야 합니다.</b> 인터넷 없이 GitHub에 즉시 올리는 것은 불가능하므로, 두 가지 방법을 둡니다.</p>
           <p>① <b>GitHub에 올리기</b>(아래): 인터넷과 git, GitHub 로그인이 있으면 학습 기록을 저장소의 데이터 브랜치에 올립니다.<br>

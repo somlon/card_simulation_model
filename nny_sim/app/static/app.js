@@ -215,7 +215,7 @@ function playlistNext(auto) { if (W.idx < 0 || !$('pl-auto').checked) return; se
 $('r-b').selectedIndex = Math.min(1, $('r-b').options.length - 1);
 let jobT = null;
 $('r-go').onclick = async () => {
-  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value}); W.job = j.id; watchJob(); }
+  try { const j = await api('record', {pairs: [[$('r-a').value, $('r-b').value]], matches: +$('r-n').value || 1, ai0_kind: $('r-ai0').value, ai_kind: $('r-ai1').value, learn: $('r-learn').checked}); W.job = j.id; watchJob(); }
   catch (e) { toast(e.message); }
 };
 $('r-stop').onclick = () => W.job && api('jobs/stop', {id: W.job});
@@ -248,7 +248,7 @@ $('g-mode').onchange = () => {
   $('g-ai0-kind-f').style.display = mode === 'aivai' ? '' : 'none';   // AI vs AI 는 자리마다 AI 종류(P1 · P2)
   $('g-aikindlabel').textContent = mode === 'aivai' ? 'P2 AI 종류' : 'AI 종류';
   $('g-mylabel').textContent = 'P1 AI 덱'; $('g-oplabel').textContent = mode === 'ai' ? 'AI 덱 (상대)' : 'P2 AI 덱';
-  $('g-learn').disabled = mode !== 'ai'; $('g-hints').disabled = mode !== 'ai';
+  $('g-learn').disabled = mode === 'pvp'; $('g-hints').disabled = mode !== 'ai';   // AI vs AI 관전도 학습 데이터(출처 AI끼리)로 남길 수 있다(오프라인판 #102)
   showRoom(LAST_ROOM);
 };
 $('g-mode').onchange();
@@ -707,15 +707,90 @@ function renderCards() {
 
 // ═══════════════ 학습 ═══════════════
 async function refreshLearning() {
-  const L = await api('learning'); const s = BOOT.settings;
+  const L = await api('learning'); const s = BOOT.settings; CL.weights = L.weights; CL.can = !!L.can_curate;
   const rows = Object.entries(L.by_matchup || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v.matches}</td><td class="n">${v.wins}</td><td class="n">${v.updates}</td></tr>`).join('');
-  $('l-stats').innerHTML = `<div class="bigtxt">학습한 매치 <b>${L.matches}</b>개 · 판단 기록 <b>${L.updates}</b>개 · 파일 ${(L.size / 1024).toFixed(1)}KB<br><span class="muted">${esc(L.path)}</span></div>
-    ${rows ? `<table class="t" style="margin-top:8px"><tr><th>대전(내 덱 vs AI 덱)</th><th>매치</th><th>내 승</th><th>판단 기록</th></tr>${rows}</table>` : '<div class="hint" style="margin-top:8px">아직 학습한 대전이 없습니다. AI 대전에서 「AI 학습」을 켜고 두어 보세요.</div>'}`;
+  const bs = L.by_source || {}, sm = k => bs[k] ? `${bs[k].matches}매치 · 판단 ${bs[k].updates}개` : '0';
+  $('l-stats').innerHTML = `<div class="bigtxt">학습한 매치 <b>${L.matches}</b>개 · 판단 기록 <b>${L.updates}</b>개 · 파일 ${(L.size / 1024).toFixed(1)}KB<br>
+    사람 대전 ${sm('human')} · AI끼리 ${sm('ai')}${L.excluded ? ` · <b>뺀 매치 ${L.excluded}개</b>` : ''}${L.excluded_parts ? ` · <b>뺀 판단 ${L.excluded_parts}개</b>` : ''}${L.excluded || L.excluded_parts ? '(학습 · 내보내기 · 올리기에서 제외)' : ''}<br><span class="muted">${esc(L.path)}<br>${esc(L.ai_path || '')}</span></div>
+    ${rows ? `<table class="t" style="margin-top:8px"><tr><th>사람 대전(내 덱 vs AI 덱)</th><th>매치</th><th>내 승</th><th>판단 기록</th></tr>${rows}</table>` : (L.matches ? '' : '<div class="hint" style="margin-top:8px">아직 학습한 대전이 없습니다. AI 대전에서 「AI 학습」을 켜고 두어 보세요.</div>')}`;
+  refreshCuration().catch(e => toast(e.message));
   $('l-url').value = s.git_url || ''; $('l-base').value = s.git_base || ''; $('l-branch').value = s.git_branch || ''; $('l-auto').checked = !!s.auto_push;
   const lp = L.last_push; $('l-last').textContent = lp ? `마지막 자동 올리기(${lp.time}): ${lp.ok ? '성공' : '실패'} — ${lp.msg}` : '';
   $('l-pushgames').checked = !!s.push_games;
   const gp = L.last_game_push; $('l-gamepush').textContent = gp ? `마지막 기보 수집(${gp.time}): ${gp.ok ? '성공' : '실패'} — ${gp.msg}` : '';
 }
+// ── 학습 데이터 정리: 매치 · 판단 단위로 학습표 기록을 빼거나 넣는다(오프라인판 app/main #102 · #113 이식 — 학습표만, 신경망 표본 없음) ──
+// 공유 서버라 빼고 넣기는 서버 컴퓨터 또는 방장만(server._may_curate) — 그 밖에는 보기만
+const CL = {items: [], weights: null, can: false};
+const kindName = k => k === 'human' ? '사람' : k === 'heuristic' ? '휴리스틱' : k === 'table' ? '학습표' : (k || '?');
+async function refreshCuration() {
+  CL.items = await api('learning/items');
+  const w = CL.weights;
+  $('c-help').innerHTML = `대전마다 남은 학습 데이터(학습표 기록)입니다. 매치 전체 또는 「판단」에서 판단 하나하나(또는 거른 판단을 한꺼번에)를 뺄 수 있습니다. 쓸모없는 매치 · 판단(실수 · 시험 대전 등)을 빼면 학습표 AI 학습과 내보내기 · GitHub 올리기에서 빠집니다(파일은 지우지 않아 다시 넣을 수 있음).`
+    + (w ? ` 가중치 — 사람 대전 ${w.human} : AI끼리 ${w.ai}.` : '') + ' 다음 대전부터 반영됩니다.'
+    + (CL.can ? '' : ' <b>빼고 넣기는 서버 컴퓨터 또는 방장만 할 수 있습니다 — 지금은 보기만.</b>');
+  ['c-out', 'c-in', 'c-dout', 'c-din'].forEach(id => { $(id).disabled = !CL.can; });
+  drawCuration();
+}
+function curationShown() {
+  const src = $('c-src').value, stv = $('c-state').value, q = $('c-q').value.trim().toLowerCase();
+  return CL.items.filter(it => (!src || it.source === src) && (!stv || (stv === 'out') === it.excluded)
+    && (!q || [...(it.decks || []), ...(it.ai_kinds || []).map(kindName)].join(' ').toLowerCase().includes(q)));
+}
+function drawCuration() {
+  const shown = curationShown(), dis = CL.can ? '' : ' disabled';
+  $('c-count').textContent = `${shown.length} / ${CL.items.length}매치`;
+  $('c-list').innerHTML = shown.length ? `<table class="t"><tr><th>넣음</th><th>시각</th><th>출처</th><th>대전</th><th>결과</th><th class="n">판단</th><th></th></tr>` + shown.map(it => {
+    const k = it.ai_kinds || [], res = it.winner == null ? (it.status === 'done' ? '무승부' : it.status || '') : it.source === 'human' ? (it.human_won ? 'P1(사람) 승' : 'P2 승') : `P${it.winner + 1} 승`;
+    return `<tr${it.excluded ? ' style="opacity:.5"' : ''}><td><input type="checkbox" data-key="${esc(it.key)}"${it.excluded ? '' : ' checked'}${dis}></td><td>${esc(it.time || '')}</td>
+      <td>${esc(it.label)} ×${it.weight}</td><td>${esc((it.decks || []).map((d, i) => `${d}${k[i] ? `(${kindName(k[i])})` : ''}`).join(' vs '))}</td><td>${esc(res)}</td>
+      <td class="n">${it.updates}</td><td><button class="btn sm" data-dkey="${esc(it.key)}">판단${it.dropped ? ` (${it.dropped} 뺌)` : ''}</button></td></tr>`; }).join('') + '</table>'
+    : '<div class="hint">보이는 매치가 없습니다.</div>';
+  $('c-list').querySelectorAll('input[data-key]').forEach(cb => cb.onchange = () => setExcluded([cb.dataset.key], !cb.checked));
+  $('c-list').querySelectorAll('button[data-dkey]').forEach(b => b.onclick = () => openDecisions(b.dataset.dkey));
+}
+const CD = {key: null, data: null};
+async function openDecisions(key) {
+  CD.key = key; CD.data = await api(`learning/decisions?key=${encodeURIComponent(key)}`); drawDecisions();
+}
+function drawDecisions() {
+  const d = CD.data; if (!d) { $('c-detail').innerHTML = ''; return; }
+  const q = ($('c-dfq') && $('c-dfq').value || '').trim(), dis = CL.can ? '' : ' disabled';
+  const hit = x => !q || x.decision.includes(q) || x.label.includes(q);
+  const rows = d.table.filter(hit);
+  $('c-detail').innerHTML = `<div class="panel" style="padding:8px"><div class="row2"><b>매치 판단</b>${d.match_excluded ? ' <span class="err">— 이 매치 전체를 뺀 상태입니다</span>' : ''}<span class="sp"></span><button class="btn sm" id="c-dclose">닫기</button></div>
+    <div class="row2" style="margin-top:6px"><input type="text" id="c-dfq" placeholder="판단 · 후보 거르기" value="${esc(q)}" style="flex:1">
+      <button class="btn sm" id="c-dfout"${dis}>보이는 판단 빼기</button><button class="btn sm" id="c-dfin"${dis}>보이는 판단 넣기</button></div>
+    <div style="max-height:320px;overflow:auto"><h3 class="sec" style="margin:8px 0 4px">학습표 판단 — ${d.table.filter(x => !x.excluded).length} / ${d.table.length}개 넣음</h3>
+    ${rows.length ? `<table class="t"><tr><th>넣음</th><th>#</th><th>판단</th><th>고른 후보</th><th>결과</th></tr>` + rows.map(x =>
+      `<tr${x.excluded ? ' style="opacity:.5"' : ''}><td><input type="checkbox" data-i="${x.i}"${x.excluded ? '' : ' checked'}${dis}></td><td class="n">${x.i + 1}</td>`
+      + `<td>${esc(x.decision)}</td><td>${esc(x.label)}</td><td>${x.won ? '이긴 라운드' : '진 라운드'}</td></tr>`).join('') + '</table>' : '<div class="hint">보이는 판단이 없습니다.</div>'}</div></div>`;
+  $('c-dclose').onclick = () => { CD.data = null; drawDecisions(); };
+  $('c-dfq').oninput = () => { const pos = $('c-dfq').selectionStart; drawDecisions(); $('c-dfq').focus(); $('c-dfq').setSelectionRange(pos, pos); };
+  const bulk = excluded => setParts(rows.map(x => x.i), excluded);
+  $('c-dfout').onclick = () => bulk(true); $('c-dfin').onclick = () => bulk(false);
+  $('c-detail').querySelectorAll('input[data-i]').forEach(cb => cb.onchange = () => setParts([+cb.dataset.i], !cb.checked));
+}
+async function setParts(table, excluded) {
+  if (!table.length) return;
+  try { await api('learning/exclude_parts', {key: CD.key, table, excluded}); } catch (e) { toast(e.message, 5000); }
+  await openDecisions(CD.key); refreshLearning().catch(() => {});
+}
+async function setDecisionText(excluded) {
+  const text = $('c-dq').value.trim(); if (!text) { toast('뺄 판단 · 후보 글을 입력하세요'); return; }
+  try { const r = await api('learning/exclude_text', {keys: curationShown().map(it => it.key), text, excluded}); toast(`판단 ${r.changed}개를 ${excluded ? '뺐' : '넣었'}습니다.`); }
+  catch (e) { toast(e.message, 5000); }
+  await refreshLearning(); if (CD.key) openDecisions(CD.key);
+}
+$('c-dout').onclick = () => setDecisionText(true); $('c-din').onclick = () => setDecisionText(false);
+async function setExcluded(keys, excluded) {
+  if (!keys.length) return;
+  try { await api('learning/exclude', {keys, excluded}); } catch (e) { toast(e.message, 5000); }
+  await refreshLearning();
+}
+['c-src', 'c-state'].forEach(id => $(id).onchange = drawCuration); $('c-q').oninput = drawCuration;
+$('c-out').onclick = () => setExcluded(curationShown().filter(it => !it.excluded).map(it => it.key), true);
+$('c-in').onclick = () => setExcluded(curationShown().filter(it => it.excluded).map(it => it.key), false);
 async function refreshDecisions() {
   $('l-decisions').textContent = '뽑는 중…';
   try { const r = await api('analysis/decisions'); $('l-decisions').textContent = r.report; }
