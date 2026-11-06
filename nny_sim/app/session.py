@@ -25,9 +25,25 @@ from human import Abort, Bridge, HumanAI
 
 SAFE = re.compile(r'[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _\-().!]+')
 
-# AI 자리 종류 — 'table': 학습표 AI(기존, policy.LearnedAI) | 'heuristic': 규칙 기반 AI(ai.HeuristicAI, 학습 없음).
+# AI 자리 종류 — 'table': 학습표 AI(기존, policy.LearnedAI) | 'heuristic': 학습하는 휴리스틱 AI(LearningHeuristicAI — 전술은 규칙,
+# 전략 판단은 학습표로 고르고 학습, 오프라인판 app/main #103 이식 2026-11-06. 예전엔 ai.HeuristicAI 규칙만).
 # 오프라인판의 'nn'(신경망)은 online에 nnai 모듈이 없고 이 서버 환경에 numpy도 없어 뺐다(2026-11-03, 디스코드 요청 ①).
 AI_KINDS = {'table', 'heuristic'}
+
+
+class LearningHeuristicAI(P.LearnedAI):
+    """학습하는 휴리스틱 AI. 전술(발동 · 대응 · 트리거 · 공격 · 대상 · 서치 · 버릴 카드 · 소환 표시 형식 등)은 ai.HeuristicAI 규칙 그대로(덱 지침 · 카드 우선순위),
+    전략(STRATEGY — 시작 패 배분 · 멀리건 재배분 · 멀리건 · 드로우 덱 · 2 · 3라운드 선후공 · 번식지 · 같은 타이밍 효과의 체인 순서)은 학습표 AI와 같은 키 · 사전값으로 학습표 값을 보고 고르고,
+    학습을 켜면 그 결과를 학습표에 더한다 — 학습 기록 · 출처 · 가중치 · 제외는 다른 AI와 같다(learndata). 학습표에 기록이 없으면 사전값(휴리스틱 판단)이 이긴다.
+    ai.BREEDING(전역 번식지 표)은 쓰지 않는다(번식지도 학습표 키). 전략 덱 교체는 다른 AI와 같은 규칙(match.side_swap)"""
+    STRATEGY = ('choose_split', 'mulligan_split', 'mulligan', 'choose_draw_deck', 'choose_first', 'first_result', 'breeding_pick', 'order_triggers')
+    LEARNER = ('choose', 'end_game', 'bucket', 'split_opts')   # 학습표 판단 · 학습 장치(LearnedAI 그대로)
+
+
+# 학습표 AI가 다시 정의한 판단 중 STRATEGY · LEARNER 가 아닌 것(전술)은 휴리스틱 규칙으로 되돌린다
+LearningHeuristicAI.TACTICS = tuple(n for n, f in vars(P.LearnedAI).items() if not n.startswith('_') and callable(f) and hasattr(HeuristicAI, n)
+                                    and n not in LearningHeuristicAI.STRATEGY + LearningHeuristicAI.LEARNER)
+for _n in LearningHeuristicAI.TACTICS: setattr(LearningHeuristicAI, _n, getattr(HeuristicAI, _n))
 
 
 def now(): return time.strftime('%Y-%m-%d %H:%M:%S')
@@ -510,7 +526,7 @@ class LiveMatch:
             def make_ai(d):
                 seat = d['_seat']
                 if self.humans[seat]: return HumanAI(d['스킬'], self.bridges[seat], table, learn=self.learn, hints=self.hints)
-                if (self.ai0_kind if seat == 0 else self.ai_kind) == 'heuristic': return HeuristicAI(d['스킬'])
+                if (self.ai0_kind if seat == 0 else self.ai_kind) == 'heuristic': return LearningHeuristicAI(d['스킬'], learn=self.learn, table=table)
                 return P.LearnedAI(d['스킬'], learn=self.learn, table=table)
 
             def side_fn(i, decks, wins, rnds, rng, eps, log):   # 사람 덱은 화면에서 교체, AI는 학습표 교체 규칙대로

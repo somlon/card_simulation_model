@@ -42,17 +42,17 @@ class AiKindsPerSeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(self.ids), 2)
         # 어느 자리에 어떤 AI 가 앉았는지 — 만들어지는 AI 를 스킬(덱) 이름으로 적어 둔다
         self.made = []; made = self.made
-        self._heur, self._learned = SS.HeuristicAI, P.LearnedAI
+        self._heur, self._learned = SS.LearningHeuristicAI, P.LearnedAI   # 'heuristic' = 학습하는 휴리스틱(O4)
 
         class H(self._heur):
             def __init__(s, skill, *a, **kw): made.append(('heuristic', skill)); super().__init__(skill, *a, **kw)
 
         class L(self._learned):
             def __init__(s, skill, *a, **kw): made.append(('table', skill)); super().__init__(skill, *a, **kw)
-        SS.HeuristicAI, P.LearnedAI = H, L
+        SS.LearningHeuristicAI, P.LearnedAI = H, L
 
     def tearDown(self):
-        SS.HeuristicAI, P.LearnedAI = self._heur, self._learned
+        SS.LearningHeuristicAI, P.LearnedAI = self._heur, self._learned
         for m in list(self.app.lives.values()): m.abort()
         self.srv.shutdown(); self.srv.server_close()
         shutil.rmtree(self.tmp, ignore_errors=True)
