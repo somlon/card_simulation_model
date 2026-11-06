@@ -116,7 +116,7 @@ $('w-stage').querySelector('[data-x=prevm]').onclick = () => playlistGo(W.idx - 
 $('w-stage').querySelector('[data-x=nextm]').onclick = () => playlistGo(W.idx + 1);
 function setLists(show) { $('w-lists').style.display = show ? '' : 'none'; $('w-toggle').textContent = show ? '목록 접기' : '목록 펼치기'; setTimeout(() => stages.watch.fit(), 0); }
 $('w-toggle').onclick = () => setLists($('w-lists').style.display === 'none');
-const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(규칙 기반, 학습 없음)'};   // AI 종류 이름(대전 · 녹화 선택 상자 · 재생 목록)
+const AI_KIND_LABEL = {table: '학습표 AI', heuristic: '휴리스틱 AI(전술은 규칙 · 전략 판단은 학습)'};   // AI 종류 이름(대전 · 녹화 선택 상자 · 재생 목록)
 function repLabel(r) {
   const win = r.winner == null ? (r.status === 'done' ? '무승부' : r.status) : (r.names[r.winner] + ' 승');
   const score = r.rounds && r.rounds.length ? ` (${r.rounds.filter(x => x[0] === 0).length}–${r.rounds.filter(x => x[0] === 1).length})` : '';
