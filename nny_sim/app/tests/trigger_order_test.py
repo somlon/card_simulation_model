@@ -54,14 +54,17 @@ def in_order(g):
 
 def groups(rep, who):
     """기록에서 who 의 체인 순서 판단 묶음 → [(고른 라벨들, 그 뒤 who 의 효과 발동 (라벨, 체인 번호)들, 후보 라벨들(학습표 AI 줄 — 사람은 빈 집합))]"""
-    ms = [fr['m'] for fr in rep['frames']]; out = []; i = 0
+    frs = rep['frames']; ms = [fr['m'] for fr in frs]; out = []; i = 0
     pat = re.compile(rf'^판단\[{re.escape(who)}\] {re.escape(DEC)}: (.*?)→ (.+?) \(')
     act = re.compile(rf'^{re.escape(who)} 「(.+)」 (\d+)번 효과 발동.* — 체인 (\d+)$')
     while i < len(ms):
         picks = []; cands = set()
         while i < len(ms) and pat.match(ms[i]):
             m = pat.match(ms[i])
-            if not picks: cands = set(re.findall(r'(?:\{|, )([^{},=]+#\d+)=', m.group(1)))
+            if not picks:
+                cands = set(re.findall(r'(?:\{|, )([^{},=]+#\d+)=', m.group(1)))
+                # 사람의 판단 줄에는 후보가 글로 없다 — 판단 프레임에 남은 후보 목록(viewer/record d.opts)을 쓴다(뒤이은 다른 효과 발동을 묶음에 넣지 않게)
+                if not cands: cands = {o[0] for o in (frs[i].get('d') or {}).get('opts', [])}
             picks.append(m.group(2)); i += 1
         if picks:
             acts = [(f'{m.group(1)}#{m.group(2)}', int(m.group(3))) for m in (act.match(x) for x in ms[i:i + 40]) if m]
@@ -94,15 +97,24 @@ keys = [k1 for r in recs for k1, _, _ in r['updates'] if f'|{DEC}|' in k1]
 check('사람 · AI의 체인 순서가 학습 기록에(같은 판단 키)', keys, f'({len(keys)}개 · 예: {keys[:2]})')
 
 # AI끼리: 학습표 · 휴리스틱 · 신경망 자리가 모두 순서를 고르고 학습 기록에 남는다
+# 한 판에 같은 타이밍 효과가 2개 이상 뜨는지는 대진 · 시드에 달렸다 — 그런 판이 나올 때까지 대진을 돌린다(AI_TRIES 판까지)
+AI_TRIES = 12
 kinds = ['table', 'heuristic'] + (['nn'] if app.nn.ready() else [])
+pairs = [(a, b) for a, b in _it.product(_names, repeat=2) if a != b]
 for k in kinds:
-    res = play({'mode': 'ai', 'deck': 'o:소원의 분수', 'ai_deck': 'o:던전마스터 셔플!', 'first': 'me', 'seed': 21, 'learn': True, 'ai0_kind': k, 'ai_kind': k})
-    rep = app.store.replay(res['replay_id']) if res.get('replay_id') else None
-    nm = rep['meta']['names'] if rep else ['', '']
-    lines = [fr['m'] for fr in rep['frames'] if DEC in fr['m']] if rep else []
-    gs = groups(rep, nm[0]) + groups(rep, nm[1]) if rep else []
+    lines = []; gs = []; done = True
+    for t in range(AI_TRIES):
+        da, db = pairs[t % len(pairs)]
+        res = play({'mode': 'ai', 'deck': 'o:' + da, 'ai_deck': 'o:' + db, 'first': 'me', 'seed': 21 + t, 'learn': True, 'ai0_kind': k, 'ai_kind': k})
+        rep = app.store.replay(res['replay_id']) if res.get('replay_id') else None
+        done = done and res['status'] == 'done'
+        if not rep: continue
+        nm = rep['meta']['names']
+        lines += [fr['m'] for fr in rep['frames'] if DEC in fr['m']]
+        gs += groups(rep, nm[0]) + groups(rep, nm[1])
+        if lines: break
     rec = [r for r in T.read_log(app.store.ai_log_path) if r['ai_kinds'][0].startswith(k)]
     learned = [k1 for r in rec for k1, _, _ in r['updates'] if f'|{DEC}|' in k1]
-    check(f'AI끼리({k}) 체인 순서 판단 · 순서대로 체인 · 학습 기록', res['status'] == 'done' and lines and learned
-          and all(in_order(g) for g in gs), f'(판단 {len(lines)} · 묶음 {len(gs)} · 학습 {len(learned)} · 예: {lines[0][:90] if lines else "-"})')
+    check(f'AI끼리({k}) 체인 순서 판단 · 순서대로 체인 · 학습 기록', done and lines and learned
+          and all(in_order(g) for g in gs), f'({t + 1}판 · 판단 {len(lines)} · 묶음 {len(gs)} · 학습 {len(learned)} · 예: {lines[0][:90] if lines else "-"})')
 print('결과:', '통과' if ok else '실패'); sys.exit(0 if ok else 1)
