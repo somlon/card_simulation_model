@@ -1,4 +1,4 @@
-"""사람 모드 트리거 발동 순서 선택 재현 테스트 (nny_sim 폴더에서): python -m unittest test_trigger_order -v
+"""사람 모드 트리거 발동 순서 선택 재현 테스트 (nny_sim 폴더에서): python -m unittest test_human_trigger_order -v  (model/main 의 test_trigger_order.py 와 이름이 겹쳐 바꿈)
 
 soltop_ 제보(디스코드 ai-채찍질-하는-방, 2026-10-31, `?` 재제보 9건 중 1번) — 동시에 발동할 수 있는
 효과가 둘 이상일 때 사람에게 발동 순서를 고를 기회가 없었다(AI는 점수로 자동 정렬, 사람은 트리거
@@ -28,13 +28,13 @@ class FakeBridge:
 
 class FakeEffect:
     """choose_triggers·act_score가 보는 최소 필드만 갖춘 가짜 효과 — 실제 카드 효과 없이 순서 로직만 검증"""
-    def __init__(self, num, mandatory=False):
-        self.num = num; self.mandatory = mandatory; self.score = None
+    def __init__(self, num, mandatory=False, kind='trigger'):
+        self.num = num; self.mandatory = mandatory; self.score = None; self.kind = kind   # kind: 순서 질문의 효과 종류 설명(human.KIND_LABEL)
 
 
 class FakeCard:
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, name, zone='grave', owner=0):
+        self.name = name; self.zone = zone; self.owner = self.controller = owner; self.faceup = True   # 순서 질문의 「있는 곳」 설명(human.where_label)
 
 
 def make_game():
