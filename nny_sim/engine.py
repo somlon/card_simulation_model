@@ -212,7 +212,7 @@ class Game:
             if te is not False and (c.is_monster() or not getattr(te, 'removal_text', False)): return True
         # [지속] 규칙 'untargetable' — 「(이 카드 이외의 자신 필드의 몬스터는) 효과의 대상이 되지 않는다」: 주어가 없으므로 자신 · 상대의 효과 모두
         # (데이터버그 버터플라이 2번, 2026-11-10 사용자 업로드 문서). 대상 지정 판정은 뒷면 카드와 같은 Game.targeting_eff
-        if by is not None and self.on_field(c) and c.faceup and self.targeting_eff(by) is not False and self.rule('untargetable', c): return True
+        if by is not None and self.on_field(c) and c.faceup and self.rule('untargetable', c) and self.targeting_eff(by) is not False: return True
         if self.on_field(c) and c.faceup and not self.is_neg(c):
             ex = c.flags.get('immune_except')
             # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
