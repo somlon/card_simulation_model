@@ -256,6 +256,8 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
   - 계획: A `online/databug-reimpl`(기준 online/main 3d6068e) — card_pool.json 23장 · 카드자료 md · blocks/t_dtbg.py 4장 · 공식 덱 · 시험 → PR. B `online/hide-unused-mzones` — 보드 화면에서 각 플레이어 몬스터 존 2 · 4번 감춤 → PR. 머지는 사용자.
   - 진행 기록:
     - 2026-11-10 시작 · 루틴 생성 · 문서 대조(바뀐 4장).
+    - 2026-11-10 A `online/databug-reimpl` 3aade83 — 카드 풀 200장 · 카드자료 · 공식 덱 · 레시피 · t_dtbg 4장 · 엔진(Game.left_log · 'untargetable' 규칙) · lib(cond_turn_left · want_pick revive) · test_theme_databug 33개 OK. 전체 시험 진행 중.
+    - 2026-11-10 B `online/hide-unused-mzones` c2fd756 → PR **#145** — board.js 덮개(.mhide)로 옛 매트(mat.webp)의 몬스터 존 2 · 4번 자리를 판 색으로, Playwright 옛 매트 · v2 확인.
 
 - **【완료 — 2026-11-10, PR #144 사용자 머지 대기】 사람 대전 학습 기록 `data/human-games-laptop1211` 합치기 (사용자 지시 「data/human-games-laptop1211의 학습 기록을 합쳐」, 세션 session_018Feff9j7qC2yBrqyrhwfei):**
   - 브랜치 `data/merge-human-games-laptop1211` 5a91141(기준 data/main d66c665) → PR **#144** → data/main.
