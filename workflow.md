@@ -3,7 +3,7 @@
 모든 세션은 작업 전에 이 파일을 확인하고, 작업 후 갱신한다 (CLAUDE.md R4).
 원본은 `default` 브랜치의 이 파일이다.
 
-마지막 갱신: 2026-11-09 (11-06 13:43 UTC 뒤 GitHub 변경 점검 — 사용자 지시: PR #143(chainedcreeper, #128 · #106 · #135 단일 커밋 대체판) → app/main 1c53169 머지(somlon) · #136 은 base 가 `app/trigger-order-fix` 인 채 머지돼 app/main 에 안 들어감(do_extra 중복 정리 미반영) · #135 · #128 · #106 머지 없이 닫힘 · `data/human-games-laptop1211` 학습 기록 6커밋, 열린 PR 0개, 「진행 중」 첫 항목. 이전: 2026-11-06 내 PR 순서대로 머지 — 사용자 지시: #137 → model/main 96c60ca · #131 → #134 · #138 → #142 → online/main 3d6068e, 팀원 PR #128 과 그 위의 #135 · #136 · #106 은 머지 안 함, 「진행 중」 첫 항목. 이전: 2026-11-06 신경망 제외 남은 작업 전부 완료 — PR #135 ~ #142 사용자 머지 대기 · #127 닫음 · R2 online 계열 · 루틴 끔. 이전: 2026-11-05 온라인판에 오프라인판 낮은 난이도 기능 이식 완료 — PR #131 ~ #134 사용자 머지 대기 · 루틴 끔, 「진행 중」 첫 항목. 이전: app/main ↔ online/main 기능 대조 — 오프라인판에만 있는 기능 목록, 「진행 중」 첫 항목. 이전: 열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
+마지막 갱신: 2026-11-10 (사람 대전 학습 기록 LAPTOP1211 합침 — 사용자 지시: `data/merge-human-games-laptop1211` 5a91141 → PR #144(data/main, 사용자 머지 대기) — 백지 학습표에 13매치(사람 7 · AI끼리 6) · 갱신 3419개, 데이터버그 덱 AI끼리 6매치 제외, 「진행 중」 첫 항목. 이전: 2026-11-09 (11-06 13:43 UTC 뒤 GitHub 변경 점검 — 사용자 지시: PR #143(chainedcreeper, #128 · #106 · #135 단일 커밋 대체판) → app/main 1c53169 머지(somlon) · #136 은 base 가 `app/trigger-order-fix` 인 채 머지돼 app/main 에 안 들어감(do_extra 중복 정리 미반영) · #135 · #128 · #106 머지 없이 닫힘 · `data/human-games-laptop1211` 학습 기록 6커밋, 열린 PR 0개, 「진행 중」 첫 항목. 이전: 2026-11-06 내 PR 순서대로 머지 — 사용자 지시: #137 → model/main 96c60ca · #131 → #134 · #138 → #142 → online/main 3d6068e, 팀원 PR #128 과 그 위의 #135 · #136 · #106 은 머지 안 함, 「진행 중」 첫 항목. 이전: 2026-11-06 신경망 제외 남은 작업 전부 완료 — PR #135 ~ #142 사용자 머지 대기 · #127 닫음 · R2 online 계열 · 루틴 끔. 이전: 2026-11-05 온라인판에 오프라인판 낮은 난이도 기능 이식 완료 — PR #131 ~ #134 사용자 머지 대기 · 루틴 끔, 「진행 중」 첫 항목. 이전: app/main ↔ online/main 기능 대조 — 오프라인판에만 있는 기능 목록, 「진행 중」 첫 항목. 이전: 열린 PR 6개 점검 · 머지 — 사용자 지시: **#129 → #130 머지**(online/main 04f44d8, 공개 접속 전제 변경은 사용자가 수락), #126 은 #129 에 포함돼 자동으로 머지 처리,
 #128 은 기존 시험 2개를 깨뜨려 보류 · #106 · #127 은 대체돼 열린 채로 둠 — 「진행 중」 첫 항목. 이전: 2026-10-29 ~ 11-05 푸시 · PR · 머지 전수 점검 — 사용자 지시. 10-30 19:34 UTC 기록 뒤 바뀐 것: PR #105 · #113 머지(11-03, somlon) · #112 · #123 · #124 · #125 머지(11-03, chainedcreeper — #112 는 app/main 3ccc67c 충돌 해결 머지),
 #106 은 아직 열림 → 충돌 해결판 #128(열림, 세창 확인 뒤 머지), online 계열(chainedcreeper 쪽 온라인판 `online/main` · 매시 루틴 · 디스코드 비서 봇) 10-30 시작 — PR #104 · #117 ~ #122 중복으로 닫힘, #126 · #127 → #129(통합) · #130 열림,
 Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`data/human-games-ksc` · `data/human-games-laptop1211`), 기준 브랜치 머리 model/main d0049bf · app/main 3ccc67c · data/main d66c665, main 미반영 — 상세는 「진행 중」 첫 항목.
@@ -229,6 +229,7 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | 2026-11-05 | 열린 PR 6개 점검(모의 머지 · 전체 시험 · 보안 검토) → 공개 접속 · 동시 매치 2개 머지(사용자 지시) | PR #129 → online/main 04096cb · #130 → 04f44d8 (#126 함께 머지 처리) · #128 보류(기존 시험 2개 오류) |
 | 2026-11-06 | 신경망 제외 남은 작업 — 오프라인: #128 시험 정리 · 시험 이름 겹침 · do_extra 중복 · test_rulings_1101 데이터버그 / 온라인: 사람 체인 순서 통합 · 서버 좌석별 비공개 정보 거르기 · 학습 데이터(AI끼리 · 가중치 · 정리) · 학습하는 휴리스틱 · data/main 카드 풀 맞춤 / #127 닫음 · R2 online 계열 | PR #135 ~ #137(app · model) · #138 ~ #142(online, 쌓음) |
 | 2026-11-06 | 내 PR 순서대로 머지(사용자 지시, 팀원 PR 제외) | #137 → model/main 96c60ca · #131 ~ #134 · #138 ~ #142 → online/main 3d6068e(전체 538개 OK) · #128 · #135 · #136 · #106 머지 안 함 |
+| 2026-11-10 | 사람 대전 학습 기록 LAPTOP1211 을 학습표에 합침(사용자 지시) — 13매치 · 갱신 3419개, 데이터버그 덱 6매치 제외 | `data/merge-human-games-laptop1211` 5a91141 → PR #144(머지 대기) |
 | 2026-11-09 | 11-06 13:43 UTC 뒤 GitHub 변경 점검 · workflow.md 갱신(사용자 지시) — #143 머지 · #136 은 trigger-order-fix 로 머지(app/main 미반영) · #135 · #128 · #106 닫힘 · laptop1211 학습 기록 6커밋 | app/main 1c53169 · 이 커밋(default) |
 | 2026-11-05 | 오프라인판 기능 중 온라인 적용 난이도 낮은 것 이식 — 사람 선택(족보 재료 · 부여 · 선언 · 번식지 · 선택 코스트 · 같은 이름 칸 구별 · 뒷면 이름 감춤) · 화면 갱신 · 체인 고리 · 덱 편집 3장 · 스킬 교체 태그 · 자리별 AI 종류 · AI 체인 순서 학습 | `online/port-offline-human` · `-view` · `-deck` · `-ai` → PR #131 ~ #134(2026-11-06 머지) |
 
@@ -245,6 +246,14 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
   - PyTorch 재설치(세션마다, 학습할 때만): `python3 -m venv --system-site-packages <임시폴더>/drl_venv && <임시폴더>/drl_venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu`. 지난 세션은 PyPI판 `torch==2.14.0` 을 썼고, `ckpt.pt` 를 불러올 때 버전 차이로 문제가 생기면 같은 버전으로 맞춘다. 유지하려면 Setup script에 넣는다.
 
 ## 진행 중
+
+- **【완료 — 2026-11-10, PR #144 사용자 머지 대기】 사람 대전 학습 기록 `data/human-games-laptop1211` 합치기 (사용자 지시 「data/human-games-laptop1211의 학습 기록을 합쳐」, 세션 session_018Feff9j7qC2yBrqyrhwfei):**
+  - 브랜치 `data/merge-human-games-laptop1211` 5a91141(기준 data/main d66c665) → PR **#144** → data/main.
+  - 원본 `LAPTOP1211.jsonl`(bb471a6, 19매치)을 `nny_sim/learned/human_games/` 에 보관 · app/main `app/merge_learning.py`(사람 3 : AI끼리 1)로 data/main 백지 학습표에 더함 →
+    `policy.json.xz` games 13 · L1 836 · L2 2344 · L0 668(갱신 3419개, Table.load 확인) · `human_games_merged.json` 에 합친 id 13개.
+  - 뺀 것: 데이터버그 패키지 프로그램 덱 AI끼리 6매치(10-30, 카드 풀 제외 전 기록 — PR #114). 원본 jsonl 에는 남아 있어 그 파일로 다시 합칠 때는 걸러야 함.
+    원본 브랜치의 card_pool.json(PR #125 전 마도서 텍스트)은 가져오지 않음. `data/human-games-ksc`(리셋 전 기록)는 범위 밖.
+  - 시험 · 리그는 돌리지 않음(학습표 데이터만 바뀜). 루틴 없음.
 
 - **【점검 — 2026-11-09】 11-06 13:43 UTC(default 2aab5b5) 뒤 GitHub 변경 확인 (사용자 지시 「깃허브 확인해서 변경 사항 있는지 체크 후, 있다면 workflow.md에 반영해」, 세션 session_018Feff9j7qC2yBrqyrhwfei):**
   - 확인한 것: `git fetch origin --prune --tags` 전체 브랜치 · 태그, PR 목록(state=all) · 코멘트 · 리뷰, Release. 확인과 기록만 — 머지 · 닫기 · 코멘트 · 코드 변경 없음.
@@ -1315,6 +1324,7 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 
 ## 다음 할 일 (우선순위 순)
 
+0. (2026-11-10) PR **#144**(LAPTOP1211 학습 기록 합침 → data/main) 사용자 머지. 머지 뒤 원본 `data/human-games-laptop1211` 삭제 가능 · 배포본에 넣으려면 build_windows.py 로 다시 빌드. `data/human-games-ksc` 처리는 아직 결정 전.
 0. (2026-11-09 점검) 체인 순서는 #143 으로 app/main 1c53169 에 들어감(#135 · #128 · #106 닫힘). **#136(do_extra 중복 정리)은 `app/trigger-order-fix` 에 머지돼 app/main 미반영** —
    app/main 에 넣으려면 새 app 브랜치(예: `app/fix-duplicate-do-extra-main`)로 07f4a3c 를 app/main 위에 올려 PR(사용자 결정). #143 판 앱 시험 재확인 여부 · `data/human-games-laptop1211`(bb471a6) 합칠지도 사용자 결정.
 0. (2026-11-06 머지 뒤) 온라인 #131 ~ #134 · #138 ~ #142 · model #137 머지 완료. **오프라인 #135 → #136 은 팀원 PR #128 커밋을 담고 있어 머지 안 함(사용자 지시)** —
@@ -1436,7 +1446,7 @@ Release `runtime-v1.1.0`(11-02), 사람 대전 학습 기록 브랜치 2개(`dat
 | `model/netherworld-rule` · `model/play-fixes-1029` · `model/play-fixes-1029b` · `model/table-weights` · `model/trigger-order` · `model/play-fixes-1030` · `model/shared-zones` · `model/databug-fixture` | 10-29 ~ 30 엔진 수정 | PR #84 · #87 · #96 · #100 · #105(11-03) · #107 · #110 · #115 머지 완료, 삭제 가능 |
 | `model/block-system` | 블록 체계 전체 구현 | PR #83 머지 완료(10-29), 삭제 가능 |
 | `data/fix-swrm004-text` · `data/drl-base-v2` · `data/reset-learning` | 메뚜기여왕 텍스트 · 기본 신경망 base_v2 · 데이터버그 제외 · 학습 백지 | PR #88 · #95 · #114 머지 완료, 삭제 가능 |
-| `data/human-games-ksc` · `data/human-games-laptop1211` | 게임 프로그램 「GitHub 올리기」 학습 기록(9d5e4bc · bb471a6 — laptop1211 은 11-07 6커밋 추가, 사람 7 · AI끼리 12매치 · 갱신 5146개) | 머지 안 됨 — 합칠지 사용자 확인 |
+| `data/human-games-ksc` · `data/human-games-laptop1211` | 게임 프로그램 「GitHub 올리기」 학습 기록(9d5e4bc · bb471a6 — laptop1211 은 11-07 6커밋 추가, 사람 7 · AI끼리 12매치 · 갱신 5146개) | laptop1211 은 PR #144(`data/merge-human-games-laptop1211` 5a91141)로 합침(2026-11-10, 머지 대기) · ksc 는 머지 안 됨 — 합칠지 사용자 확인 |
 | `online/main` | 온라인판 (chainedcreeper 쪽, model/main 74c285e 에서 분기 2026-10-30) — 진행 문서 `NNY온라인_진행.md` | 매시 루틴이 직접 커밋(e322fba) · PR #129 · #130(11-05) · #131 ~ #134 · #138 ~ #142(11-06) 머지 — 지금 `3d6068e`. R2 표에 올림(2026-11-06) |
 | `online/data-games` | 온라인판 기보 · 디스코드 커서 (2c0b23f) | 루틴이 직접 커밋, 기보 0건 |
 | `online/to-model-fixes-1102` · `online/to-app-fixes-1102` · `online/to-data-cardtext-1102` | online 수정의 정본 반영 | PR #123 · #124 · #125 머지 완료(11-03), 삭제 가능 |
