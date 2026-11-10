@@ -8,8 +8,10 @@ import os, sys, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 THEME = '데이터버그'
-MD = os.path.join(HERE, '카드자료', '보류', '데이터버그.md')
-DECK = os.path.join(HERE, 'decks', '보관', '2026-10-30_데이터버그제외', '시제_데이터버그_패키지_프로그램.deck')
+# 2026-11-10 데이터버그를 업로드 문서(2026-09-29 확정본)대로 다시 구현해 카드 풀에 넣었다 — 풀에 있으면 install() 은 아무것도 하지 않는다.
+# 풀에서 다시 빼면 아래 자료(카드자료 · 공식 덱)를 모듈 동안만 넣는다.
+MD = os.path.join(HERE, '카드자료', '데이터버그.md')
+DECK = os.path.join(HERE, 'decks', '시제_데이터버그_패키지_프로그램.deck')
 _added = {'cards': [], 'decks': []}
 
 

@@ -1,6 +1,8 @@
 """데이터버그 23종 (cards10) 테스트 (nny_sim 폴더에서):  python3 -m unittest test_theme_databug -v
 손패 트리거 연쇄 · 1턴 1번(카드명) · [소환] · 서치/특수소환 같은 이름 규칙 · 소환 절차(더 바이러스 · 더 딜리트) · 소환 무효 근사 ·
-콜로니 발동 제한 · 버터플라이 효과 대미지 내성 · 더 딜리트 덱→패 금지 · 패키지 프로그램 추가 일반소환 · 공유 존 훅"""
+콜로니 발동 제한 · 버터플라이 효과 대미지 내성 · 더 딜리트 덱→패 금지 · 패키지 프로그램 추가 일반소환 · 공유 존 훅.
+2026-11-10 사용자 업로드 문서(2026-09-29 확정본)대로 고친 4장: 버터플라이 2번(대상 내성) · 더 딜리트 2번([신속] 릴리스 파괴) ·
+콜로니(「카드」) · 패키지 프로그램 1번(5장) · 2번(묘지로 3장 간 턴 — 패 버린 수만큼 소생)"""
 import random, unittest
 import season as SE
 from ai import HeuristicAI
@@ -290,28 +292,44 @@ class BossTest(unittest.TestCase):
         g.activate(0, v, eff(v, 3)); g.resolve_chain()
         self.assertTrue(l.negated); self.assertEqual(dw.zone, 'grave'); self.assertTrue(g.on_field(t))
 
-    def test_delete_destroy_trigger_and_no_deck_to_hand(self):
-        g = make(Yes)
-        d = mon(g, D.DELETE, 0); a = mon(g, D.CATER, 1); b = mon(g, KILLER, 1)
-        g.destroy(a); run(g)
-        self.assertEqual(b.zone, 'grave'); self.assertTrue(g.on_field(d))
+    def test_delete_quick_release_destroy_and_no_deck_to_hand(self):
+        # 더 딜리트 2번(2026-11-10 문서): [신속] 자신 필드의 데이터버그 카드 1장을 릴리스하여 발동. 필드의 카드 1장을 파괴한다. (1턴 1번 제약 없음)
+        g = make()
+        d = mon(g, D.DELETE, 0); a = mon(g, D.CATER, 0); b = mon(g, KILLER, 1)
+        self.assertEqual(eff(d, 2).kind, 'quick')
+        self.assertTrue(g.legal(0, d, eff(d, 2)))
+        g.act(0, d, eff(d, 2))
+        self.assertEqual(a.zone, 'grave')                                # 코스트: 덜 아끼는 자신 「데이터버그」 카드를 릴리스
+        self.assertEqual(b.zone, 'grave'); self.assertTrue(g.on_field(d))  # 처리: 상대 카드 파괴
+        lo = spell(g, D.LOADING, 0); k2 = mon(g, KILLER, 1)
+        self.assertTrue(g.legal(0, d, eff(d, 2)))                        # 같은 턴에 다시(1턴 1번 제약 없음) — 마법 「데이터버그」 카드도 릴리스할 수 있다
+        g.act(0, d, eff(d, 2))
+        self.assertEqual(k2.zone, 'grave')
+        self.assertTrue(lo.zone == 'grave' or d.zone == 'grave')
+        g = make(); d = mon(g, D.DELETE, 0)
         f = put(g, D.FLY, 1, 'main')
         self.assertEqual(g.search_cands(1, lambda x: True), [])
         g.to_hand(f); self.assertEqual(f.zone, 'main')                 # 상대는 효과로 덱에서 패에 넣을 수 없다
 
-    def test_butterfly_unaffected_by_opponent_while_databug_spell(self):
-        # 버터플라이 2번 (2026-10-25 텍스트 · 사용자 답변): 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 이 카드는 상대의 효과를 받지 않는다
+    def test_butterfly_others_untargetable_while_databug_spell(self):
+        # 버터플라이 2번(2026-11-10 문서): 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 이 카드 이외의 자신 필드의 몬스터는 효과의 대상이 되지 않는다
         g = make()
-        bt = mon(g, D.BUTTER, 1); dw = mon(g, D.DWORM, 0)
-        self.assertFalse(g.immune(bt, 0, dw))                           # 「데이터버그」 마법이 없으면 받는다
+        bt = mon(g, D.BUTTER, 1); m = mon(g, D.CATER, 1); w = put(g, D.WORM, 0, 'hand'); w1 = put(g, D.WORM, 1, 'hand')
+
+        def aimed(q, x, src):   # q의 대상 지정 효과(웜 1번 — 「대상으로 하고 발동」)가 x를 고르려 할 때 막히는가
+            g.probing, g.src_eff = q, eff(src, 1)
+            try: return g.immune(x, q, src)
+            finally: g.probing = g.src_eff = None
+        self.assertFalse(aimed(0, m, w))                                # 「데이터버그」 마법이 없으면 대상이 된다
         spell(g, D.LOADING, 1, faceup=False)
-        self.assertFalse(g.immune(bt, 0, dw))                           # 뒷면 마법은 세지 않는다
-        spell(g, D.LOADING, 1)
-        self.assertTrue(g.immune(bt, 0, dw))
-        self.assertFalse(g.immune(bt, 1, bt))                           # 자신의 효과는 받는다
-        self.assertEqual(targets(g, 0, [bt]), [])                       # 상대 효과의 대상 후보에서 빠진다
-        g.src = dw; g.destroy(bt, ('effect', dw)); g.src = None
-        self.assertTrue(g.on_field(bt))                                 # 상대 효과의 파괴를 받지 않는다
+        self.assertFalse(aimed(0, m, w))                                # 뒷면 마법은 세지 않는다
+        lo = spell(g, D.LOADING, 1)
+        self.assertTrue(aimed(0, m, w))                                 # 상대 효과의 대상이 되지 않는다
+        self.assertTrue(aimed(1, m, w1))                                # 자신의 효과의 대상도 되지 않는다(주어 없음 — 서로)
+        self.assertFalse(aimed(0, bt, w))                               # 버터플라이 자신은 대상이 된다
+        self.assertFalse(g.immune(m, 0, w))                             # 대상을 지정하지 않는 효과는 받는다
+        g.send_grave(lo)
+        self.assertFalse(aimed(0, m, w))                                # 마법이 없어지면 다시 대상이 된다
 
 
 # ═══════════════════════ 마법 ═══════════════════════
@@ -423,13 +441,14 @@ class SpellTest(unittest.TestCase):
 
 # ═══════════════════════ 스킬 ═══════════════════════
 class SkillTest(unittest.TestCase):
-    def test_package_program_extra_normal_with_six(self):
+    def test_package_program_extra_normal_with_five(self):
+        # 1번(2026-11-10 문서): 「6장」 → 「5장」 — 몬스터 존 3 + 공유 존 2 = 자리 5칸을 모두 채우면 발동할 수 있다
         g = make()
-        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE, D.LITTLE): mon(g, n, 0)   # 몬스터 존 3 + 공유 존 2 = 자리 5칸이 모두 찬다
+        for n in (D.FLY, D.FLY, D.CATER, D.LITTLE): mon(g, n, 0)
         sk = g.p[0].skill
+        self.assertFalse(g.legal(0, sk, eff(sk, 1)))                    # 4장
+        mon(g, D.LITTLE, 0)
         self.assertEqual(len(g.monsters(0)), 5); self.assertFalse(g.can_place(None, 0))
-        self.assertFalse(g.legal(0, sk, eff(sk, 1)))   # 「6장」은 자리 5칸(사용자 지시 2026-10-30)으로는 채울 수 없다 — 조건 판정 자체는 아래(6장을 직접 놓아)
-        x = put(g, D.CATER, 0, None); x.zone = 'shared'; x.controller = 0; g.shareds.append(x)
         self.assertTrue(g.legal(0, sk, eff(sk, 1)))
         g.p[0].normal_summons = 0
         self.assertFalse(g.can_normal(0))
@@ -438,16 +457,37 @@ class SkillTest(unittest.TestCase):
         g.turn += 1
         self.assertEqual(g.extra_normal_left(0), 0)
 
-    def test_shared_zone_hook_for_sixth_monster(self):
+    def test_shared_zone_hook_for_fifth_monster(self):
         g = make()
         for n in (D.FLY, D.FLY, D.CATER, D.LITTLE): mon(g, n, 0)   # 몬스터 존 3 + 공유 존 1
         x = put(g, D.CATER, 0, 'hand')
         sk = g.p[0].skill
-        self.assertIsNone(sk.wants_shared(g, 0, x))                     # 6장이 될 수 없다(자리 5칸 — 사용자 지시 2026-10-30)
+        self.assertIsNone(sk.wants_shared(g, 0, x))                     # 뒤에 일반소환할 상급 몬스터가 패에 없음
         put(g, D.HERC, 0, 'hand')
-        self.assertIsNone(sk.wants_shared(g, 0, x))
+        self.assertIsNotNone(sk.wants_shared(g, 0, x))                  # 5번째 몬스터 — 1번 조건(5장)을 채우려면 남은 공유 존 칸으로
         g.special_summon(x, 0)
         self.assertEqual(x.zone, 'shared')                              # 몬스터 존이 차면 남은 공유 존 칸으로
+
+    def test_package_program_revive_after_three_sent_to_grave(self):
+        # 2번(2026-11-10 문서): [신속] 자신 필드의 [데이터버그] 몬스터가 3장 이상 묘지로 보내진 턴에 발동할 수 있다.
+        # 패를 원하는 매수만큼 버리고, 그 매수만큼 자신 묘지에서 [데이터버그] 몬스터를 소환할 수 있다.
+        g = make()
+        sk = g.p[0].skill
+        xs = [mon(g, n, 0) for n in (D.FLY, D.CATER, D.LITTLE)]
+        h1 = put(g, D.HERC, 0, 'hand'); h2 = put(g, D.QUEEN, 0, 'hand')
+        self.assertEqual(eff(sk, 2).kind, 'quick')
+        g.destroy(xs[0]); g.tribute(xs[1])
+        self.assertFalse(g.legal(0, sk, eff(sk, 2)))                    # 2장
+        k = mon(g, KILLER, 0); g.destroy(k)
+        self.assertFalse(g.legal(0, sk, eff(sk, 2)))                    # 「데이터버그」 몬스터가 아닌 카드는 세지 않는다
+        g.send_grave(xs[2])
+        self.assertTrue(g.legal(0, sk, eff(sk, 2)))                     # 3장(파괴 · 릴리스 · 묘지로 — 모두)
+        g.act(0, sk, eff(sk, 2))
+        self.assertEqual(g.p[0].hand, [])                               # AI: 되살릴 수 있는 만큼 — 패 2장 모두 버림
+        self.assertEqual(len(g.monsters(0)), 2)                         # 버린 수만큼 묘지에서 특수소환
+        self.assertTrue(all(x.name in (D.HERC, D.QUEEN, D.FLY, D.CATER, D.LITTLE) for x in g.monsters(0)))
+        g.turn += 2
+        self.assertFalse(g.legal(0, sk, eff(sk, 2)))                    # 다른 턴에는 세지 않는다
 
 
 if __name__ == '__main__':

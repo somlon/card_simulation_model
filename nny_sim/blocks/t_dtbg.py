@@ -2,7 +2,9 @@
 몬스터의 소환 그 자체를 트리거로 삼는 전개 테마 — 「필드에 「데이터버그」 몬스터가 소환되었을 때 패에서 특수소환」(손패 트리거)이 연쇄한다.
 효과 종류 표기가 없는 효과는 기동 효과(ASSUME, 예전과 같음). 「덱에서」 = 메인 · 상급, 「메인 덱에서」 · 「상급 덱에서」는 그 덱만.
 코스트 문장의 「필드」는 「서로」 · 「상대」가 적혀 있을 때만 상대 필드를 포함한다(사용자 답변 2026-10-22 Q41) — 로딩 2번 · 습격은 자신 필드.
-더 바이러스 · 더 딜리트 1번 [제약]의 패에서의 특수소환은 소환 절차(발동이 아님 — Effect.procedure, 대응 · 무효 없음)."""
+더 바이러스 · 더 딜리트 1번 [제약]의 패에서의 특수소환은 소환 절차(발동이 아님 — Effect.procedure, 대응 · 무효 없음).
+2026-11-10 사용자 업로드 문서(「데이터버그 테마 카드 제작 문서」 2026-09-29 확정본)대로 다시 구현 — 10-08판 대비 바뀐 효과:
+버터플라이 2번 · 더 딜리트 2번 · 콜로니 1번 · 패키지 프로그램 1번(6 → 5장) · 2번(새 효과)."""
 from blocks.dsl import *   # noqa: F401,F403
 
 DB = '데이터버그'
@@ -78,9 +80,11 @@ fx('DTBG-010', '2', '[지속] 자신 필드의 몬스터의 공격력은 자신 
    cont=[stat_mod(S('own', 'field', 'monster'), '$amt', per=(S('own', 'field', group=DB, faceup=True),))])
 own_hand_ss('DTBG-010', '3', '[트리거] 자신 필드에 「데이터버그」 몬스터가 소환되었을 경우에 발동. 이 카드를 패에서 특수소환한다.')
 fx('DTBG-011', '1', '[트리거] 상대가 효과를 발동했을 때 발동. 그 효과를 무효로 한다.', when=[when('activated', who='opp')], do=[negate_link()])
-# 버터플라이 2번 — 「자신」 = 이 카드(사용자 답변 2026-10-25), 「데이터버그」 마법은 앞면만(Q43)
-fx('DTBG-011', '2', '[지속] 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 자신은 상대의 효과를 받지 않는다.',
-   cont=[card_flag('immune_opp', **{'while': cnt(S('own', 'szone', 'spell', group=DB, faceup=True))})])
+# 버터플라이 2번(2026-11-10 문서) — 이 카드 이외의 자신 필드의 몬스터는 (자신 · 상대 모두의) 효과의 대상이 되지 않는다(엔진 규칙 'untargetable' — Game.immune),
+# 「데이터버그」 마법은 앞면만(Q43)
+fx('DTBG-011', '2', '[지속] 자신 필드에 「데이터버그」 마법 카드가 존재하는 한, 이 카드 이외의 자신 필드의 몬스터는 효과의 대상이 되지 않는다.',
+   cont=[B('rule_to', key='untargetable', to=S('own', 'field', 'monster', not_self=True),
+           **{'while': cnt(S('own', 'szone', 'spell', group=DB, faceup=True))})])
 hand_ss('DTBG-011', '3')
 fx('DTBG-012', '1', '[신속] 상대 필드의 카드 {n}장을 파괴한다.', do=[destroy(scope=OPP_FIELD, n='$n')])
 fx('DTBG-012', '2', '[신속] 자신 필드에서 「데이터버그」 카드 {n}장을 묘지로 보낸다. 필드의 카드 {m}장을 파괴한다.',
@@ -91,8 +95,9 @@ fx('DTBG-013', '2', '[트리거] 상대가 몬스터를 소환했을 때 발동.
    summon_negate=True, when=[when('summoned', who='opp')], do=[B('negate_summon', destroy=True)])
 fx('DTBG-013', '3', '[트리거] 상대가 효과를 발동했을 때 발동. 그 효과를 무효로 하고 파괴한다.', when=[when('activated', who='opp')], do=[negate_link(destroy=True)])
 nomi('DTBG-014')
-fx('DTBG-014', '2', '[트리거] 필드의 몬스터가 파괴되었을 때 발동. 필드의 카드를 {n}장 파괴한다.',
-   when=[when('destroyed', filter=S(kind='monster'))], do=[destroy(scope=S('both', 'field', not_self=True), n='$n')])
+# 더 딜리트 2번(2026-11-10 문서) — 「자신 필드의 데이터버그 카드」(몬스터 · 마법 모두, 이 카드 포함)를 릴리스하는 코스트, 1턴 횟수 없음(단서)
+fx('DTBG-014', '2', '[신속] 자신 필드의 데이터버그 카드 {n}장을 릴리스하여 발동. 필드의 카드 {m}장을 파괴한다. (이 효과는 1턴에 1번 제약을 받지 않는다.)',
+   cost=[release(scope=S('own', 'field', group=DB, faceup=True, pred='releasable'), n='$n')], do=[destroy(scope=BOTH_FIELD, n='$m')])
 fx('DTBG-014', '3', '[지속] 상대는 효과로 카드를 덱에서 패에 넣을 수 없다. (이 효과는 1턴에 1번 제약을 받지 않는다.)', cont=[forbid('no_deck_to_hand', who='opp')])
 fx('DTBG-015', '1', '[소환] 묘지에서 「데이터버그」 몬스터 {n}장을 특수소환한다.', do=[special(scope=S('own', 'grave', 'monster', group=DB), n='$n')])
 fx('DTBG-015', '2', '[트리거] 상대가 카드의 효과를 발동했을 때 발동. 그 발동을 무효로 한다.', when=[when('activated', who='opp')], do=[negate_link(act_grave=True)])
@@ -118,7 +123,8 @@ fx('DTBG-020', '1', '[신속] 필드의 「데이터버그」 몬스터를 {n}�
 fx('DTBG-021', '1', '[트리거] 자신의 「데이터버그」 몬스터가 상대의 효과에 의해 필드를 벗어났을 때 발동. 필드의 카드를 전부 파괴한다. 그 후, 묘지에서 「데이터버그」 몬스터 {n}장을 특수소환한다.',
    when=[when('left_field', ctrl='own', filter=DB_MON, by='opp', cause='effect')],
    do=[destroy(scope=S('both', 'field', not_self=True), all=True, zero_ok=True), special(scope=S('own', 'grave', 'monster', group=DB), n='$n')])
-fx('DTBG-022', '1', '자신 필드에 「데이터버그」 몬스터가 존재할 경우, 덱에서 「데이터버그」 몬스터를 {n}장 특수소환한다. 이 효과로 특수소환한 몬스터는 이 턴에 효과를 발동할 수 없다.',
+# 콜로니(2026-11-10 문서 「몬스터」 → 「카드」) — 특수소환할 수 있는 것은 몬스터뿐이라(정본 소환 규칙) 덱의 「데이터버그」 몬스터에서 고른다
+fx('DTBG-022', '1', '자신 필드에 「데이터버그」 몬스터가 존재할 경우, 덱에서 「데이터버그」 카드를 {n}장 특수소환한다. 이 효과로 특수소환한 카드는 이 턴에 효과를 발동할 수 없다.',
    cond=[cnt(S('own', 'mzone', 'monster', group=DB, faceup=True))],
    do=[special(scope=S('own', 'deck', 'monster', group=DB), n='$n', **{'as': 'X'}), status('no_act', ref='X', label='이 턴에 효과를 발동할 수 없음')])
 
@@ -127,3 +133,10 @@ fx('DTBG-023', '1', '자신 필드에 「데이터버그」 몬스터가 {n}장 
    cond=[cnt(OWN_DB_MON, '>=', '$n')],
    card=[B('extra_normal_turn', flag='xns_turn'), B('shared_hint', to=OWN_DB_MON, n='$n')],
    do=[B('mark_turn', key='xns_turn', what='extra_ns', label='이 턴 일반소환 1회 추가')])
+# 패키지 프로그램 2번(2026-11-10 문서) — 이 턴에 자신 필드의 「데이터버그」 몬스터가 n장 이상 묘지로 갔으면(릴리스 · 파괴 · 코스트 모두, Game.left_log),
+# 패를 원하는 매수만큼 버리고 그 매수까지 자신 묘지의 「데이터버그」 몬스터를 특수소환(「…할 수 있다」 — 모자라면 있는 만큼).
+# 버릴 매수: 사람은 화면에서, AI는 되살릴 수 있는 수까지(lib.want_pick revive)
+DB_GRAVE_MON = S('own', 'grave', 'monster', group=DB)
+fx('DTBG-023', '2', '[신속] 자신 필드의 [데이터버그] 몬스터가 {n}장 이상 묘지로 보내진 턴에 발동할 수 있다. 패를 원하는 매수만큼 버리고, 그 매수만큼 자신 묘지에서 [데이터버그] 몬스터를 소환할 수 있다.',
+   cond=[B('cond_turn_left', side='own', dest='grave', filter=DB_MON, n='$n')],
+   do=[discard(want=True, revive=DB_GRAVE_MON, count_as='N'), special(scope=DB_GRAVE_MON, n=('ref', 'N'), upto=True)])
