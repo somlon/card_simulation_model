@@ -124,6 +124,7 @@ class Game:
         self.shareds = [None] * SHZ; self.shared_owners = [None] * SHZ   # 공유 존 칸마다 카드 · 마커 주인(마커는 칸이 비어도 남는다)
         self.fieldz = None
         self.turn = 0; self.turn_player = first; self.first = first; self.phase = '준비'
+        self.left_log = []   # 이 턴에 필드를 벗어난 사건(leave_field) — 「…가 n장 이상 묘지로 보내진 턴」 조건(blocks.lib cond_turn_left)
         self.chain = []; self.events = []; self.floating = []; self.pending_leaves = []; self.src = None; self.no_attack = {}; self.no_damage = {}
         self.resolving = False
         self.locked = False       # 종료 단계 a 이후: 양쪽 모두 효과를 발동할 수 없다 (§5-5)
@@ -209,6 +210,9 @@ class Game:
             # (Effect.removal_text — cards.Impl.attach, 사용자 답변 2026-10-23 PDF Q6)
             te = self.targeting_eff(by)
             if te is not False and (c.is_monster() or not getattr(te, 'removal_text', False)): return True
+        # [지속] 규칙 'untargetable' — 「(이 카드 이외의 자신 필드의 몬스터는) 효과의 대상이 되지 않는다」: 주어가 없으므로 자신 · 상대의 효과 모두
+        # (데이터버그 버터플라이 2번, 2026-11-10 사용자 업로드 문서). 대상 지정 판정은 뒷면 카드와 같은 Game.targeting_eff
+        if by is not None and self.on_field(c) and c.faceup and self.targeting_eff(by) is not False and self.rule('untargetable', c): return True
         if self.on_field(c) and c.faceup and not self.is_neg(c):
             ex = c.flags.get('immune_except')
             # flags['immune_except_opp'] — 그 예외 카드도 「상대의」 것만 (퇴마의 부적: 「상대의 「저주 - 의심」 마법 이외의 카드의 효과를 받지 않는다」, 2026-10-15)
@@ -1005,6 +1009,8 @@ class Game:
     def emit(self, kind, **kw):
         ev = dict(kind=kind, **kw); ev['turn'] = self.turn
         self.events.append(ev)
+        if kind == 'leave_field':   # 이 턴 것만 남긴다(Game.left_log)
+            self.left_log = [e for e in self.left_log if e['turn'] == self.turn] + [ev]
         for fl in list(self.floating):
             fl(self, ev)
         for src in self.srcs_with('on_event'):

@@ -1203,8 +1203,16 @@ def _link_ok(lk, k, g=None, c=None, p=None):
 
 
 def want_pick(g, c, p, pool, k):
-    """「원하는 수까지」 — AI: 같은 이름이 2장 이상인 카드의 여분(1장은 남김) 중 덱 지침 우선순위가 0 이하인 것"""
+    """「원하는 수까지」 — AI: 같은 이름이 2장 이상인 카드의 여분(1장은 남김) 중 덱 지침 우선순위가 0 이하인 것.
+    revive(집합): 「패를 원하는 매수만큼 버리고, 그 매수만큼 묘지에서 …를 소환한다」 — 되살릴 수 있는 수(묘지 · 버릴 패의 그 몬스터, 빈 몬스터 · 공유 존)까지,
+    덱 지침에서 덜 아끼는 패부터(되살릴 몬스터 자신은 버려도 다시 나오므로 먼저)"""
     ai = g.p[p].ai; by = {}
+    rv = k.get('revive')
+    if rv is not None:
+        ok = lambda x: x.is_monster() and match_card(g, c, p, x, dict(rv, side=None, zone=None)) and not x.flags.get('ss_self_only')
+        room = len(g.free_m(p)) + len(g.free_shared())
+        n = min(len(pool), room, len([x for x in cards_in(g, c, p, rv) if ok(x)]) + sum(1 for x in pool if ok(x)))
+        return sorted(pool, key=lambda x: (not ok(x), ai.card_pri(g, p, x)))[:max(0, n)]
     for x in pool: by.setdefault(x.name, []).append(x)
     return [x for xs in by.values() if len(xs) >= 2 for x in xs[1:] if ai.card_pri(g, p, x) <= 0]
 
@@ -1779,6 +1787,21 @@ def t_can(g, c, p, ev, k):
 @test('cond_any')
 def t_any(g, c, p, ev, k):
     return any(TESTS[b.name](g, c, p, ev, b.k) for b in k['of'])
+
+
+@test('cond_turn_left')
+def t_turn_left(g, c, p, ev, k):
+    """C1 「(자신) 필드의 X가 n장 이상 (묘지로 보내진 · 필드를 벗어난) 턴」 — 이 턴의 leave_field 사건(Game.left_log)을 센다.
+    side: 벗어날 때의 컨트롤러('own' · 'opp' · 'both'), dest: 간 곳(None이면 어디든), filter: 카드 필터(match_card — 영역은 보지 않음)"""
+    side, dest, f = k.get('side', 'own'), k.get('dest'), k.get('filter')
+    seen = set()
+    for e in getattr(g, 'left_log', ()):
+        if e['turn'] != g.turn or (dest is not None and e.get('dest') != dest): continue
+        if e.get('ctrl') not in sides(p, side): continue
+        x = e['card']
+        if f is not None and not match_card(g, c, p, x, f): continue
+        seen.add(x.uid)
+    return _OPS[k.get('op', '>=')](len(seen), k.get('n', 1))
 
 
 @test('when_counter')
