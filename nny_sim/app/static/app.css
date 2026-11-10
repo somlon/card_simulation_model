@@ -133,6 +133,7 @@ main{padding:12px 16px 24px;max-width:1700px;margin:0 auto}
 /* 공유 존 칸(engine.SHZ=2칸)의 소유 표시 — 그 라운드 선공 쪽이 백·후공 쪽이 흑, 테두리 + 모서리 작은 공 + 라벨로 표시.
    마커는 그 칸에 처음 카드를 놓을 때 생기고 칸이 비어도 남는다. 예전엔 칸이 1개뿐이라 매트 한쪽에 큰 코인 위젯을 따로 뒀지만,
    칸이 2개로 늘며(사용자 지시 2026-10-30) 칸마다 바로 옆에 표시하는 쪽이 더 명확해 위젯은 없애고 이 표시만 남겼다. */
+.mhide{position:absolute;pointer-events:none;z-index:0;border-radius:6px}   /* 쓰지 않는 몬스터 존 2 · 4번 자리 덮개(board.js MHIDE) */
 .shz{position:absolute;border-radius:22px;pointer-events:none;z-index:3;opacity:0;border:7px solid transparent;transition:opacity .4s,border-color .4s,box-shadow .4s}
 .shz.on{opacity:1;border-color:#f4f6fa;box-shadow:0 0 0 3px #000a,0 0 30px 6px #ffffff70}
 .shz.on.black{border-color:#08090c;box-shadow:0 0 0 3px #e3e7ef,0 0 30px 6px #000}

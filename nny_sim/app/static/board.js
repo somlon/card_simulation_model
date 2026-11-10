@@ -25,6 +25,11 @@ const Z = [
 // 승인) 가운데 줄 배치 그대로: 열1=P2 스킬 · 열2=공유 존1 · 열3=필드 존 · 열4=공유 존2 · 열5=P1 스킬(make_mat_v2.py
 // 좌표·실제 이미지로 확인). 구 매트의 열0 필드 존 자리는 매트 v2에서 빈 배경이라 더 이상 안 씀.
 const SHARED = [slot(2, 2), slot(4, 2)], FIELDZ = slot(3, 2);
+// 쓰지 않는 옛 몬스터 존 2 · 4번 칸 자리(열 2 · 4, P2 줄 1 · P1 줄 3) — 옛 매트(mat.webp, 몬스터 존 5칸)를 쓰는 서버에서도 화면에 보이지 않게
+// 판 배경색으로 덮는다(사용자 지시 2026-11-10). 매트 v2(field_mat_v2.png)는 이미 지워져 있어 덮어도 같다.
+// 색은 매트 그림의 칸 사이(열 1과 2 사이) 판 배경에서 읽고, 읽지 못하면(교차 출처 등) MHIDE_BG(매트 v1 · v2 에서 잰 값)
+const MHIDE = [[2, 1], [4, 1], [2, 3], [4, 3]], MHIDE_PAD = 10;
+const MHIDE_BG = {1: 'rgb(25,33,47)', 3: 'rgb(38,29,34)'};
 const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[ch]));
 
 function typeLine(p) {
@@ -56,11 +61,28 @@ class Stage {
     this.board = q('.board'); this.wrap = q('.board-wrap'); this.logEl = q('.log');
     this.board.style.width = this.MW + 'px'; this.board.style.height = this.MH + 'px';
     this.board.style.backgroundImage = `url(${this.url(this.A.mat)})`;
+    this.maskUnusedZones();
     document.documentElement.style.setProperty('--ratio', this.ratio);
     this.reset(); this.buildStatic(); this.bind(); this.setSpeed(this.speed);
     this.tfs = 26; this.board.style.setProperty('--tfs', this.tfs + 'px');
     this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(this.root);
     addEventListener('resize', () => this.fit());
+  }
+  maskUnusedZones() {
+    // 쓰지 않는 몬스터 존 2 · 4번 자리 덮개(.mhide)의 색을 매트 그림의 판 배경에서 읽는다 — 매트마다 판 색이 조금 달라도 이어 보이게
+    const img = new Image(), board = this.board, MW = this.MW, MH = this.MH;
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+        const sx = cv.width / (MW || cv.width), sy = cv.height / (MH || cv.height);
+        for (const r of [1, 3]) {
+          const p = slot(1, r), d = cx.getImageData(Math.round((p.x + SLOT.dx / 2) * sx), Math.round(p.y * sy), 1, 1).data;
+          board.querySelectorAll(`.mhide[data-row="${r}"]`).forEach(el => { el.style.background = `rgb(${d[0]},${d[1]},${d[2]})`; });
+        }
+      } catch (e) { /* 교차 출처 그림 등 — 기본색(MHIDE_BG) 그대로 */ }
+    };
+    img.src = this.url(this.A.mat);
   }
   url(rel) { return this.o.url ? this.o.url(rel) : '/cards/' + rel; }   // 단일 HTML 재생 파일은 이미지가 data URI(그대로)
   face(name) { const f = this.A.faces[name]; return f ? this.url(f) : null; }
@@ -70,6 +92,7 @@ class Stage {
       <div class="pbar pb1" style="--pc:var(--p2)"></div><div class="pbar pb0" style="--pc:var(--p1)"></div>
       <div class="bcol"><div class="board-wrap"><div class="board">
         <svg class="fxl" viewBox="0 0 ${this.MW || 1664} ${this.MH || 1904}"><g class="arrows"></g></svg>
+        ${MHIDE.map(([c, r]) => { const p = slot(c, r); return `<div class="mhide" data-row="${r}" style="left:${p.x - SLOT.w / 2 - MHIDE_PAD}px;top:${p.y - SLOT.h / 2 - MHIDE_PAD}px;width:${SLOT.w + 2 * MHIDE_PAD}px;height:${SLOT.h + 2 * MHIDE_PAD}px;background:${MHIDE_BG[r]}"></div>`; }).join('')}
         ${SHARED.map((p, i) => `<div class="shz" data-slot="${i}" style="left:${p.x - SLOT.w / 2 - 12}px;top:${p.y - SLOT.h / 2 - 12}px;width:${SLOT.w + 24}px;height:${SLOT.h + 24}px"><span class="shb"></span><span class="shl"></span></div>`).join('')}
         <div class="overlay"><div class="box"></div></div></div></div></div>
       <div class="controls ctl">
